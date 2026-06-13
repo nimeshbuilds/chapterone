@@ -11,12 +11,12 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "test": "node --test",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac --universal",
-    "dist:mac:arm64": "electron-builder --mac --arm64",
-    "dist:mac:x64": "electron-builder --mac --x64",
-    "dist:win": "electron-builder --win --x64 --arm64",
+    "pack": "electron-builder --dir --config electron-builder.config.js",
+    "dist": "electron-builder --config electron-builder.config.js",
+    "dist:mac": "electron-builder --mac --universal --config electron-builder.config.js",
+    "dist:mac:arm64": "electron-builder --mac --arm64 --config electron-builder.config.js",
+    "dist:mac:x64": "electron-builder --mac --x64 --config electron-builder.config.js",
+    "dist:win": "electron-builder --win --x64 --arm64 --config electron-builder.config.js",
     "dist:all": "npm run dist:mac && npm run dist:win"
   },
   "dependencies": {
