@@ -484,7 +484,7 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 
 /* ---- audiobook player ---- */
 .audio-bar {
-  display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px;
   background: var(--panel-2); border-bottom: 1px solid var(--border-soft);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
 }

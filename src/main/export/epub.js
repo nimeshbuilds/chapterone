@@ -64,7 +64,7 @@ function generateEpub(book, outPath) {
         file: `chapter-${i + 1}.xhtml`,
         number: c.number || i + 1,
         title: c.title || `Chapter ${i + 1}`,
-        xhtml: xhtmlDoc(c.title || `Chapter ${i + 1}`, artHtml + toXhtml(chapterToHtml(c.content, resolveImage))),
+        xhtml: xhtmlDoc(c.title || `Chapter ${i + 1}`, artHtml + toXhtml(chapterToHtml(c.content, resolveImage, c.number || i + 1))),
       };
     });
     const cover = (book.coverPng && fs.existsSync(book.coverPng))

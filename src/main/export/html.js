@@ -67,9 +67,16 @@ function applyImageSources(html, resolve) {
 }
 
 /** Convert a single chapter's Markdown to HTML. Typography is tidied at render
- * time too, so even books written before the cleanup land flawless everywhere. */
-function chapterToHtml(markdown, resolveImage) {
-  return applyImageSources(marked.parse(tidyProse(markdown || '')), resolveImage);
+ * time too, so even books written before the cleanup land flawless everywhere.
+ * When `number` is given, the chapter's title heading is prefixed with
+ * "Chapter N:" so it's always clear which chapter you're reading. */
+function chapterToHtml(markdown, resolveImage, number) {
+  let md = tidyProse(markdown || '');
+  if (number != null) {
+    md = md.replace(/^(\s{0,3})#[ \t]+(.+)$/m, (full, sp, title) =>
+      /^chapter\b/i.test(title.trim()) ? `${sp}# ${title}` : `${sp}# Chapter ${number}: ${title}`);
+  }
+  return applyImageSources(marked.parse(md), resolveImage);
 }
 
 const BOOK_CSS = `
@@ -139,7 +146,7 @@ function bookToHtml(book, opts = {}) {
     .filter(Boolean)
     .map(
       (c) =>
-        `<section class="chapter" id="ch-${c.number}">${chapterArt(c)}${chapterToHtml(c.content, resolveImage)}</section>`
+        `<section class="chapter" id="ch-${c.number}">${chapterArt(c)}${chapterToHtml(c.content, resolveImage, c.number)}</section>`
     )
     .join('\n');
   const coverPage = book.coverPng

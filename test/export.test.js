@@ -65,3 +65,12 @@ test('generateEpub writes a valid zip with required entries', async () => {
     assert.ok(whole.includes(name), `epub should contain ${name}`);
   }
 });
+
+test('chapterToHtml prefixes the heading with the chapter number', () => {
+  const { chapterToHtml } = require('../src/main/export/html');
+  assert.match(chapterToHtml('# A Title\n\nText.', null, 4), /Chapter 4: A Title/);
+  // does not double-number a heading that already says "Chapter"
+  assert.doesNotMatch(chapterToHtml('# Chapter 2: Done\n\nx', null, 2), /Chapter 2: Chapter 2/);
+  // no number arg -> unchanged
+  assert.doesNotMatch(chapterToHtml('# Plain\n\nx', null), /Chapter/);
+});

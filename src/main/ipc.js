@@ -164,12 +164,15 @@ function registerIpc(store) {
     const book = store.getBook(id);
     const ch = (book.chapters || []).filter(Boolean)[index];
     if (!ch) throw new Error('That chapter has not been written yet.');
-    const voiceId = (book.isKids && a.voiceIdKids) ? a.voiceIdKids : a.voiceId;
-    if (!voiceId) throw new Error('Pick a narration voice in Settings → Audiobook first.');
+    // The voice can be overridden per chapter (the reader's voice picker);
+    // otherwise the book-appropriate default. Cache key includes voice + model.
+    const voiceId = opts.voiceId || (book.isKids && a.voiceIdKids ? a.voiceIdKids : a.voiceId);
+    if (!voiceId) throw new Error('Pick a narration voice first.');
     const model = a.model || elevenlabs.DEFAULT_MODEL;
     const dir = path.join(store.audioDir, id);
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `ch${ch.number}-${voiceId}-${model}.mp3`);
+    if (opts.force && fs.existsSync(file)) { try { fs.unlinkSync(file); } catch (_) { /* ignore */ } }
     const cached = fs.existsSync(file);
     if (!cached) {
       const { buffer } = await elevenlabs.tts({
@@ -178,14 +181,14 @@ function registerIpc(store) {
       });
       fs.writeFileSync(file, buffer);
     }
-    return { file, title: ch.title, number: ch.number, cached };
+    return { file, title: ch.title, number: ch.number, cached, voiceId };
   };
 
-  ipcMain.handle('audio:synth', wrap(async (event, { id, index }) => {
+  ipcMain.handle('audio:synth', wrap(async (event, { id, index, voiceId, force }) => {
     const sender = event.sender;
     const onProgress = (p) => { if (!sender.isDestroyed()) sender.send('audio:progress', { id, index, ...p }); };
-    const { file, title, number, cached } = await synthChapterToFile(id, index, { onProgress });
-    return { dataUri: 'data:audio/mpeg;base64,' + fs.readFileSync(file).toString('base64'), title, number, cached };
+    const r = await synthChapterToFile(id, index, { onProgress, voiceId, force });
+    return { dataUri: 'data:audio/mpeg;base64,' + fs.readFileSync(r.file).toString('base64'), title: r.title, number: r.number, cached: r.cached };
   }));
 
   // Clone the user's own voice from recorded/uploaded samples.
@@ -203,8 +206,8 @@ function registerIpc(store) {
     return voice;
   }));
 
-  ipcMain.handle('audio:export', wrap(async (_e, { id, index }) => {
-    const { file, title } = await synthChapterToFile(id, index);
+  ipcMain.handle('audio:export', wrap(async (_e, { id, index, voiceId }) => {
+    const { file, title } = await synthChapterToFile(id, index, { voiceId });
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showSaveDialog(win, {
       title: 'Save chapter audio', defaultPath: `${safeFilename(title, 'chapter')}.mp3`,
@@ -369,7 +372,7 @@ function registerIpc(store) {
           number: c.number,
           title: tidyText(c.title),
           words: c.words || 0,
-          html: artHtml + chapterToHtml(c.content, resolve),
+          html: artHtml + chapterToHtml(c.content, resolve, c.number),
         };
       }),
     };

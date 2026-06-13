@@ -27,8 +27,8 @@ contextBridge.exposeInMainWorld('api', {
   // ElevenLabs audiobook
   listVoices: () => invoke('audio:voices'),
   verifyAudio: () => invoke('audio:verify'),
-  synthChapter: (id, index) => invoke('audio:synth', { id, index }),
-  exportAudio: (id, index) => invoke('audio:export', { id, index }),
+  synthChapter: (id, index, voiceId, force) => invoke('audio:synth', { id, index, voiceId, force }),
+  exportAudio: (id, index, voiceId) => invoke('audio:export', { id, index, voiceId }),
   cloneVoice: (name, samples) => invoke('audio:clone', { name, samples }),
   onAudioProgress: (cb) => {
     const listener = (_e, d) => cb(d);

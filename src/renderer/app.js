@@ -1036,18 +1036,97 @@ async function renderReader(id) {
 
   const toggleToc = () => tocDrawer.classList.toggle('open');
 
-  // --- audiobook player (ElevenLabs) ---
-  const audioEl = h('audio', { controls: 'controls', style: 'flex:1;min-width:0;height:34px' });
-  const audioSpin = h('span', { class: 'spinner', style: 'width:16px;height:16px;border-width:2px' });
-  const audioLabel = h('span', { class: 'audio-label', id: 'audio-label' }, '🎧');
+  // --- audiobook player (ElevenLabs): per-chapter, on-demand, voice-swappable ---
+  const audioCfg = (state.settings && state.settings.audio) || {};
+  const audioReady = !!(audioCfg.elevenApiKey && (audioCfg.voiceId || audioCfg.voiceIdKids));
+  const bookVoiceDefault = (content.isKids && audioCfg.voiceIdKids) ? audioCfg.voiceIdKids : audioCfg.voiceId;
+  let selectedVoice = bookVoiceDefault || '';
+
+  const audioEl = h('audio', { controls: 'controls', style: 'flex:1;min-width:0;height:34px;display:none' });
+  const audioSpin = h('span', { class: 'spinner', style: 'width:16px;height:16px;border-width:2px;display:none' });
+  const audioLabel = h('span', { class: 'audio-label', id: 'audio-label' }, audioReady ? 'Pick a voice, then Listen' : '🎧');
+  const voiceSel = h('select', { class: 'reader-select', title: 'Narration voice', style: 'max-width:150px' }, h('option', { value: selectedVoice || '' }, 'Loading voices…'));
+  voiceSel.addEventListener('change', () => { selectedVoice = voiceSel.value; });
   const speakerSel = deviceSelect('audiooutput', audioPrefs.speaker, async (v) => { audioPrefs.speaker = v; await applySink(audioEl); }, '🔊 Default speaker');
   speakerSel.title = 'Output speaker';
-  const audioBar = h('div', { class: 'audio-bar hidden' },
-    audioSpin, audioLabel, audioEl, speakerSel,
+  const listenBtn = h('button', { class: 'btn btn-gold btn-sm', title: 'Narrate this chapter with the selected voice', onClick: () => playChapterAudio(false) }, '🎧 Listen');
+  const regenBtn = h('button', { class: 'btn btn-ghost btn-sm', title: 'Regenerate this chapter with the selected voice', onClick: () => playChapterAudio(true) }, '🔁');
+  const audioBar = h('div', { class: 'audio-bar' + (audioReady ? '' : ' hidden') },
+    h('span', { class: 'mini-label', style: 'white-space:nowrap' }, 'Narration'),
+    voiceSel, listenBtn, regenBtn, audioSpin, audioLabel, audioEl, speakerSel,
     h('button', { class: 'btn btn-ghost btn-sm', title: 'Save this chapter as MP3', onClick: () => exportChapterAudio() }, '⤓ MP3'),
-    h('button', { class: 'icon-btn', title: 'Close player', onClick: () => { audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
+    h('button', { class: 'icon-btn', title: 'Hide player', onClick: () => { audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
   let audioBusy = false;
   const setSpin = (on) => { audioSpin.style.display = on ? 'inline-block' : 'none'; };
+
+  // Populate the voice picker from the user's account (includes cloned voices).
+  function populateReaderVoices(voices) {
+    if (!voices || !voices.length) { return; }
+    const recFlag = content.isKids ? 'recKids' : 'recAdult';
+    if (!voices.some((v) => v.voice_id === selectedVoice)) {
+      selectedVoice = (bookVoiceDefault && voices.some((v) => v.voice_id === bookVoiceDefault)) ? bookVoiceDefault : voices[0].voice_id;
+    }
+    const opt = (v) => h('option', { value: v.voice_id, selected: v.voice_id === selectedVoice ? 'selected' : false }, `${v[recFlag] ? '★ ' : ''}${v.name}`);
+    voiceSel.innerHTML = '';
+    const rec = voices.filter((v) => v[recFlag]);
+    const rest = voices.filter((v) => !v[recFlag]);
+    if (rec.length) { const og = h('optgroup', { label: '★ Recommended' }); rec.forEach((v) => og.append(opt(v))); voiceSel.append(og); }
+    if (rest.length) { const og = h('optgroup', { label: 'All voices' }); rest.forEach((v) => og.append(opt(v))); voiceSel.append(og); }
+    voiceSel.value = selectedVoice;
+    audioLabel.textContent = 'Pick a voice, then Listen';
+  }
+  if (audioReady) api.listVoices().then(populateReaderVoices).catch(() => { voiceSel.innerHTML = ''; voiceSel.append(h('option', { value: selectedVoice || '' }, 'Default voice')); });
+
+  async function playChapterAudio(force) {
+    const a = state.settings && state.settings.audio;
+    if (!a || !a.elevenApiKey) { toast('Add your ElevenLabs key and pick a voice in Settings → Audiobook.', 'bad'); return go('settings'); }
+    const voice = selectedVoice || (content.isKids && a.voiceIdKids ? a.voiceIdKids : a.voiceId);
+    if (!voice) { toast('Pick a narration voice.', 'bad'); return; }
+    const ci = curChapterIndex();
+    if (ci < 0) { toast('Open a chapter first, then press Listen.', 'bad'); return; }
+    if (audioBusy) return;
+    audioBusy = true;
+    audioBar.classList.remove('hidden');
+    audioEl.style.display = 'none';
+    setSpin(true);
+    audioLabel.textContent = force ? 'Regenerating…' : 'Preparing narration…';
+    const off = api.onAudioProgress((p) => {
+      if (p.id !== id || p.index !== ci) return;
+      audioLabel.textContent = p.total ? `Narrating ch ${ci + 1}… ${p.done}/${p.total}` : 'Narrating…';
+    });
+    try {
+      const res = await api.synthChapter(id, ci, voice, !!force);
+      if (audioEl._url) { URL.revokeObjectURL(audioEl._url); audioEl._url = null; }
+      audioEl._url = URL.createObjectURL(dataUriToBlob(res.dataUri));
+      audioEl.src = audioEl._url;
+      audioEl.style.display = '';
+      setSpin(false);
+      audioLabel.textContent = `🎧 ${res.title}`;
+      await applySink(audioEl);
+      audioEl.play().catch(() => {});
+      toast(res.cached ? '▶ Loaded from cache (no charge).' : '✅ Narrated & saved — re-listens are free.', 'ok');
+    } catch (err) {
+      setSpin(false);
+      toast(`Narration failed: ${err.message}`, 'bad');
+    } finally { off && off(); audioBusy = false; }
+  }
+  async function exportChapterAudio() {
+    const ci = curChapterIndex();
+    if (ci < 0) { toast('Open a chapter first.', 'bad'); return; }
+    try {
+      const r = await api.exportAudio(id, ci, selectedVoice || undefined);
+      if (r && !r.canceled) { toast('Saved chapter MP3.', 'ok'); await api.openPath(r.path); }
+    } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
+  }
+  // When the chapter changes, stop the old audio and prompt for the new one so
+  // narration is unmistakably per-chapter (no stale audio lingering).
+  function resetAudioForNewChapter() {
+    try { audioEl.pause(); } catch (_) { /* ignore */ }
+    audioEl.style.display = 'none'; setSpin(false);
+    if (audioBar.classList.contains('hidden')) return;
+    const pg = pages[cur];
+    audioLabel.textContent = pg && pg.kind === 'chapter' ? `Press 🎧 Listen for Chapter ${pg.chIndex + 1}` : 'Open a chapter to listen';
+  }
   async function playChapterAudio() {
     const a = state.settings && state.settings.audio;
     if (!a || !a.elevenApiKey || !(a.voiceId || a.voiceIdKids)) {
@@ -1191,8 +1270,10 @@ async function renderReader(id) {
   }
 
   function goPage(i) {
+    const prev = cur;
     cur = Math.min(Math.max(i, 0), pages.length - 1);
     saveReaderPos(id, cur);
+    if (cur !== prev) resetAudioForNewChapter(); // stop stale audio, prompt to Listen for the new chapter
     if (prefs.mode === 'scroll') {
       const sec = contentEl.querySelector(`[data-i="${cur}"]`);
       if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
