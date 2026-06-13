@@ -38,8 +38,9 @@ third-party servers.
 - **AI-designed art** — pick *AI-designed art* and the selected engine designs a
   bespoke **vector cover** and **one chapter illustration each**, matched to the
   book's theme and copyright-free. (The coding CLIs can't emit raster images, but
-  they're excellent SVG designers — output is sanitized before use.) Or choose
-  *Stock photos* (Openverse) instead.
+  they're excellent SVG designers — output is sanitized, then **rasterized to PNG**
+  so it displays everywhere, including Kindle thumbnails.) Or choose *Stock
+  photos* (Openverse) instead.
 - **Live progress dashboard** — watch it write in real time: a streaming draft
   preview, running word count, elapsed timer, active engine, a chapter checklist,
   and a timestamped activity feed.

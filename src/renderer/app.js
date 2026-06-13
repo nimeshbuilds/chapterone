@@ -331,8 +331,8 @@ async function renderLibrary() {
     for (const b of books) {
       const paused = b.status === 'paused';
       const statusLabel = b.status === 'generating' ? 'Writing…' : (paused ? 'Paused' : (b.status || 'draft'));
-      const coverEl = b.coverSvg
-        ? h('div', { class: 'book-cover has-art' }, h('img', { src: svgDataUri(b.coverSvg), alt: '' }))
+      const coverEl = b.cover
+        ? h('div', { class: 'book-cover has-art' }, h('img', { src: b.cover, alt: '' }))
         : h('div', { class: 'book-cover', style: `background:${coverGradient(b.title)}` },
             h('h3', {}, b.title || 'Untitled'),
             h('div', { class: 'by' }, `by ${b.author || 'Anonymous'}`));

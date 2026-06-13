@@ -12,6 +12,7 @@ const { BookGenerator } = require('./book/generator');
 const { resolveImagesForBook } = require('./book/images');
 const { generateEpub } = require('./export/epub');
 const { generatePdf } = require('./export/pdf');
+const { rasterizeBookArt } = require('./export/rasterize');
 const { bookToMarkdown } = require('./export/markdown');
 const { bookToHtml, chapterToHtml, svgFigure } = require('./export/html');
 const { svgToDataUri } = require('./book/aiArt');
@@ -43,6 +44,29 @@ function registerIpc(store) {
       }
     }
     return (id) => map.get(id) || null;
+  };
+
+  const fileDataUri = (file, mime) => {
+    try { return `data:${mime};base64,${fs.readFileSync(file).toString('base64')}`; }
+    catch (_) { return null; }
+  };
+  /** Best available image source for cover/art: rasterized PNG, else the SVG. */
+  const coverUri = (book) =>
+    (book.coverPng && fs.existsSync(book.coverPng) && fileDataUri(book.coverPng, 'image/png')) ||
+    (book.coverSvg ? svgToDataUri(book.coverSvg) : null);
+  const chapterArtUri = (c) =>
+    (c.artFile && fs.existsSync(c.artFile) && fileDataUri(c.artFile, 'image/png')) ||
+    (c.artSvg ? svgToDataUri(c.artSvg) : null);
+
+  /** Rasterize AI-designed SVG art to PNG so it displays everywhere. */
+  const maybeRasterize = async (book) => {
+    const hasArt = book.coverSvg || (book.chapters || []).some((c) => c && c.artSvg);
+    if (!hasArt) return book;
+    try {
+      await rasterizeBookArt(book, store.imagesDir);
+      store.saveBook(book);
+    } catch (_) { /* SVG fallback remains */ }
+    return book;
   };
 
   /** Run image sourcing for a finished book if the user opted in. */
@@ -132,6 +156,8 @@ function registerIpc(store) {
         signal: controller.signal,
       });
       await maybeIllustrate(book, sender, jobId, controller.signal);
+      onProgress({ phase: 'rasterize', message: 'Finalizing artwork…' });
+      await maybeRasterize(book);
       store.saveBook(book);
       return { id: book.id };
     } finally {
@@ -159,6 +185,7 @@ function registerIpc(store) {
         signal: controller.signal,
       });
       await maybeIllustrate(done, sender, jobId, controller.signal);
+      await maybeRasterize(done);
       store.saveBook(done);
       return { id: done.id };
     } finally {
@@ -194,14 +221,18 @@ function registerIpc(store) {
       status: book.status,
       pausedReason: book.pausedReason || null,
       words: book.words || 0,
-      cover: book.coverSvg ? svgToDataUri(book.coverSvg) : null,
+      cover: coverUri(book),
       images: (book.images || []).map((im) => ({ caption: im.caption, attribution: im.attribution, license: im.license, licenseUrl: im.licenseUrl, landing: im.landing })),
-      chapters: (book.chapters || []).filter(Boolean).map((c) => ({
-        number: c.number,
-        title: c.title,
-        words: c.words || 0,
-        html: (c.artSvg ? svgFigure(c.artSvg) : '') + chapterToHtml(c.content, resolve),
-      })),
+      chapters: (book.chapters || []).filter(Boolean).map((c) => {
+        const artUri = chapterArtUri(c);
+        const artHtml = artUri ? `<figure class="chapter-art"><img src="${artUri}" alt="" /></figure>` : '';
+        return {
+          number: c.number,
+          title: c.title,
+          words: c.words || 0,
+          html: artHtml + chapterToHtml(c.content, resolve),
+        };
+      }),
     };
   }));
 

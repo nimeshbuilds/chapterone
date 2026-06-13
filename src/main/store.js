@@ -108,7 +108,7 @@ class Store {
           words: b.words || (b.chapters || []).filter(Boolean).reduce((n, c) => n + (c.words || 0), 0),
           chapters: (b.chapters || []).filter(Boolean).length,
           plannedChapters: (b.outline || []).length,
-          coverSvg: b.coverSvg || null,
+          cover: coverDataUri(b),
           createdAt: b.createdAt,
           updatedAt: b.updatedAt,
         });
@@ -119,6 +119,17 @@ class Store {
     books.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     return books;
   }
+}
+
+/** Cover as a data URI for library cards: rasterized PNG if present, else SVG. */
+function coverDataUri(b) {
+  try {
+    if (b.coverPng && fs.existsSync(b.coverPng)) {
+      return 'data:image/png;base64,' + fs.readFileSync(b.coverPng).toString('base64');
+    }
+  } catch (_) { /* fall through */ }
+  if (b.coverSvg) return 'data:image/svg+xml;base64,' + Buffer.from(b.coverSvg, 'utf8').toString('base64');
+  return null;
 }
 
 function deepMerge(base, override) {
