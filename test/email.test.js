@@ -44,3 +44,11 @@ test('sendToKindle enforces an @kindle.com address', async () => {
     /@kindle\.com/
   );
 });
+
+test('composeInMail rejects when the file is missing', async () => {
+  const { composeInMail } = require('../src/main/kindle/sendToKindle');
+  await assert.rejects(
+    composeInMail({ to: 'a@kindle.com', subject: 's', body: 'b', filePath: '/no/such/file.epub' }),
+    /does not exist|only available on macOS/
+  );
+});

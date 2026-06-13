@@ -409,7 +409,12 @@ function registerIpc(store) {
   // non-macOS host without SMTP, just save the file and reveal it.
   const handOff = async ({ to, subject, body, filePath }) => {
     try {
-      await composeInMail({ to, subject, body, filePath });
+      const r = await composeInMail({ to, subject, body, filePath });
+      if (r.attached === false) {
+        // Mail opened but the file didn't attach — reveal it so the user can drag it in.
+        shell.showItemInFolder(filePath);
+        return { method: 'mail-noattach', path: filePath };
+      }
       return { method: 'mail', path: filePath };
     } catch (err) {
       if (process.platform === 'darwin') throw err;

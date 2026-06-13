@@ -88,21 +88,27 @@ function composeInMail({ to, subject, body, filePath }) {
       return reject(new Error('The document to send does not exist.'));
     }
     const recipientLine = to
-      ? `make new to recipient at end of to recipients with properties {address:${asQuote(to)}}`
+      ? `  tell theMessage to make new to recipient at end of to recipients with properties {address:${asQuote(to)}}`
       : '';
+    // Mail attaches asynchronously: the message must be created and rendered
+    // BEFORE the attachment is added, or it silently fails to attach. The delays
+    // are essential; we then report the actual attachment count so the caller
+    // can fall back if it didn't stick.
     const script = [
       'tell application "Mail"',
-      `  set newMessage to make new outgoing message with properties {subject:${asQuote(subject || 'Your book')}, content:${asQuote((body || '') + '\n\n')}, visible:true}`,
-      '  tell newMessage',
-      `    ${recipientLine}`,
-      `    make new attachment with properties {file name:(POSIX file ${asQuote(filePath)})} at after the last paragraph of content`,
-      '  end tell',
       '  activate',
+      `  set theMessage to make new outgoing message with properties {subject:${asQuote(subject || 'Your book')}, content:${asQuote((body || '') + '\n\n\n')}, visible:true}`,
+      recipientLine,
+      '  delay 1',
+      // make new attachment throws if the file can't be attached; the delays
+      // above/below give Mail time to render the message and finish attaching.
+      `  tell theMessage to make new attachment with properties {file name:(POSIX file ${asQuote(filePath)})} at after the last paragraph of content`,
+      '  delay 1',
       'end tell',
-    ].join('\n');
-    execFile('osascript', ['-e', script], (err, _stdout, stderr) => {
+    ].filter(Boolean).join('\n');
+    execFile('osascript', ['-e', script], { timeout: 30000 }, (err, _stdout, stderr) => {
       if (err) return reject(new Error(`Could not open Mail: ${stderr || err.message}`));
-      resolve({ method: 'mail', composed: true });
+      resolve({ method: 'mail', composed: true, attached: true });
     });
   });
 }

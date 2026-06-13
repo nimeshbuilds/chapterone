@@ -1274,7 +1274,8 @@ async function sendKindle(id) {
   toast(usingSmtp ? 'Building EPUB and emailing it to Kindle…' : 'Building EPUB and opening Mail…');
   try {
     const res = await api.sendToKindle(id);
-    if (res && res.method === 'mail') toast('📨 Mail is ready — just press Send to deliver to your Kindle.', 'ok');
+    if (res && res.method === 'mail') toast('📨 Mail is ready with the book attached — just press Send.', 'ok');
+    else if (res && res.method === 'mail-noattach') toast('Opened Mail, but couldn’t auto-attach — I revealed the file in Finder; drag it into the email, then Send.', 'bad');
     else if (res && res.method === 'saved') toast('Saved the file — attach it to an email to your Kindle.', 'ok');
     else toast('📨 Sent! It will appear on your Kindle shortly.', 'ok');
   } catch (err) { toast(`Send failed: ${err.message}`, 'bad'); }
@@ -1305,7 +1306,8 @@ function emailPdfModal(id, title) {
     try {
       const res = await api.emailPdf(id, to);
       state.settings = await api.getSettings();
-      if (res && res.method === 'mail') toast(`✉ Mail is ready for ${to} — press Send.`, 'ok');
+      if (res && res.method === 'mail') toast(`✉ Mail is ready for ${to} with the PDF attached — press Send.`, 'ok');
+      else if (res && res.method === 'mail-noattach') toast('Opened Mail, but couldn’t auto-attach — I revealed the PDF; drag it in, then Send.', 'bad');
       else if (res && res.method === 'saved') toast('PDF saved — attach it from the folder that opened.', 'ok');
       else toast(`✉ PDF emailed to ${to}.`, 'ok');
     } catch (err) { toast(`Email failed: ${err.message}`, 'bad'); }
