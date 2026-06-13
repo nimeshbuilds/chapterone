@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BookWriter Studio</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">✒︎</div>
+        <div class="brand-text">
+          <strong>BookWriter</strong>
+          <span>Studio</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item" data-view="library">
+          <span class="nav-ico">📚</span> Library
+        </button>
+        <button class="nav-item" data-view="create">
+          <span class="nav-ico">✨</span> New Book
+        </button>
+        <button class="nav-item" data-view="settings">
+          <span class="nav-ico">⚙︎</span> Settings
+        </button>
+      </nav>
+      <div class="sidebar-foot">
+        <div id="provider-pill" class="pill">Checking…</div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div id="prereq-banner" class="banner hidden"></div>
+      <div id="view-root"></div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
