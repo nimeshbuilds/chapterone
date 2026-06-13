@@ -49,3 +49,29 @@ test('deepMerge does not mutate arrays into objects', () => {
   assert.deepStrictEqual(out.a, [3]);
   assert.deepStrictEqual(out.b, { c: 1, d: 2 });
 });
+
+test('reconcileInterrupted flips stale generating books to paused/resumable', () => {
+  const os = require('node:os'); const fs = require('node:fs'); const path = require('node:path');
+  const { Store } = require('../src/main/store');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'co-rec-'));
+  const s = new Store(dir);
+  s.saveBook({ id: 'g1', status: 'generating', title: 'Stuck', chapters: [{ number: 1 }], outline: [{ number: 1 }, { number: 2 }] });
+  s.saveBook({ id: 'c1', status: 'complete', title: 'Done', chapters: [], outline: [] });
+  s.reconcileInterrupted();
+  assert.strictEqual(s.getBook('g1').status, 'paused');
+  assert.strictEqual(s.getBook('g1').pausedReason.resumable, true);
+  assert.strictEqual(s.getBook('c1').status, 'complete'); // untouched
+});
+
+test('reconcileInterrupted rescues a complete book that has a stub chapter', () => {
+  const os = require('node:os'); const fs = require('node:fs'); const path = require('node:path');
+  const { Store } = require('../src/main/store');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'co-stub-'));
+  const s = new Store(dir);
+  s.saveBook({ id: 'b', status: 'complete', title: 'X', outline: [{ number: 1 }, { number: 2 }],
+    chapters: [{ number: 1, title: 'A', content: 'x'.repeat(900), words: 1400 }, { number: 2, title: 'B', content: '# B', words: 7 }] });
+  s.reconcileInterrupted();
+  const b = s.getBook('b');
+  assert.strictEqual(b.status, 'paused');
+  assert.strictEqual(b.chapters.length, 1); // stub dropped so resume rewrites ch2
+});

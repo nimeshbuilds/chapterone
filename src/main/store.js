@@ -13,10 +13,12 @@ class Store {
     this.booksDir = path.join(baseDir, 'books');
     this.exportsDir = path.join(baseDir, 'exports');
     this.imagesDir = path.join(baseDir, 'images');
+    this.audioDir = path.join(baseDir, 'audio');
     this.settingsPath = path.join(baseDir, 'settings.json');
     fs.mkdirSync(this.booksDir, { recursive: true });
     fs.mkdirSync(this.exportsDir, { recursive: true });
     fs.mkdirSync(this.imagesDir, { recursive: true });
+    fs.mkdirSync(this.audioDir, { recursive: true });
   }
 
   // ---- settings ----
@@ -32,13 +34,30 @@ class Store {
       geminiCommand: 'gemini',
       geminiModel: '',
       forceSubscription: true, // strip API-key env vars; use subscription login
+      authorName: '', // if set, books are authored under this name (no invented pen name)
       research: true, // ground content with web search by default
       size: 'medium', // small | medium | large
       imageMode: 'off', // 'off' | 'ai' (CLI-designed SVG art) | 'stock' (Openverse)
       illustrate: false, // legacy flag (mapped to imageMode='stock')
       polish: true, // agentic editor pass for bestseller-grade prose
+      // Nano Banana image generation (opt-in, image-only Gemini API key —
+      // separate from the CLI subscription; never used for text generation).
+      images: {
+        provider: 'nano',
+        geminiApiKey: '',
+        model: 'gemini-3-pro-image', // Nano Banana Pro
+      },
+      // ElevenLabs audiobook narration (opt-in, audio-only API key — separate
+      // from the CLI subscription and the image key; never used for text).
+      audio: {
+        elevenApiKey: '',
+        model: 'eleven_multilingual_v2',
+        voiceId: '',      // default narrator
+        voiceIdKids: '',  // narrator used for kids books
+      },
       pdfEmailTo: '', // remembered recipient for "Email as PDF"
       kindle: {
+        method: 'mail', // 'mail' = hand off to the Mail app (no setup) | 'smtp' = auto-send
         toAddress: '', // <name>@kindle.com
         fromAddress: '',
         smtp: { host: '', port: 587, secure: false, user: '', pass: '' },
@@ -83,6 +102,48 @@ class Store {
       fs.unlinkSync(this.bookPath(id));
     } catch (_) {
       /* already gone */
+    }
+  }
+
+  /**
+   * On startup, recover books that aren't really finished:
+   *  - status 'generating' → the writing job died when the app closed.
+   *  - status 'complete' but a chapter is a near-empty stub (e.g. the CLI hit a
+   *    usage limit and returned only a heading) or chapters are missing.
+   * Flip them to 'paused' so the UI offers "Continue" and never claims a
+   * half-written book is complete.
+   */
+  reconcileInterrupted() {
+    let files;
+    try { files = fs.readdirSync(this.booksDir).filter((f) => f.endsWith('.json')); } catch (_) { return; }
+    for (const f of files) {
+      try {
+        const p = path.join(this.booksDir, f);
+        const b = JSON.parse(fs.readFileSync(p, 'utf8'));
+        let reason = null;
+        if (b.status === 'generating') {
+          reason = { kind: 'interrupted', detail: 'Writing was interrupted. Click Continue to finish the book.' };
+        } else if (b.status === 'complete') {
+          const chs = (b.chapters || []).filter(Boolean);
+          const planned = (b.outline || []).length;
+          const stub = chs.find((c) => (c.words || 0) < 15 && (c.content || '').length < 200);
+          if (stub) reason = { kind: 'short-chapter', detail: `Chapter ${stub.number} came back almost empty — click Continue to rewrite it.` };
+          else if (planned && chs.length < planned) reason = { kind: 'incomplete', detail: `Only ${chs.length} of ${planned} chapters were written. Click Continue to finish.` };
+        }
+        if (reason) {
+          // Drop trailing stub chapters so resume rewrites them from that point.
+          if (Array.isArray(b.chapters)) {
+            while (b.chapters.length && ((b.chapters[b.chapters.length - 1].words || 0) < 15) && ((b.chapters[b.chapters.length - 1].content || '').length < 200)) {
+              b.chapters.pop();
+            }
+          }
+          b.status = 'paused';
+          b.pausedReason = { ...reason, message: reason.detail, resumable: true, at: new Date().toISOString() };
+          b.words = (b.chapters || []).reduce((n, c) => n + ((c && c.words) || 0), 0);
+          b.updatedAt = new Date().toISOString();
+          fs.writeFileSync(p, JSON.stringify(b, null, 2));
+        }
+      } catch (_) { /* skip corrupt */ }
     }
   }
 

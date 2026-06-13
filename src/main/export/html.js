@@ -1,9 +1,37 @@
 'use strict';
 
+const fs = require('fs');
 const { marked } = require('marked');
 const { svgToDataUri } = require('../book/aiArt');
+const { cssForBand } = require('../book/ageBands');
+const { tidyProse } = require('../book/typography');
 
 marked.setOptions({ mangle: false, headerIds: true, headerPrefix: 'h-' });
+
+/** Read an on-disk image file into a data URI (for self-contained HTML/PDF). */
+function fileToDataUri(file, mime) {
+  try { return `data:${mime || 'image/png'};base64,` + fs.readFileSync(file).toString('base64'); }
+  catch (_) { return null; }
+}
+
+/** Default bwimg resolver built from a book's on-disk images[]. */
+function defaultResolver(book) {
+  const map = new Map();
+  for (const im of book.images || []) {
+    if (im && im.file && fs.existsSync(im.file)) {
+      const uri = fileToDataUri(im.file, im.mime || 'image/jpeg');
+      if (uri) map.set(im.id, uri);
+    }
+  }
+  return (id) => map.get(id) || null;
+}
+
+/** A figure for an on-disk PNG/JPEG art file. */
+function rasterFigure(file, cls = 'chapter-art') {
+  if (!file || !fs.existsSync(file)) return '';
+  const uri = fileToDataUri(file, 'image/png');
+  return uri ? `<figure class="${cls}"><img src="${uri}" alt="" /></figure>` : '';
+}
 
 /** Wrap a sanitized SVG string as a static <img> figure (no script execution). */
 function svgFigure(svg, cls = 'chapter-art') {
@@ -38,9 +66,10 @@ function applyImageSources(html, resolve) {
   });
 }
 
-/** Convert a single chapter's Markdown to HTML. */
+/** Convert a single chapter's Markdown to HTML. Typography is tidied at render
+ * time too, so even books written before the cleanup land flawless everywhere. */
 function chapterToHtml(markdown, resolveImage) {
-  return applyImageSources(marked.parse(markdown || ''), resolveImage);
+  return applyImageSources(marked.parse(tidyProse(markdown || '')), resolveImage);
 }
 
 const BOOK_CSS = `
@@ -104,14 +133,20 @@ function creditsHtml(book) {
  * @param {(id:string)=>string|null} [opts.resolveImage] map bwimg ids to src
  */
 function bookToHtml(book, opts = {}) {
+  const resolveImage = opts.resolveImage || defaultResolver(book);
+  const chapterArt = (c) => (c.artSvg ? svgFigure(c.artSvg) : c.artFile ? rasterFigure(c.artFile) : '');
   const chapters = (book.chapters || [])
     .filter(Boolean)
     .map(
       (c) =>
-        `<section class="chapter" id="ch-${c.number}">${c.artSvg ? svgFigure(c.artSvg) : ''}${chapterToHtml(c.content, opts.resolveImage)}</section>`
+        `<section class="chapter" id="ch-${c.number}">${chapterArt(c)}${chapterToHtml(c.content, resolveImage)}</section>`
     )
     .join('\n');
-  const coverPage = book.coverSvg ? `<section class="cover-page">${svgFigure(book.coverSvg, 'cover-art')}</section>` : '';
+  const coverPage = book.coverPng
+    ? `<section class="cover-page">${rasterFigure(book.coverPng, 'cover-art')}</section>`
+    : book.coverSvg
+      ? `<section class="cover-page">${svgFigure(book.coverSvg, 'cover-art')}</section>`
+      : '';
 
   const title = `${escapeHtml(book.title)}${book.subtitle ? ` — ${escapeHtml(book.subtitle)}` : ''}`;
   const titlePage = `
@@ -127,7 +162,7 @@ function bookToHtml(book, opts = {}) {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${title}</title>
-<style>${BOOK_CSS}${opts.extraCss || ''}</style>
+<style>${BOOK_CSS}${cssForBand(book.ageBand)}${opts.extraCss || ''}</style>
 </head>
 <body>
 <div class="page">

@@ -6,24 +6,32 @@
  * the subscription entitles the user to.
  */
 
+// Model ids are stable CLI aliases/slugs. We always offer "Default" first,
+// which lets each CLI pick the best model the user's subscription entitles —
+// so it auto-tracks the latest "best Pro" without us hardcoding a preview id
+// that might not be enabled on a given account. The named entries below let a
+// user pin a specific model, newest/highest-quality listed first.
 const CLAUDE_MODELS = [
-  { id: '', label: 'Default (recommended)' },
-  { id: 'sonnet', label: 'Claude Sonnet — balanced quality & speed' },
+  { id: '', label: 'Default — best on your plan (recommended)' },
   { id: 'opus', label: 'Claude Opus — highest quality' },
-  { id: 'haiku', label: 'Claude Haiku — fastest / cheapest' },
+  { id: 'sonnet', label: 'Claude Sonnet — balanced quality & speed' },
+  { id: 'haiku', label: 'Claude Haiku — fastest / lightest' },
 ];
 
 const CODEX_MODELS = [
-  { id: '', label: 'Default (recommended)' },
-  { id: 'gpt-5-codex', label: 'GPT-5 Codex' },
-  { id: 'gpt-5', label: 'GPT-5' },
-  { id: 'o4-mini', label: 'o4-mini — fast' },
+  { id: '', label: 'Default — best on your plan (recommended)' },
+  { id: 'gpt-5.5', label: 'GPT-5.5 — highest quality' },
+  { id: 'gpt-5.4', label: 'GPT-5.4 — balanced' },
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini — fastest' },
+  { id: 'gpt-5-codex', label: 'GPT-5 Codex — code-tuned' },
 ];
 
 const GEMINI_MODELS = [
-  { id: '', label: 'Default (recommended)' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — highest quality' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — fast' },
+  { id: '', label: 'Default — best on your plan (recommended)' },
+  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro — highest quality' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — newest (preview)' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash — fast' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — stable' },
 ];
 
 /** Env vars that force API-key billing; stripped so the CLI uses the
@@ -42,25 +50,31 @@ const PROVIDERS = {
   claude: {
     id: 'claude', label: 'Claude Code', command: 'claude', models: CLAUDE_MODELS,
     install: 'npm i -g @anthropic-ai/claude-code',
+    npmPackage: '@anthropic-ai/claude-code',
+    docsUrl: 'https://docs.anthropic.com/en/docs/claude-code/overview',
     login: {
       args: ['/login'],
-      hint: 'Starts Claude Code sign-in. A browser opens to authorize your Claude (Pro/Max) subscription. If the in-app flow can’t start, run “claude” in a terminal and use /login.',
+      hint: 'A Terminal window opens running “claude /login”. Follow the prompts (a browser may open) to authorize your Claude Pro/Max subscription, then come back and click “I’ve finished”.',
     },
   },
   codex: {
     id: 'codex', label: 'Codex', command: 'codex', models: CODEX_MODELS,
     install: 'npm i -g @openai/codex',
+    npmPackage: '@openai/codex',
+    docsUrl: 'https://developers.openai.com/codex/cli',
     login: {
       args: ['login'],
-      hint: 'Runs “codex login”. A browser opens to sign in with your ChatGPT account.',
+      hint: 'A Terminal window opens running “codex login”. A browser opens to sign in with your ChatGPT account, then come back and click “I’ve finished”.',
     },
   },
   gemini: {
     id: 'gemini', label: 'Gemini', command: 'gemini', models: GEMINI_MODELS,
     install: 'npm i -g @google/gemini-cli',
+    npmPackage: '@google/gemini-cli',
+    docsUrl: 'https://github.com/google-gemini/gemini-cli',
     login: {
       args: [],
-      hint: 'Launches the Gemini CLI sign-in. A browser opens to authorize your Google account (free Gemini tier or Code Assist).',
+      hint: 'A Terminal window opens running “gemini”. When it starts, choose “Login with Google” (or type /auth) and sign in with the Google account on your Gemini AI Pro/Ultra plan — no API key needed. Then come back and click “I’ve finished”.',
     },
   },
 };
@@ -71,7 +85,10 @@ function modelsFor(provider) {
   return (PROVIDERS[provider] || PROVIDERS.claude).models;
 }
 function providerList() {
-  return PROVIDER_IDS.map((id) => ({ id, label: PROVIDERS[id].label }));
+  return PROVIDER_IDS.map((id) => {
+    const p = PROVIDERS[id];
+    return { id, label: p.label, command: p.command, npmPackage: p.npmPackage || null, docsUrl: p.docsUrl || null };
+  });
 }
 function loginFor(provider) {
   return (PROVIDERS[provider] || {}).login || { args: [], hint: '' };

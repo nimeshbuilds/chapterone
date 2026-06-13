@@ -60,3 +60,14 @@ test('resolveChain puts the primary first and de-dupes', () => {
   assert.deepStrictEqual(resolveChain({ provider: 'gemini' }), ['gemini']);
   assert.deepStrictEqual(resolveChain({ provider: 'claude', chain: ['claude'] }), ['claude']);
 });
+
+test('a too-short completion (minWords) triggers fallback to the next engine', async () => {
+  const { ChainEngine } = require('../src/main/cli/chainEngine');
+  const { enforceMinWords } = require('../src/main/cli/spawn');
+  const limited = { id: 'a', model: '', async complete(p, o) { const out = 'usage limit reached'; enforceMinWords(out, o); return out; } };
+  const good = { id: 'b', model: '', async complete() { return 'word '.repeat(300); } };
+  const chain = new ChainEngine([limited, good]);
+  const out = await chain.complete('write a chapter', { minWords: 200 });
+  assert.ok(out.split(/\s+/).length >= 200);
+  assert.strictEqual(chain.id, 'b'); // switched to the working engine
+});

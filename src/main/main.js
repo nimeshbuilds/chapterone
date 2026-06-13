@@ -1,9 +1,15 @@
 'use strict';
 
 const path = require('path');
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeTheme, session } = require('electron');
+const { applyUserPath } = require('./cli/envPath');
 const { Store } = require('./store');
 const { registerIpc } = require('./ipc');
+
+// Critical: a GUI app launched from Finder/Dock gets a minimal PATH and can't
+// see CLIs in ~/.local/bin, Homebrew, nvm, etc. Reconstruct the real shell PATH
+// up front so detection, sign-in, install, and generation can find the CLIs.
+applyUserPath();
 
 let mainWindow = null;
 let store = null;
@@ -12,13 +18,22 @@ let ipcController = null;
 const isDev = process.argv.includes('--dev');
 
 function createWindow() {
+  const isMac = process.platform === 'darwin';
+  const isWin = process.platform === 'win32';
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 820,
     minWidth: 900,
     minHeight: 640,
-    backgroundColor: '#15131c',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // Translucent "Liquid Glass" chrome on macOS (vibrancy) and Mica on Windows.
+    // The renderer paints semi-transparent panels so the material shows through.
+    ...(isMac
+      ? { vibrancy: 'under-window', visualEffectState: 'active', backgroundColor: '#00000000' }
+      : isWin
+        ? { backgroundMaterial: 'mica', backgroundColor: '#00000000' }
+        : { backgroundColor: '#1a1726' }),
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    trafficLightPosition: isMac ? { x: 16, y: 18 } : undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -79,7 +94,16 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  // Follow the system appearance for the in-app light/dark theme.
+  nativeTheme.themeSource = 'system';
+
+  // Allow microphone access (for ElevenLabs voice cloning / recording).
+  const isMic = (p) => p === 'media' || p === 'audioCapture' || p === 'microphone';
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(isMic(permission)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => isMic(permission));
+
   store = new Store(app.getPath('userData'));
+  store.reconcileInterrupted(); // recover books left mid-write by a previous crash/close
   ipcController = registerIpc(store);
   buildMenu();
   createWindow();

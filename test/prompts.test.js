@@ -88,3 +88,65 @@ test('cover and chapter-art prompts request a single SVG', () => {
   assert.match(art, /viewBox/);
   assert.match(art, /NO <script>|no <script>|NO <script/i);
 });
+
+test('kindOf normalizes fiction / non-fiction', () => {
+  const { kindOf } = require('../src/main/book/prompts');
+  assert.strictEqual(kindOf({ kind: 'fiction' }), 'fiction');
+  assert.strictEqual(kindOf({ kind: 'Non-fiction' }), 'nonfiction');
+  assert.strictEqual(kindOf({ kind: 'nonfiction' }), 'nonfiction');
+  assert.strictEqual(kindOf({ kind: '' }), ''); // let the author decide
+  assert.strictEqual(kindOf({}), '');
+});
+
+test('outline prompt carries the chosen category', () => {
+  const { outlinePrompt } = require('../src/main/book/prompts');
+  assert.match(outlinePrompt({ request: 'x', kind: 'fiction' }, {}), /FICTION/);
+  assert.match(outlinePrompt({ request: 'x', kind: 'nonfiction' }, {}), /NON-FICTION/);
+  assert.match(outlinePrompt({ request: 'x' }, {}), /you choose fiction or non-fiction/);
+});
+
+test('chapter prompt states the category when set', () => {
+  const { chapterPrompt } = require('../src/main/book/prompts');
+  const book = { title: 'T', genre: 'Mystery', audience: 'A', premise: 'p', themes: [], kind: 'fiction' };
+  assert.match(chapterPrompt(book, { number: 1, title: 'C', beats: [], summary: 's' }, '', 1500, {}), /FICTION/);
+});
+
+test('masters prompt asks for five authors and a blueprint as JSON', () => {
+  const { mastersPrompt } = require('../src/main/book/prompts');
+  const p = mastersPrompt({ request: 'a heist novel', genre: 'Thriller', kind: 'fiction' });
+  assert.match(p, /FIVE most acclaimed/i);
+  assert.match(p, /blueprint/i);
+  assert.match(p, /"authors"/);
+});
+
+test('influence directive injects the surpass mandate, or nothing when absent', () => {
+  const { influenceDirective } = require('../src/main/book/prompts');
+  const inf = { authors: [{ name: 'A. Writer', signature: 'tight plotting' }], blueprint: 'combine and exceed' };
+  const d = influenceDirective(inf);
+  assert.match(d, /A\. Writer/);
+  assert.match(d, /BETTER than any of these authors/i);
+  assert.strictEqual(influenceDirective(null), '');
+  assert.strictEqual(influenceDirective({ authors: [] }), '');
+});
+
+test('charactersBlock and kidsDirective shape the prompts', () => {
+  const { charactersBlock, kidsDirective, outlinePrompt, chapterPrompt } = require('../src/main/book/prompts');
+  assert.match(charactersBlock({ characters: [{ name: 'Aanya', role: 'age 5, the hero' }] }), /Aanya/);
+  assert.strictEqual(charactersBlock({ characters: [] }), '');
+  assert.match(kidsDirective({ ageBand: '3-5' }), /CHILDREN'S BOOK/);
+  assert.strictEqual(kidsDirective({}), '');
+  const o = outlinePrompt({ request: 'a dragon', ageBand: '3-5', characters: [{ name: 'Mia', role: 'kid' }] }, {});
+  assert.match(o, /CHILDREN'S BOOK/);
+  assert.match(o, /Mia/);
+  const c = chapterPrompt({ title: 'T', genre: 'kids', audience: 'A', premise: 'p', themes: [], ageBand: '3-5', characters: [{ name: 'Mia', role: 'kid' }] }, { number: 1, title: 'C', beats: [], summary: 's' }, '', 45, {});
+  assert.match(c, /CHILDREN'S BOOK/);
+  assert.match(c, /Mia/);
+});
+
+test('Nano Banana image prompts avoid text and name characters', () => {
+  const { coverImagePrompt, sceneImagePrompt } = require('../src/main/book/prompts');
+  const book = { title: 'Dragon', genre: 'adventure', premise: 'brave', ageBand: '3-5', characters: [{ name: 'Mia', role: 'hero' }] };
+  assert.match(coverImagePrompt(book), /Mia/);
+  assert.match(coverImagePrompt(book), /Do NOT render any text/i);
+  assert.match(sceneImagePrompt(book, { title: 'C', summary: 's' }, 'a forest'), /NO text/i);
+});

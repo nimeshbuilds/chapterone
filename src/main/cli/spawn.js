@@ -143,4 +143,19 @@ async function probeVersion(command, versionArgs = ['--version'], timeoutMs = 80
   }
 }
 
-module.exports = { run, probeVersion };
+/**
+ * Throw a fallback-able error if a completion is suspiciously short. A CLI that
+ * has hit a usage/rate limit often returns a tiny message with exit 0 (not an
+ * error), which would otherwise be accepted. Throwing here lets the ChainEngine
+ * fall back to the next provider. Only applied when opts.minWords is set.
+ */
+function enforceMinWords(text, opts) {
+  if (opts && opts.minWords) {
+    const n = (String(text || '').match(/\S+/g) || []).length;
+    if (n < opts.minWords) {
+      throw new Error(`The CLI returned only ${n} words (expected at least ${opts.minWords}). This usually means a usage or rate limit was hit; trying the next engine if one is available.`);
+    }
+  }
+}
+
+module.exports = { run, probeVersion, enforceMinWords };

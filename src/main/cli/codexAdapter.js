@@ -1,6 +1,6 @@
 'use strict';
 
-const { run, probeVersion } = require('./spawn');
+const { run, probeVersion, enforceMinWords } = require('./spawn');
 const { SUBSCRIPTION_SCRUB } = require('./models');
 
 /**
@@ -35,8 +35,8 @@ class CodexAdapter {
         system: 'You are a connectivity probe. Output only what is requested.',
         timeoutMs: 90000,
       });
-      const ok = /READY/i.test(text);
-      return { ok, detail: ok ? 'Authenticated (subscription)' : `Unexpected response: ${text.slice(0, 120)}` };
+      const ok = text.trim().length > 0; // a successful, non-empty completion = authenticated
+      return { ok, detail: ok ? 'Authenticated (subscription)' : 'The CLI returned no output.' };
     } catch (err) {
       return { ok: false, detail: err.message };
     }
@@ -65,7 +65,9 @@ class CodexAdapter {
         `Codex CLI exited with code ${code}: ${stderr.trim() || 'no output'}`
       );
     }
-    return this.extractFinal(stdout).trim();
+    const out = this.extractFinal(stdout).trim();
+    enforceMinWords(out, opts);
+    return out;
   }
 
   extractFinal(raw) {

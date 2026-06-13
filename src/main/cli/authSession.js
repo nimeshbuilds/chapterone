@@ -30,8 +30,6 @@ class AuthSessionManager {
     const id = randomUUID();
     const env = { ...process.env };
     for (const k of opts.scrubEnv || []) delete env[k];
-    // Hint the CLI that it's non-interactive where possible.
-    env.CI = env.CI || '1';
 
     let child;
     try {

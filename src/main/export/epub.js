@@ -5,6 +5,7 @@ const archiver = require('archiver');
 const { randomUUID } = require('crypto');
 const { chapterToHtml, escapeHtml, creditsHtml, BOOK_CSS } = require('./html');
 const { mimeForExt } = require('../book/images');
+const { cssForBand } = require('../book/ageBands');
 
 /** Make marked's HTML output XHTML-valid by self-closing void elements. */
 function toXhtml(html) {
@@ -87,7 +88,7 @@ function generateEpub(book, outPath) {
       { name: 'META-INF/container.xml' }
     );
 
-    archive.append(BOOK_CSS, { name: 'OEBPS/style.css' });
+    archive.append(BOOK_CSS + cssForBand(book.ageBand), { name: 'OEBPS/style.css' });
 
     // Cover (AI-designed) + cover page.
     if (cover) {

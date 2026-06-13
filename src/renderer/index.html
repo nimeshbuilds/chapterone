@@ -3,19 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self';" />
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; script-src 'self';" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Modulagent's Book Writer</title>
+  <meta name="color-scheme" content="light dark" />
+  <title>ChapterOne — Your Personal Book Writer</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div id="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">✒︎</div>
+        <div class="brand-mark">1</div>
         <div class="brand-text">
-          <strong>Modulagent</strong>
-          <span>Book Writer</span>
+          <strong>ChapterOne</strong>
+          <span>Your Personal Book Writer</span>
         </div>
       </div>
       <nav class="nav">
@@ -24,6 +25,9 @@
         </button>
         <button class="nav-item" data-view="create">
           <span class="nav-ico">✨</span> New Book
+        </button>
+        <button class="nav-item" data-view="kids">
+          <span class="nav-ico">🧸</span> Kids Books
         </button>
         <button class="nav-item" data-view="settings">
           <span class="nav-ico">⚙︎</span> Settings

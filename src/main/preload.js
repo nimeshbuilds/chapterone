@@ -18,6 +18,31 @@ contextBridge.exposeInMainWorld('api', {
   // prerequisites
   checkPrerequisites: () => invoke('prereq:check'),
   checkAuth: (provider) => invoke('prereq:auth', provider),
+  getAuthStatus: () => invoke('prereq:authStatus'),
+
+  // Nano Banana images
+  verifyImageKey: () => invoke('images:verify'),
+  estimateImages: (spec) => invoke('images:estimate', spec),
+
+  // ElevenLabs audiobook
+  listVoices: () => invoke('audio:voices'),
+  verifyAudio: () => invoke('audio:verify'),
+  synthChapter: (id, index) => invoke('audio:synth', { id, index }),
+  exportAudio: (id, index) => invoke('audio:export', { id, index }),
+  cloneVoice: (name, samples) => invoke('audio:clone', { name, samples }),
+  onAudioProgress: (cb) => {
+    const listener = (_e, d) => cb(d);
+    ipcRenderer.on('audio:progress', listener);
+    return () => ipcRenderer.removeListener('audio:progress', listener);
+  },
+
+  // one-click CLI install
+  installCli: (provider) => invoke('cli:install', provider),
+  onInstallOutput: (cb) => {
+    const listener = (_e, d) => cb(d);
+    ipcRenderer.on('cli:install:output', listener);
+    return () => ipcRenderer.removeListener('cli:install:output', listener);
+  },
 
   // guided sign-in
   startAuth: (provider) => invoke('auth:start', provider),

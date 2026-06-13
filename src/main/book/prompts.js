@@ -8,6 +8,90 @@
  * quality, not generic filler.
  */
 
+const { bandOf } = require('./ageBands');
+
+/** Non-negotiable typography rules so the prose needs no cleanup tells. */
+const STYLE_RULES =
+  'TYPOGRAPHY (strict): Never use em dashes or en dashes (— or –), and never "--". Use commas, periods, semicolons, or parentheses instead. Do not use horizontal rules or rows of dashes/asterisks as scene breaks. Do not leave stray Markdown symbols (#, *, _, backticks) in the prose. Write clean, professionally punctuated sentences.';
+
+/** Block listing user-supplied characters to feature (personalization). */
+function charactersBlock(specOrBook) {
+  const chars = ((specOrBook && specOrBook.characters) || []).filter((c) => c && c.name && c.name.trim());
+  if (!chars.length) return '';
+  const lines = chars.map((c) => `- ${c.name.trim()}${c.role && c.role.trim() ? ` — ${c.role.trim()}` : ''}`);
+  return [
+    `CHARACTERS TO FEATURE (use these EXACT names and personas; weave them in naturally and keep them consistent throughout — this makes the book personal to the reader):`,
+    ...lines,
+    `Make ${chars[0].name.trim()} the protagonist unless the brief clearly indicates otherwise.`,
+  ].join('\n');
+}
+
+/** Children's-book directive derived from the chosen age band. */
+function kidsDirective(specOrBook) {
+  const band = bandOf(specOrBook);
+  if (!band) return '';
+  return [
+    `CHILDREN'S BOOK — write for ${band.readingLevel}.`,
+    `Reading level & voice: ${band.vocab}.`,
+    `Length & format: about ${band.units} ${band.unit}${band.units === 1 ? '' : 's'} of roughly ${band.wordsPerUnit} words each; each ${band.unit} should stand as a clear beat.`,
+    `Safety (strict): ${band.safety}. No profanity. Keep it wholesome and age-appropriate.`,
+  ].join('\n');
+}
+
+// ---- Nano Banana image prompts ----
+
+/** Consistent illustration style for a book's generated images. */
+function artStyleFor(book) {
+  if (bandOf(book)) {
+    return `a warm, friendly, professional children's-book illustration style — soft rounded shapes, a bright cohesive palette, gentle lighting — kept consistent across the entire book`;
+  }
+  return `a polished editorial illustration that matches the book's mood and ${book.genre || 'genre'}, consistent in style across the book`;
+}
+
+function charactersVisualBlock(book) {
+  const chars = ((book && book.characters) || []).filter((c) => c && c.name);
+  if (!chars.length) return '';
+  return `Depict these recurring characters consistently every time: ${chars.map((c) => `${c.name}${c.role ? ` (${c.role})` : ''}`).join('; ')}.`;
+}
+
+/** Image prompt for a book cover (Nano Banana). */
+function coverImagePrompt(book) {
+  return [
+    `A beautiful book-cover illustration for "${book.title}"${book.subtitle ? ` — ${book.subtitle}` : ''}.`,
+    `Genre/theme: ${book.genre || ''}. Mood: ${book.premise || ''}.`,
+    `${artStyleFor(book)}.`,
+    charactersVisualBlock(book),
+    `Leave tasteful negative space near the top for a title. Do NOT render any text or letters. High quality, no watermark, no borders.`,
+  ].filter(Boolean).join(' ');
+}
+
+/** Image prompt for a single scene/illustration within a chapter (Nano Banana). */
+function sceneImagePrompt(book, chapter, sceneHint) {
+  return [
+    `An illustration for the book "${book.title}".`,
+    `Scene to depict: ${sceneHint || chapter.summary || chapter.title}.`,
+    `${artStyleFor(book)}.`,
+    charactersVisualBlock(book),
+    `A single cohesive illustration with NO text, letters, captions, or watermark.`,
+  ].filter(Boolean).join(' ');
+}
+
+/** Normalize a spec/book's fiction-vs-nonfiction choice. '' = let the author decide. */
+function kindOf(specOrBook) {
+  const raw = String((specOrBook && (specOrBook.kind || specOrBook.category)) || '').toLowerCase();
+  if (raw.startsWith('fic') || raw.includes('novel')) return 'fiction';
+  if (raw.startsWith('non') || raw.includes('nonfiction') || raw.includes('non-fiction')) return 'nonfiction';
+  return '';
+}
+
+/** A directive line for the outline brief describing the chosen category. */
+function kindDirective(spec) {
+  const k = kindOf(spec);
+  if (k === 'fiction') return 'FICTION — write a narrative story with characters, scenes, and an emotional arc. Do NOT write it as an essay or how-to.';
+  if (k === 'nonfiction') return 'NON-FICTION — write an authoritative, real-world book (ideas, explanation, instruction, or true account). Do NOT invent a fictional story.';
+  return '(you choose fiction or non-fiction, whichever best serves the request)';
+}
+
 function bestsellerPersona(genre) {
   const g = genre && genre.trim() ? genre.trim() : 'the requested genre';
   return [
@@ -28,6 +112,7 @@ function clarifyPrompt(spec) {
     `A reader has asked for a book. Here is their request and any preferences they provided.`,
     ``,
     `REQUEST: ${spec.request || '(none given)'}`,
+    `CATEGORY: ${kindOf(spec) || '(unspecified — fiction or non-fiction)'}`,
     `GENRE: ${spec.genre || '(unspecified)'}`,
     `TARGET AUDIENCE: ${spec.audience || '(unspecified)'}`,
     `APPROX LENGTH: ${spec.length || '(unspecified)'}`,
@@ -49,21 +134,76 @@ function clarifyPrompt(spec) {
 }
 
 /**
+ * Step 1.5 — Study the category's very best authors so we can learn from and
+ * then surpass them. Returns JSON { category, authors[], blueprint }.
+ */
+function mastersPrompt(spec) {
+  return [
+    `You are a literary scholar and a bestselling ghostwriter. For the brief below, identify the FIVE most acclaimed, bestselling, and influential authors whose work best matches its category, genre, and ambition.`,
+    ``,
+    `BRIEF`,
+    `- Request: ${spec.request || '(none)'}`,
+    bandOf(spec) ? `- ${kidsDirective(spec)}` : `- Category: ${kindDirective(spec)}`,
+    `- Genre: ${spec.genre || '(infer the best-fitting genre)'}`,
+    `- Audience: ${spec.audience || (bandOf(spec) ? bandOf(spec).label : '(infer)')}`,
+    bandOf(spec) ? `Pick the most acclaimed CHILDREN'S authors for this exact age group.` : '',
+    spec.research
+      ? `You may use web search to ground your picks in real, current bestseller lists and awards. Use ONLY real authors and real, verifiable craft observations.`
+      : `Use only real, well-known authors and accurate craft observations.`,
+    ``,
+    `For each author, distil precisely what makes their writing great and beloved: voice, structure, pacing, characterization or argumentation, sentence craft, signature techniques, and emotional effect on readers.`,
+    `Then write a BLUEPRINT: a concrete plan to combine the strongest techniques of all five — and push beyond them — to produce a book that SURPASSES each of them for this specific brief.`,
+    ``,
+    `Respond with ONLY a JSON object in this exact shape:`,
+    `{`,
+    `  "category": "string",`,
+    `  "authors": [ { "name": "Real Author", "known_for": "1-3 representative works", "signature": "what makes them exceptional and how to apply it to this book" } ],`,
+    `  "blueprint": "4-8 sentences: the synthesis strategy to exceed all five for THIS book"`,
+    `}`,
+  ].filter(Boolean).join('\n');
+}
+
+/** A reusable directive that injects the studied masters + the surpass mandate. */
+function influenceDirective(influences) {
+  if (!influences || !influences.blueprint) return '';
+  const names = (influences.authors || []).map((a) => a && a.name).filter(Boolean).join(', ');
+  return [
+    `MASTERY BENCHMARK — you have studied the very best in this category${names ? `: ${names}` : ''}:`,
+    ...(influences.authors || []).slice(0, 5).map((a) => `- ${a.name}: ${a.signature || a.known_for || ''}`),
+    `WINNING BLUEPRINT (follow it): ${influences.blueprint}`,
+    `YOUR MANDATE: write a book that is demonstrably BETTER than any of these authors could produce for this brief — equal craft, greater originality, sharper execution, deeper emotional payoff. Synthesize their strengths; never imitate, pastiche, or plagiarize any single one.`,
+  ].join('\n');
+}
+
+/**
  * Step 2 — Produce the book concept and full chapter outline. Returns JSON.
  */
-function outlinePrompt(spec, answers) {
+function outlinePrompt(spec, answers, influences) {
   const answerBlock = formatAnswers(answers);
-  const chapterHint = chapterHintForSize(spec);
+  const band = bandOf(spec);
+  const chapterHint = band
+    ? `about ${band.units} ${band.unit}${band.units === 1 ? '' : 's'} (~${band.wordsPerUnit} words each) — call them chapters in the JSON`
+    : chapterHintForSize(spec);
+  const influenceBlock = influenceDirective(influences);
+  const kidsBlock = kidsDirective(spec);
+  const charsBlock = charactersBlock(spec);
   return [
     bestsellerPersona(spec.genre),
+    influenceBlock ? '\n' + influenceBlock : '',
+    kidsBlock ? '\n' + kidsBlock : '',
+    charsBlock ? '\n' + charsBlock : '',
     ``,
     `Design a complete, market-ready book based on the brief below. Think like an author pitching to a major publisher: a killer title, a compelling premise, and a chapter structure with strong narrative/argumentative momentum.`,
     ``,
     `BRIEF`,
     `- Request: ${spec.request || '(none)'}`,
+    band ? `- Category: a children's book — ${band.label}` : `- Category: ${kindDirective(spec)}`,
     `- Genre: ${spec.genre || '(you choose the best fit)'}`,
-    `- Audience: ${spec.audience || '(you choose)'}`,
-    `- Target book size: ${chapterHint}. Plan the number and scope of chapters so the finished book lands in that page range based on what the topic genuinely needs — do not pad.`,
+    `- Audience: ${spec.audience || (band ? band.label : '(you choose)')}`,
+    spec.authorName && spec.authorName.trim()
+      ? `- Author: use exactly "${spec.authorName.trim()}" as the author name; do NOT invent a pen name.`
+      : `- Author: invent a fitting, realistic pen name.`,
+    `- Target book size: ${chapterHint}. Plan the number and scope of chapters so the finished book lands in that range based on what the topic genuinely needs — do not pad.`,
     `- Tone/style: ${spec.tone || '(you choose what sells best)'}`,
     `- Point of view: ${spec.pov || '(you choose)'}`,
     `- Notes: ${spec.notes || '(none)'}`,
@@ -81,6 +221,7 @@ function outlinePrompt(spec, answers) {
     `  "title": "string",`,
     `  "subtitle": "string or empty",`,
     `  "author": "a fitting pen name",`,
+    `  "kind": "fiction | nonfiction",`,
     `  "genre": "string",`,
     `  "audience": "string",`,
     `  "logline": "one irresistible sentence",`,
@@ -101,10 +242,14 @@ function outlinePrompt(spec, answers) {
 function chapterPrompt(book, chapter, prevSummary, targetWords, flags = {}) {
   return [
     bestsellerPersona(book.genre),
+    influenceDirective(book.influences),
+    kidsDirective(book),
+    charactersBlock(book),
     ``,
     `You are writing ONE chapter of the book "${book.title}"${book.subtitle ? ` — ${book.subtitle}` : ''}.`,
     ``,
     `BOOK STYLE GUIDE (obey strictly for consistency): ${book.styleGuide || 'Confident, vivid, immersive prose appropriate to the genre.'}`,
+    kindOf(book) ? `CATEGORY: ${kindOf(book) === 'fiction' ? 'FICTION — narrative storytelling with scene, character, and dialogue.' : 'NON-FICTION — real, accurate, instructive/explanatory writing; no invented story.'}` : '',
     `GENRE: ${book.genre} | AUDIENCE: ${book.audience}`,
     `PREMISE: ${book.premise}`,
     `THEMES: ${(book.themes || []).join(', ')}`,
@@ -122,8 +267,10 @@ function chapterPrompt(book, chapter, prevSummary, targetWords, flags = {}) {
     `- Target roughly ${targetWords} words. Write the FULL chapter prose — no summaries, outlines, or notes.`,
     `- Show, don't tell. Use scene, sensory detail, subtext, and strong verbs. Vary sentence rhythm.`,
     `- Stay in the established voice, tense, and POV. Keep names and facts consistent with the premise.`,
-    `- For non-fiction: use concrete examples, stories, and actionable insight — never generic platitudes.`,
+    `- For non-fiction: use concrete examples, stories, and actionable insight; never generic platitudes.`,
     `- End on a line that pulls the reader into the next chapter.`,
+    `- FLOW (critical): open by connecting seamlessly to where the previous chapter left off — no abrupt restarts or recaps. Maintain one consistent voice, tense, and rhythm; make every paragraph follow naturally from the last with smooth transitions. The finished book must read as a single, masterful, cover-to-cover work by one brilliant author, not a series of disconnected sections.`,
+    `- ${STYLE_RULES}`,
     flags.illustrate ? imageInstruction() : '',
     ``,
     `Output format: Markdown. Start with "# ${chapter.title}" as the chapter heading, then the prose. Do NOT include the word "Chapter N" unless it reads naturally. Do NOT add author commentary, disclaimers, or word counts.`,
@@ -162,6 +309,7 @@ function editPrompt(book, chapter, draft, flags = {}) {
   return [
     `You are a ruthless, world-class developmental editor and line editor for #1 bestsellers in ${book.genre || 'this genre'}.`,
     `Revise the chapter below into its strongest possible final form. This book is sold to paying readers — every line must earn its place.`,
+    influenceDirective(book.influences),
     ``,
     `STYLE GUIDE (must hold): ${book.styleGuide || 'vivid, immersive, consistent voice'}`,
     `PREMISE: ${book.premise}`,
@@ -171,6 +319,7 @@ function editPrompt(book, chapter, draft, flags = {}) {
     `- Improve pacing and flow; cut filler, clichés, repetition, and throat-clearing.`,
     `- Deepen sensory detail, subtext, and character/idea specificity. Strengthen weak verbs.`,
     `- Fix continuity, tense, POV and factual consistency. Keep all names/facts intact.`,
+    `- ${STYLE_RULES}`,
     `- Preserve the chapter's events, length, and any "![caption](image-search: …)" or "![caption](bwimg:…)" image lines exactly.`,
     flags.research ? `- You may use web search to verify any real-world facts before finalizing; never invent sources.` : '',
     ``,
@@ -291,6 +440,15 @@ function lengthToChapterHint(length) {
 
 module.exports = {
   bestsellerPersona,
+  kindOf,
+  kindDirective,
+  kidsDirective,
+  charactersBlock,
+  coverImagePrompt,
+  sceneImagePrompt,
+  artStyleFor,
+  mastersPrompt,
+  influenceDirective,
   clarifyPrompt,
   outlinePrompt,
   chapterPrompt,

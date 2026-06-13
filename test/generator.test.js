@@ -44,7 +44,9 @@ class FakeEngine {
     }
     if (/WRITE CHAPTER/.test(prompt)) {
       const m = prompt.match(/WRITE CHAPTER (\d+): "([^"]+)"/);
-      return `# ${m[2]}\n\nThis is chapter ${m[1]} prose with several words here.`;
+      // A realistic-length chapter (above the generator's too-short floor).
+      const body = `This is chapter ${m[1]} prose with several words here. `.repeat(40);
+      return `# ${m[2]}\n\n${body.trim()}`;
     }
     if (/Summarize the following chapter/.test(prompt)) {
       return 'A short recap.';
@@ -138,4 +140,25 @@ test('generate can be aborted', async () => {
     gen.generate({ request: 'x' }, {}, { signal: ac.signal }),
     /cancelled|Aborted/i
   );
+});
+
+test('a too-short chapter pauses the book instead of falsely completing', async () => {
+  const engine = new FakeEngine();
+  engine.complete = async (prompt) => {
+    if (/market-ready book/.test(prompt)) {
+      return JSON.stringify({ title: 'T', author: 'A', premise: 'p', styleGuide: 's', chapters: [{ number: 1, title: 'One', summary: 's', beats: [] }] });
+    }
+    if (/WRITE CHAPTER/.test(prompt)) return '# One\n\nToo short.'; // ~2 words of body
+    return '{}';
+  };
+  const gen = new BookGenerator(engine);
+  let last = null;
+  await assert.rejects(
+    gen.generate({ request: 'x', polish: false, research: false }, {}, { onChapter: (b) => { last = b; } }),
+    /too short/i
+  );
+  assert.ok(last);
+  assert.strictEqual(last.status, 'paused');
+  assert.strictEqual(last.pausedReason.kind, 'short-chapter');
+  assert.strictEqual(last.chapters.filter(Boolean).length, 0); // the stub was NOT kept
 });

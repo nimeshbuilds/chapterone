@@ -1,7 +1,7 @@
 {
-  "name": "modulagent-book-writer",
+  "name": "chapterone",
   "version": "0.1.0",
-  "description": "Modulagent's Book Writer — generate professional, bestseller-quality books with the Claude Code or Codex CLI on your own subscription, research-grounded with royalty-free images, read them in-app, export to Kindle (EPUB/PDF), and send to your Kindle.",
+  "description": "ChapterOne — Your Personal Book Writer. Generate professional, bestseller-quality books with the Claude Code, Codex, or Gemini CLI on your own subscription, research-grounded with royalty-free images, read them in-app, export to Kindle (EPUB/PDF), and send to your Kindle.",
   "author": {
     "name": "Modulagent"
   },
@@ -13,9 +13,11 @@
     "test": "node --test",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win",
-    "dist:all": "electron-builder -mw"
+    "dist:mac": "electron-builder --mac --universal",
+    "dist:mac:arm64": "electron-builder --mac --arm64",
+    "dist:mac:x64": "electron-builder --mac --x64",
+    "dist:win": "electron-builder --win --x64 --arm64",
+    "dist:all": "npm run dist:mac && npm run dist:win"
   },
   "dependencies": {
     "archiver": "^6.0.1",
@@ -27,8 +29,8 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.modulagent.bookwriter",
-    "productName": "Modulagent's Book Writer",
+    "appId": "com.modulagent.chapterone",
+    "productName": "ChapterOne",
     "copyright": "Copyright © 2026 Modulagent",
     "files": [
       "src/**/*",
@@ -42,12 +44,14 @@
     },
     "mac": {
       "category": "public.app-category.productivity",
-      "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
-      ],
+      "target": ["dmg", "zip"],
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "ChapterOne records short voice samples so you can narrate your books in your own cloned voice."
+      }
     },
     "dmg": {
       "title": "${productName} ${version}",
@@ -58,7 +62,7 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        { "target": "nsis", "arch": ["x64", "arm64"] }
       ]
     },
     "nsis": {
@@ -67,7 +71,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Modulagent's Book Writer"
+      "shortcutName": "ChapterOne"
     },
     "linux": {
       "target": ["AppImage"],

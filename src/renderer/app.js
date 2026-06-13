@@ -10,7 +10,8 @@ const state = {
   view: 'library',
   settings: null,
   prereq: null,
-  models: { claude: [], codex: [] },
+  authStatus: null, // { claude:{installed,signedIn}, codex:{...}, gemini:{...} }
+  models: { claude: [], codex: [], gemini: [], providers: [], imageModels: [], audioModels: [] },
   draftSpec: null,
   clarify: null,
   job: null,
@@ -60,14 +61,49 @@ async function updateSettings(partial) {
   return state.settings;
 }
 
+// ---------- audio devices (mic / speaker) ----------
+const audioPrefs = {
+  get speaker() { return localStorage.getItem('bw.audio.speaker') || ''; },
+  set speaker(v) { localStorage.setItem('bw.audio.speaker', v || ''); },
+  get mic() { return localStorage.getItem('bw.audio.mic') || ''; },
+  set mic(v) { localStorage.setItem('bw.audio.mic', v || ''); },
+};
+async function listDevices(kind) {
+  try { return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === kind); }
+  catch (_) { return []; }
+}
+async function applySink(audioEl) {
+  const id = audioPrefs.speaker;
+  if (id && audioEl && typeof audioEl.setSinkId === 'function') { try { await audioEl.setSinkId(id); } catch (_) { /* ignore */ } }
+}
+/** Decode a base64 data URI into a Blob (more reliable for <audio> than a giant data: src). */
+function dataUriToBlob(dataUri) {
+  const c = dataUri.indexOf(',');
+  const mime = (dataUri.slice(0, c).match(/data:([^;]+)/) || [])[1] || 'audio/mpeg';
+  const bin = atob(dataUri.slice(c + 1));
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+/** A device <select> for speakers or mics; fills labels (needs prior permission for labels). */
+function deviceSelect(kind, current, onChange, firstLabel) {
+  const sel = h('select', { class: 'reader-select' }, h('option', { value: '' }, firstLabel));
+  listDevices(kind).then((devs) => {
+    devs.forEach((d, i) => sel.append(h('option', { value: d.deviceId, selected: d.deviceId === current ? 'selected' : false }, d.label || `${kind === 'audioinput' ? 'Microphone' : 'Speaker'} ${i + 1}`)));
+  });
+  sel.addEventListener('change', () => onChange(sel.value));
+  return sel;
+}
+
 // ---------- navigation ----------
 async function go(view, arg) {
   if (view !== 'reader' && state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
   if (view !== 'progress' && state.progressTimer) { clearInterval(state.progressTimer); state.progressTimer = null; }
   state.view = view;
-  setActiveNav(['library', 'create', 'settings'].includes(view) ? view : 'library');
+  setActiveNav(['library', 'create', 'kids', 'settings'].includes(view) ? view : 'library');
   if (view === 'library') return renderLibrary();
   if (view === 'create') return renderCreate();
+  if (view === 'kids') return renderKidsCreate();
   if (view === 'clarify') return renderClarify();
   if (view === 'progress') return renderProgress();
   if (view === 'reader') return renderReader(arg);
@@ -85,20 +121,48 @@ async function refreshPrereq() {
   const chain = currentChain();
   const chainNote = chain.length > 1 ? ` +${chain.length - 1} fallback` : '';
 
+  const auth = state.authStatus && state.authStatus[provider];
+
   if (active && active.found) {
-    pill.className = 'pill ok';
-    pill.textContent = `● ${name} · subscription${chainNote}`;
-    banner.classList.add('hidden');
+    if (!auth) {
+      pill.className = 'pill'; // unknown yet — auth probe running
+      pill.textContent = `● ${name} · checking sign-in…`;
+      banner.classList.add('hidden');
+    } else if (auth.signedIn) {
+      pill.className = 'pill ok';
+      pill.textContent = `● ${name} · signed in${chainNote}`;
+      banner.classList.add('hidden');
+    } else {
+      pill.className = 'pill bad';
+      pill.textContent = `● ${name} · not signed in`;
+      banner.innerHTML = '';
+      banner.append(
+        h('span', { class: 'grow' }, `⚠️ ${name} is installed but not signed in. Sign in with your subscription to start writing.`),
+        h('button', { class: 'btn btn-gold btn-sm', onClick: () => openAuthModal(provider) }, `🔑 Sign in to ${name}`),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheckAuth() }, 'Re-check'),
+        h('button', { class: 'btn btn-ghost btn-sm', title: 'Hide until next check', onClick: () => banner.classList.add('hidden') }, '✕'));
+      banner.classList.remove('hidden');
+    }
   } else {
     pill.className = 'pill bad';
     pill.textContent = `● ${name} not found`;
-    const cmd = (state.settings && state.settings[provider + 'Command']) || provider;
+    const others = (state.models.providers || [])
+      .map((p) => p.id)
+      .filter((id) => id !== provider && state.prereq && state.prereq[id] && state.prereq[id].found);
     banner.innerHTML = '';
+    const msg = others.length
+      ? `${name} isn’t set up. Sign in below, or use an engine you already have:`
+      : `No AI engine is ready yet. Install any one of Claude Code, Codex, or Gemini and sign in with your own subscription — ChapterOne uses whichever you pick.`;
+    banner.append(h('span', { class: 'grow' }, `⚠️ ${msg}`));
+    for (const id of others) {
+      banner.append(h('button', { class: 'btn btn-gold btn-sm', onClick: () => switchProvider(id) }, `Use ${providerLabel(id)}`));
+    }
+    const meta = providerMeta(provider);
     banner.append(
-      h('span', {}, `⚠️ The ${name} CLI (“${cmd}”) was not found, or you’re not signed in. Install it and sign in with your subscription.`),
-      h('button', { class: 'btn btn-gold btn-sm', onClick: () => openAuthModal(provider) }, '🔑 Sign in'),
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check'),
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings'));
+      meta.npmPackage ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => openInstallModal(provider) }, `⬇ Install ${name}`) : null,
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(provider) }, `🔑 Sign in to ${name}`),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings'),
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Hide until next check', onClick: () => banner.classList.add('hidden') }, '✕'));
     banner.classList.remove('hidden');
   }
 }
@@ -106,7 +170,23 @@ async function recheck() {
   await refreshPrereq();
   if (state.view === 'create') renderCreate();
   if (state.view === 'settings') renderSettings();
+  refreshAuthStatus(); // background probe of sign-in state
 }
+/** Background probe of which installed CLIs are actually signed in. */
+async function refreshAuthStatus() {
+  try { state.authStatus = await api.getAuthStatus(); }
+  catch (_) { state.authStatus = null; }
+  await refreshPrereq();
+  if (state.view === 'settings') renderSettings();
+  if (state.view === 'create') renderCreate();
+}
+async function recheckAuth() {
+  toast('Checking sign-in…');
+  state.authStatus = null;
+  await refreshPrereq();
+  await refreshAuthStatus();
+}
+function authOf(id) { return (state.authStatus && state.authStatus[id]) || null; }
 
 // ---------- shared engine controls ----------
 function providerLabel(id) {
@@ -198,25 +278,36 @@ function chainBuilder() {
 }
 
 /** Off / AI art / Stock photos segmented control. */
+function hasImageKey() {
+  return !!(state.settings.images && state.settings.images.geminiApiKey && state.settings.images.geminiApiKey.trim());
+}
 function imageModeControl() {
   const mode = state.settings.imageMode || 'off';
   const seg = h('div', { class: 'seg' });
   const opts = [
     { v: 'off', l: 'No images' },
-    { v: 'ai', l: '🎨 AI-designed art' },
+    { v: 'nano', l: '🍌 Nano Banana (real AI art)' },
+    { v: 'ai', l: '🎨 Vector art' },
     { v: 'stock', l: '📷 Stock photos' },
   ];
   for (const o of opts) {
     seg.append(h('button', { class: mode === o.v ? 'active' : '', onClick: () => updateSettings({ imageMode: o.v }).then(renderEngineBarInPlace) }, o.l));
   }
-  return h('div', { class: 'engine-col grow' },
-    h('span', { class: 'mini-label' }, 'Cover & illustrations (one per chapter)'),
-    seg,
-    h('span', { class: 'hint' }, mode === 'ai'
+  const nanoNeedsKey = mode === 'nano' && !hasImageKey();
+  const hint = mode === 'nano'
+    ? (hasImageKey()
+        ? 'Real, theme-matched illustrations generated with Google’s Nano Banana (Gemini image API). ~$0.13/image with the Pro model; density adapts to a kids book’s age. A cost estimate is shown before writing.'
+        : 'Nano Banana needs your Gemini API key (image-only, separate from your CLI subscription).')
+    : mode === 'ai'
       ? 'Your selected engine designs a bespoke vector cover and a chapter illustration that match the book’s theme — copyright-free.'
       : mode === 'stock'
         ? 'Sources high-resolution, openly-licensed photos from Openverse, with a credits page.'
-        : 'No images will be added.'));
+        : 'No images will be added.';
+  return h('div', { class: 'engine-col grow' },
+    h('span', { class: 'mini-label' }, 'Cover & illustrations'),
+    seg,
+    h('span', { class: 'hint' }, hint),
+    nanoNeedsKey ? h('button', { class: 'btn btn-gold btn-sm', style: 'margin-top:6px;align-self:flex-start', onClick: () => go('settings') }, '🔑 Add Gemini API key in Settings') : null);
 }
 
 function engineBar() {
@@ -224,7 +315,12 @@ function engineBar() {
   const provider = s.provider || 'claude';
   const seg = h('div', { class: 'seg' });
   for (const p of (state.models.providers || [])) {
-    seg.append(h('button', { class: provider === p.id ? 'active' : '', onClick: () => switchProvider(p.id) }, p.label));
+    const found = !!(state.prereq && state.prereq[p.id] && state.prereq[p.id].found);
+    const a = authOf(p.id);
+    const signedIn = !!(a && a.signedIn);
+    const cls = [provider === p.id ? 'active' : '', signedIn ? 'found' : (found ? 'warn' : '')].filter(Boolean).join(' ');
+    const title = signedIn ? `${p.label}: signed in` : (found ? `${p.label}: installed, not signed in` : `${p.label}: not installed`);
+    seg.append(h('button', { class: cls, title, onClick: () => switchProvider(p.id) }, h('span', { class: 'sdot' }), p.label));
   }
   const bar = h('div', { class: 'engine-bar card', id: 'engine-bar' },
     h('div', { class: 'engine-row' },
@@ -259,58 +355,119 @@ async function switchProvider(p) {
 
 // ---------- guided sign-in modal ----------
 function openAuthModal(provider) {
-  let sessionId = null;
-  let unsub = null;
-  let finished = false;
+  const name = providerLabel(provider);
+  const status = h('p', { class: 'hint' }, 'Opening Terminal…');
+  const cmdLine = h('pre', { class: 'auth-log' }, '');
+  let poll = null;
+  let done = false;
+  const close = () => { if (poll) clearInterval(poll); overlay.remove(); };
 
-  const log = h('pre', { class: 'auth-log' }, '');
-  const append = (t) => { log.textContent += t; log.scrollTop = log.scrollHeight; };
-  const input = h('input', { placeholder: 'Paste a verification code here (if asked), then Send', onkeydown: (e) => { if (e.key === 'Enter') sendInput(); } });
-  const urlLine = h('div', { class: 'hint' }, '');
-
-  const close = () => {
-    if (unsub) unsub();
-    if (sessionId && !finished) api.cancelAuth(sessionId).catch(() => {});
-    overlay.remove();
-  };
-  async function sendInput() {
-    if (!sessionId || !input.value.trim()) return;
-    await api.authInput(sessionId, input.value);
-    append(`> ${input.value}\n`);
-    input.value = '';
+  async function succeed() {
+    if (done) return; done = true;
+    if (poll) clearInterval(poll);
+    toast(`✅ Signed in to ${name}.`, 'ok');
+    close();
+    await recheckAuth();
   }
 
+  async function recheck(btn) {
+    if (btn) { btn.textContent = 'Checking…'; btn.setAttribute('disabled', 'true'); }
+    const res = await api.checkAuth(provider).catch((e) => ({ ok: false, detail: e.message }));
+    if (res.ok) await succeed();
+    else {
+      toast(`Not signed in yet: ${res.detail || 'finish sign-in in Terminal first'}`, 'bad');
+      if (btn) { btn.textContent = '✓ I’ve finished — re-check'; btn.removeAttribute('disabled'); }
+    }
+  }
+
+  // Auto-detect: poll sign-in every few seconds so the user doesn't have to
+  // click anything once they finish in Terminal/browser.
+  let attempts = 0;
+  poll = setInterval(async () => {
+    if (done || attempts++ > 60) { if (attempts > 60 && poll) clearInterval(poll); return; }
+    const res = await api.checkAuth(provider).catch(() => ({ ok: false }));
+    if (res.ok) await succeed();
+  }, 4000);
+
+  const recheckBtn = h('button', { class: 'btn btn-gold btn-sm', onClick: (e) => recheck(e.currentTarget) }, '✓ I’ve finished — re-check');
   const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
     h('div', { class: 'modal' },
-      h('h2', { style: 'margin:0 0 6px' }, `Sign in to ${providerLabel(provider)}`),
-      h('p', { class: 'hint', id: 'auth-hint' }, 'Starting sign-in…'),
-      urlLine,
-      log,
-      h('div', { class: 'auth-input-row' }, input, h('button', { class: 'btn btn-ghost btn-sm', onClick: sendInput }, 'Send')),
+      h('h2', { style: 'margin:0 0 6px' }, `Sign in to ${name}`),
+      status,
+      h('p', { class: 'hint' }, 'A Terminal window opens running the sign-in command (a browser may open to authorize). Finish it there — ChapterOne detects success automatically. You can also click “I’ve finished” to check now.'),
+      cmdLine,
       h('div', { class: 'btn-row' },
-        h('button', { class: 'btn btn-gold btn-sm', onClick: async () => {
-          const res = await api.checkAuth(provider).catch((e) => ({ ok: false, detail: e.message }));
-          if (res.ok) { toast('✅ Signed in.', 'ok'); finished = true; close(); await refreshPrereq(); if (state.view === 'settings') renderSettings(); }
-          else toast(`Not signed in yet: ${res.detail || ''}`, 'bad');
-        } }, '✓ I’ve finished — re-check'),
+        recheckBtn,
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => api.startAuth(provider).catch(() => {}) }, '↺ Reopen Terminal'),
         h('button', { class: 'btn btn-ghost btn-sm', onClick: close }, 'Close'))));
   document.body.append(overlay);
 
-  unsub = api.onAuthEvents({
-    onOutput: (d) => { if (d.provider === provider) append(d.text); },
-    onUrl: (d) => { if (d.provider === provider) urlLine.textContent = `Opened sign-in page in your browser: ${d.url}`; },
-    onClosed: async (d) => {
-      if (d.provider !== provider) return;
-      finished = true;
-      append(`\n[sign-in process ended, code ${d.code}]\n`);
-      if (d.authed) { toast('✅ Signed in.', 'ok'); close(); await refreshPrereq(); if (state.view === 'settings') renderSettings(); }
-      else append('If a browser step is still open, finish it and click “I’ve finished — re-check”.\n');
-    },
-  });
-
   api.startAuth(provider)
-    .then((info) => { sessionId = info.sessionId; $('#auth-hint').textContent = info.hint || 'Follow the prompts to authorize your subscription.'; })
-    .catch((err) => append(`Could not start sign-in: ${err.message}\n`));
+    .then((info) => {
+      status.textContent = info.opened
+        ? 'Terminal opened. Finish sign-in there, then click “I’ve finished”.'
+        : 'Run this command in your terminal to sign in, then click “I’ve finished”:';
+      cmdLine.textContent = `$ ${info.command}\n\n${info.hint || ''}`;
+    })
+    .catch((err) => { status.textContent = `Could not open Terminal: ${err.message}. Run the command below yourself:`; });
+}
+
+// ---------- one-click CLI install ----------
+function providerMeta(id) { return (state.models.providers || []).find((p) => p.id === id) || {}; }
+
+function openInstallModal(provider) {
+  const label = providerLabel(provider);
+  const meta = providerMeta(provider);
+  const npmOk = !!(state.prereq && state.prereq.npm && state.prereq.npm.found);
+  let unsub = null;
+  let done = false;
+
+  const log = h('pre', { class: 'auth-log' }, '');
+  const append = (t) => { log.textContent += t; log.scrollTop = log.scrollHeight; };
+  const startBtn = h('button', { class: 'btn btn-primary btn-sm', onClick: run }, `⬇ Install ${label}`);
+
+  const close = () => { if (unsub) unsub(); overlay.remove(); };
+  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
+    h('div', { class: 'modal' },
+      h('h2', { style: 'margin:0 0 6px' }, `Install ${label}`),
+      h('p', { class: 'hint' }, meta.npmPackage
+        ? `This runs “npm install -g ${meta.npmPackage}”, then verifies it’s on your PATH. Afterwards you sign in with your own ${label} subscription — ChapterOne never uses an API key.`
+        : `No automatic installer is available for ${label}.`),
+      log,
+      h('div', { class: 'btn-row' }, startBtn,
+        meta.docsUrl ? h('a', { href: meta.docsUrl, class: 'btn btn-ghost btn-sm' }, 'Install docs') : null,
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: close }, 'Close'))));
+  document.body.append(overlay);
+
+  if (!npmOk) {
+    append('npm was not found on your PATH.\nChapterOne installs CLIs with npm, so install Node.js (which bundles npm) from https://nodejs.org first, then reopen this.\n');
+    startBtn.setAttribute('disabled', 'true');
+  }
+
+  async function run() {
+    if (done) return;
+    startBtn.setAttribute('disabled', 'true');
+    startBtn.textContent = 'Installing…';
+    unsub = api.onInstallOutput((d) => { if (d.provider === provider) append(d.text); });
+    try {
+      const res = await api.installCli(provider);
+      done = true;
+      if (res && res.found) {
+        startBtn.textContent = 'Installed ✓';
+        toast(`✅ ${label} installed. Now sign in.`, 'ok');
+        await refreshPrereq();
+        if (state.view === 'settings') renderSettings();
+        else if (state.view === 'create') renderCreate();
+      } else {
+        startBtn.removeAttribute('disabled'); startBtn.textContent = 'Retry';
+        toast(`${label} install finished, but it’s still not detected.`, 'bad');
+      }
+    } catch (err) {
+      append(`\nError: ${err.message}\n`);
+      startBtn.removeAttribute('disabled'); startBtn.textContent = 'Retry install';
+      toast(`Install failed: ${err.message}`, 'bad');
+    }
+  }
 }
 
 // ---------- LIBRARY ----------
@@ -375,6 +532,42 @@ function sizeSelect(selected) {
   for (const o of opts) s.append(h('option', { value: o.v, selected: o.v === selected ? 'selected' : false }, o.l));
   return s;
 }
+function charactersEditor(values = []) {
+  const list = h('div', { class: 'chars-list' });
+  const addRow = (c = {}) => {
+    const row = h('div', { class: 'char-row' },
+      h('input', { class: 'char-name', placeholder: 'Name (e.g. Aanya)', value: c.name || '' }),
+      h('input', { class: 'char-role', placeholder: 'Who they are (e.g. age 5, the brave hero who loves dinosaurs)', value: c.role || '' }),
+      h('button', { class: 'icon-btn danger', type: 'button', title: 'Remove', onClick: () => row.remove() }, '✕'));
+    list.append(row);
+  };
+  (values || []).forEach((c) => addRow(c));
+  return h('div', { class: 'chars-editor', id: 'chars-editor' },
+    h('span', { class: 'mini-label' }, 'Characters (optional) — make it personal'),
+    h('span', { class: 'hint', style: 'margin:0 0 8px' }, 'Add real people (your child, family, friends) and who they are. The book will star them by name.'),
+    list,
+    h('button', { class: 'btn btn-ghost btn-sm', type: 'button', style: 'align-self:flex-start;margin-top:8px', onClick: () => addRow({}) }, '+ Add character'));
+}
+function readCharacters() {
+  const out = [];
+  document.querySelectorAll('#chars-editor .char-row').forEach((r) => {
+    const name = r.querySelector('.char-name').value.trim();
+    const role = r.querySelector('.char-role').value.trim();
+    if (name) out.push({ name, role });
+  });
+  return out;
+}
+
+function kindSelect(selected) {
+  const opts = [
+    { v: '', l: 'Let the author decide' },
+    { v: 'fiction', l: '📖 Fiction — a story' },
+    { v: 'nonfiction', l: '📘 Non-fiction — real / how-to' },
+  ];
+  const s = h('select', { id: 'f-kind' });
+  for (const o of opts) s.append(h('option', { value: o.v, selected: o.v === (selected || '') ? 'selected' : false }, o.l));
+  return s;
+}
 function specForm(values = {}) {
   const v = values;
   return h('div', { class: 'card' },
@@ -382,6 +575,8 @@ function specForm(values = {}) {
       h('span', {}, 'What do you want to read? Describe the book you wish existed.'),
       h('textarea', { id: 'f-request', placeholder: 'e.g. A slow-burn cozy mystery set in a snowbound Scottish bakery, with a sharp-witted amateur sleuth and a cast of lovable suspects.' }, v.request || '')),
     h('div', { class: 'row' },
+      h('label', { class: 'field' }, h('span', {}, 'Type'),
+        kindSelect(v.kind)),
       h('label', { class: 'field' }, h('span', {}, 'Genre'),
         h('input', { id: 'f-genre', placeholder: 'Mystery, Sci-Fi, Self-help…', value: v.genre || '' })),
       h('label', { class: 'field' }, h('span', {}, 'Target audience'),
@@ -390,23 +585,29 @@ function specForm(values = {}) {
       h('label', { class: 'field' }, h('span', {}, 'Book size'),
         sizeSelect(v.size || (state.settings && state.settings.size) || 'medium')),
       h('label', { class: 'field' }, h('span', {}, 'Tone / style'),
-        h('input', { id: 'f-tone', placeholder: 'Warm & witty, dark & gritty…', value: v.tone || '' }))),
+        h('input', { id: 'f-tone', placeholder: 'Warm & witty, dark & gritty…', value: v.tone || '' })),
+      h('label', { class: 'field' }, h('span', {}, 'Author name (optional)'),
+        h('input', { id: 'f-author', placeholder: 'Your name, or blank for a pen name', value: v.authorName != null ? v.authorName : ((state.settings && state.settings.authorName) || '') }))),
     h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'Point of view (optional)'),
         h('input', { id: 'f-pov', placeholder: 'First person, third limited…', value: v.pov || '' })),
       h('label', { class: 'field' }, h('span', {}, 'Anything else? (optional)'),
-        h('input', { id: 'f-notes', placeholder: 'Must-haves, inspirations, no-gos…', value: v.notes || '' }))));
+        h('input', { id: 'f-notes', placeholder: 'Must-haves, inspirations, no-gos…', value: v.notes || '' }))),
+    charactersEditor(v.characters));
 }
 function readSpec() {
   const s = state.settings;
   return {
     request: $('#f-request').value.trim(),
+    kind: $('#f-kind').value,
     genre: $('#f-genre').value.trim(),
     audience: $('#f-audience').value.trim(),
     size: $('#f-size').value,
     tone: $('#f-tone').value.trim(),
     pov: $('#f-pov').value.trim(),
     notes: $('#f-notes').value.trim(),
+    authorName: $('#f-author') ? $('#f-author').value.trim() : '',
+    characters: readCharacters(),
     model: s[modelField(s.provider || 'claude')] || '',
     research: !!s.research,
     imageMode: s.imageMode || 'off',
@@ -429,6 +630,65 @@ function renderCreate() {
   if (!ready) $('#btn-clarify').setAttribute('disabled', 'true');
 }
 
+// ---------- KIDS BOOKS ----------
+const KIDS_AGES = [
+  ['1-2', 'Ages 1–2 · Baby / Board book'],
+  ['3-5', 'Ages 3–5 · Picture book'],
+  ['6-8', 'Ages 6–8 · Early reader'],
+  ['9-12', 'Ages 9–12 · Middle grade'],
+  ['13-16', 'Ages 13–16 · Young adult'],
+  ['17-18', 'Ages 17–18 · Upper YA'],
+];
+function renderKidsCreate() {
+  const provider = (state.settings && state.settings.provider) || 'claude';
+  const ready = state.prereq && state.prereq[provider] && state.prereq[provider].found;
+  const v = state.kidsDraft || {};
+  const head = h('div', { class: 'page-head' },
+    h('h1', {}, '🧸 New Kids Book'),
+    h('p', {}, 'Pick the child’s age — fonts, length, vocabulary, safety, and illustration density all adapt. Add their name to make them the hero.'));
+
+  const ageSel = h('select', { id: 'k-age' });
+  KIDS_AGES.forEach(([val, label]) => ageSel.append(h('option', { value: val, selected: (v.ageBand || '6-8') === val ? 'selected' : false }, label)));
+
+  const form = h('div', { class: 'card' },
+    h('label', { class: 'field' }, h('span', {}, 'What should the story be about?'),
+      h('textarea', { id: 'k-request', placeholder: 'e.g. A shy little dragon who is scared of the dark — until she discovers her fire can light up the whole forest.' }, v.request || '')),
+    h('div', { class: 'row' },
+      h('label', { class: 'field' }, h('span', {}, 'Child’s age'), ageSel),
+      h('label', { class: 'field' }, h('span', {}, 'Kind of story (optional)'),
+        h('input', { id: 'k-genre', placeholder: 'Bedtime, adventure, learning, fairy tale…', value: v.genre || '' })),
+      h('label', { class: 'field' }, h('span', {}, 'Author name (optional)'),
+        h('input', { id: 'k-author', placeholder: 'Your name, or blank for a pen name', value: v.authorName != null ? v.authorName : ((state.settings && state.settings.authorName) || '') }))),
+    charactersEditor(v.characters));
+
+  const actions = h('div', { class: 'btn-row' },
+    h('button', { class: 'btn btn-primary', id: 'btn-kids-go', onClick: onKidsGenerate }, ready ? '✨ Write the kids book' : 'CLI not ready'));
+
+  mount(h('div', { class: 'view' }, head, engineBar(), form, actions));
+  if (!ready) $('#btn-kids-go').setAttribute('disabled', 'true');
+}
+function readKidsSpec() {
+  const s = state.settings;
+  return {
+    request: $('#k-request').value.trim(),
+    ageBand: $('#k-age').value,
+    genre: $('#k-genre').value.trim(),
+    authorName: $('#k-author') ? $('#k-author').value.trim() : '',
+    characters: readCharacters(),
+    isKids: true,
+    model: s[modelField(s.provider || 'claude')] || '',
+    research: !!s.research,
+    imageMode: s.imageMode || 'off',
+    polish: s.polish !== false,
+  };
+}
+function onKidsGenerate() {
+  const spec = readKidsSpec();
+  if (!spec.request) { toast('Tell me what the story should be about first.', 'bad'); return; }
+  state.kidsDraft = spec;
+  beginGeneration(spec, {});
+}
+
 async function onClarify() {
   const spec = readSpec();
   if (!spec.request) { toast('Describe what you want to read first.', 'bad'); return; }
@@ -439,7 +699,7 @@ async function onClarify() {
   try {
     state.clarify = await api.clarify(spec);
     if (state.clarify.needsClarification && state.clarify.questions.length) go('clarify');
-    else startGeneration(spec, {});
+    else beginGeneration(spec, {});
   } catch (err) {
     toast(`Could not reach the model: ${err.message}`, 'bad');
     btn.removeAttribute('disabled');
@@ -450,7 +710,7 @@ function skipToGenerate() {
   const spec = readSpec();
   if (!spec.request) { toast('Describe what you want to read first.', 'bad'); return; }
   state.draftSpec = spec;
-  startGeneration(spec, {});
+  beginGeneration(spec, {});
 }
 
 // ---------- CLARIFY ----------
@@ -482,7 +742,7 @@ function renderClarify() {
       document.querySelectorAll('[id^="clar-"]').forEach((inp) => {
         if (inp.value.trim()) answers[inp.getAttribute('data-q')] = inp.value.trim();
       });
-      startGeneration(state.draftSpec, answers);
+      beginGeneration(state.draftSpec, answers);
     } }, '✍️ Write the book'),
     h('button', { class: 'btn btn-ghost', onClick: () => go('create') }, '← Back'));
 
@@ -502,6 +762,39 @@ function logActivity(j, icon, text) {
   j.activityLog.push({ t: Date.now(), icon, text });
   if (j.activityLog.length > 120) j.activityLog.shift();
 }
+/** Confirm Nano Banana image cost before writing. Resolves true to proceed. */
+function confirmNanoCost(spec) {
+  return new Promise((resolve) => {
+    const body = h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'Estimating…');
+    const proceed = h('button', { class: 'btn btn-primary btn-sm', onClick: () => { overlay.remove(); resolve(true); } }, 'Yes, illustrate it');
+    const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } } },
+      h('div', { class: 'modal', style: 'max-width:460px' },
+        h('h2', { style: 'margin:0 0 6px' }, '🍌 Generate illustrations with Nano Banana?'),
+        body,
+        h('div', { class: 'btn-row' }, proceed,
+          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { overlay.remove(); resolve(false); } }, 'Cancel'))));
+    document.body.append(overlay);
+    api.estimateImages(spec).then((est) => {
+      body.textContent = `This will create ${est.approximate ? 'about ' : ''}~${est.count} illustration${est.count === 1 ? '' : 's'} with ${est.modelLabel} ≈ $${est.cost}. Images are billed by Google to your own Gemini API key.`;
+    }).catch(() => { body.textContent = 'Nano Banana will illustrate this book (billed to your Gemini API key).'; });
+  });
+}
+
+/** Entry point for all generation: gates Nano Banana on key + cost confirmation. */
+async function beginGeneration(spec, answers) {
+  // Remember the author name so future books default to it.
+  if (spec && spec.authorName) { try { await updateSettings({ authorName: spec.authorName }); } catch (_) { /* non-fatal */ } }
+  if (spec.imageMode === 'nano') {
+    if (!hasImageKey()) {
+      toast('Add a Gemini API key in Settings to use Nano Banana, or choose another image option.', 'bad');
+      return go('settings');
+    }
+    const ok = await confirmNanoCost(spec);
+    if (!ok) return;
+  }
+  startGeneration(spec, answers);
+}
+
 function startGeneration(spec, answers) {
   state.job = newJob(spec);
   const j = state.job;
@@ -531,6 +824,10 @@ function handleProgress(e) {
   if (!j) return;
   j.phase = e.phase;
   switch (e.phase) {
+    case 'influences:start': j.activity = e.message || 'Studying the best authors…'; logActivity(j, '📚', 'Studying the category’s best authors to learn — and surpass — them…'); break;
+    case 'influences:done':
+      if (e.authors && e.authors.length) { j.influences = e.authors; logActivity(j, '🎓', `Learned from ${e.authors.join(', ')} — now aiming higher`); }
+      else logActivity(j, '🎓', 'Proceeding with master-level craft'); break;
     case 'outline:start': logActivity(j, '🗂️', 'Designing the book concept & chapter outline…'); break;
     case 'outline:done':
     case 'resume':
@@ -554,6 +851,7 @@ function handleProgress(e) {
       break;
     case 'art:start': j.activity = e.message || 'Illustrating…'; logActivity(j, '🎨', `Chapter ${e.number}: creating illustration`); break;
     case 'art:done': logActivity(j, '🖼️', `Chapter ${e.number}: illustration ready`); break;
+    case 'image:error': j.activity = e.message; logActivity(j, '⚠️', e.message || 'Image generation issue'); toast(e.message || 'Image generation issue', 'bad'); break;
     case 'chapter:done':
       j.chapters[e.index] = { number: e.number, title: e.title, words: e.words };
       j.activeIndex = e.index + 1; j.stream = ''; j.streamCh = null;
@@ -690,6 +988,8 @@ async function renderReader(id) {
   const chapters = content.chapters || [];
   const paused = content.status === 'paused';
   const prefs = readerPrefs();
+  // Kids books open at their age-appropriate type size.
+  if (content.isKids && content.readerFontPx) prefs.fontSize = content.readerFontPx;
   let cur = Math.min(Math.max(readerPos(id), 0), Math.max(chapters.length - 1, 0));
 
   // --- root + bar ---
@@ -697,6 +997,7 @@ async function renderReader(id) {
   const setVars = () => {
     root.setAttribute('data-theme', prefs.theme);
     root.setAttribute('data-font', prefs.family);
+    if (content.ageBand) root.setAttribute('data-age', content.ageBand);
     root.style.setProperty('--reader-fs', prefs.fontSize + 'px');
   };
 
@@ -706,6 +1007,57 @@ async function renderReader(id) {
   const pageInfo = h('span', { class: 'page-info' }, '');
 
   const toggleToc = () => tocDrawer.classList.toggle('open');
+
+  // --- audiobook player (ElevenLabs) ---
+  const audioEl = h('audio', { controls: 'controls', style: 'flex:1;min-width:0;height:34px' });
+  const audioSpin = h('span', { class: 'spinner', style: 'width:16px;height:16px;border-width:2px' });
+  const audioLabel = h('span', { class: 'audio-label', id: 'audio-label' }, '🎧');
+  const speakerSel = deviceSelect('audiooutput', audioPrefs.speaker, async (v) => { audioPrefs.speaker = v; await applySink(audioEl); }, '🔊 Default speaker');
+  speakerSel.title = 'Output speaker';
+  const audioBar = h('div', { class: 'audio-bar hidden' },
+    audioSpin, audioLabel, audioEl, speakerSel,
+    h('button', { class: 'btn btn-ghost btn-sm', title: 'Save this chapter as MP3', onClick: () => exportChapterAudio() }, '⤓ MP3'),
+    h('button', { class: 'icon-btn', title: 'Close player', onClick: () => { audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
+  let audioBusy = false;
+  const setSpin = (on) => { audioSpin.style.display = on ? 'inline-block' : 'none'; };
+  async function playChapterAudio() {
+    const a = state.settings && state.settings.audio;
+    if (!a || !a.elevenApiKey || !(a.voiceId || a.voiceIdKids)) {
+      toast('Add your ElevenLabs key and pick a voice in Settings → Audiobook.', 'bad');
+      return go('settings');
+    }
+    if (audioBusy) return;
+    audioBusy = true;
+    audioBar.classList.remove('hidden');
+    audioEl.style.display = 'none';
+    setSpin(true);
+    audioLabel.textContent = 'Preparing narration…';
+    const off = api.onAudioProgress((p) => {
+      if (p.id !== id || p.index !== cur) return;
+      audioLabel.textContent = p.total ? `Narrating… ${p.done}/${p.total} part${p.total === 1 ? '' : 's'}` : 'Narrating…';
+    });
+    try {
+      const res = await api.synthChapter(id, cur);
+      if (audioEl._url) { URL.revokeObjectURL(audioEl._url); audioEl._url = null; }
+      audioEl._url = URL.createObjectURL(dataUriToBlob(res.dataUri));
+      audioEl.src = audioEl._url;
+      audioEl.style.display = '';
+      setSpin(false);
+      audioLabel.textContent = `🎧 ${res.title}`;
+      await applySink(audioEl);
+      audioEl.play().catch(() => {});
+      toast(res.cached ? '▶ Loaded from cache (no charge). Press play if it doesn’t start.' : '✅ Narrated & saved — re-listens are free.', 'ok');
+    } catch (err) {
+      setSpin(false); audioBar.classList.add('hidden');
+      toast(`Narration failed: ${err.message}`, 'bad');
+    } finally { off && off(); audioBusy = false; }
+  }
+  async function exportChapterAudio() {
+    try {
+      const r = await api.exportAudio(id, cur);
+      if (r && !r.canceled) { toast('Saved chapter MP3.', 'ok'); await api.openPath(r.path); }
+    } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
+  }
 
   const bar = h('div', { class: 'reader-bar' },
     h('button', { class: 'icon-btn', title: 'Library', onClick: () => go('library') }, '←'),
@@ -721,6 +1073,7 @@ async function renderReader(id) {
       modeSelect()),
     h('div', { class: 'reader-actions' },
       paused ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue') : null,
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Listen to this chapter (ElevenLabs)', onClick: () => playChapterAudio() }, '🎧 Listen'),
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Save EPUB file', onClick: () => downloadEpub(id) }, '⤓ EPUB'),
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Email a PDF', onClick: () => emailPdfModal(id, content.title) }, '✉ PDF'),
       h('button', { class: 'btn btn-gold btn-sm', title: 'Send EPUB to Kindle', onClick: () => sendKindle(id) }, '📨 Kindle'),
@@ -738,7 +1091,7 @@ async function renderReader(id) {
       : null,
     contentEl, nav);
 
-  root.append(bar, h('div', { class: 'reader-progress' }, progressFill), h('div', { class: 'reader-body' }, tocDrawer, main));
+  root.append(bar, h('div', { class: 'reader-progress' }, progressFill), audioBar, h('div', { class: 'reader-body' }, tocDrawer, main));
   setVars();
   mount(root);
 
@@ -873,26 +1226,31 @@ async function downloadEpub(id) {
 }
 async function sendKindle(id) {
   const k = state.settings && state.settings.kindle;
-  if (!k || !k.toAddress || !k.smtp || !k.smtp.host) {
-    toast('Set up your Kindle email & SMTP in Settings first.', 'bad');
+  if (!k || !k.toAddress) {
+    toast('Add your @kindle.com address in Settings first.', 'bad');
     return go('settings');
   }
-  toast('Building EPUB and emailing it to Kindle…');
-  try { await api.sendToKindle(id); toast('📨 Sent! It will appear on your Kindle shortly.', 'ok'); }
-  catch (err) { toast(`Send failed: ${err.message}`, 'bad'); }
+  const usingSmtp = k.method === 'smtp' && k.smtp && k.smtp.host;
+  toast(usingSmtp ? 'Building EPUB and emailing it to Kindle…' : 'Building EPUB and opening Mail…');
+  try {
+    const res = await api.sendToKindle(id);
+    if (res && res.method === 'mail') toast('📨 Mail is ready — just press Send to deliver to your Kindle.', 'ok');
+    else if (res && res.method === 'saved') toast('Saved the file — attach it to an email to your Kindle.', 'ok');
+    else toast('📨 Sent! It will appear on your Kindle shortly.', 'ok');
+  } catch (err) { toast(`Send failed: ${err.message}`, 'bad'); }
 }
 function emailPdfModal(id, title) {
-  const k = state.settings && state.settings.kindle;
-  if (!k || !k.smtp || !k.smtp.host || !k.fromAddress) {
-    toast('Add your SMTP details and a sender address in Settings first.', 'bad');
-    return go('settings');
-  }
+  const k = (state.settings && state.settings.kindle) || {};
+  const usingSmtp = k.method === 'smtp' && k.smtp && k.smtp.host && k.fromAddress;
+  const subline = usingSmtp
+    ? `“${title}” will be rendered to PDF and sent from ${k.fromAddress} via your SMTP account.`
+    : `“${title}” will be rendered to PDF, then opened in your Mail app with the file attached — just press Send.`;
   const input = h('input', { type: 'email', placeholder: 'name@example.com',
     value: state.settings.pdfEmailTo || '', onkeydown: (e) => { if (e.key === 'Enter') doSend(); } });
   const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
     h('div', { class: 'modal', style: 'max-width:460px' },
       h('h2', { style: 'margin:0 0 6px' }, 'Email this book as a PDF'),
-      h('p', { class: 'hint', style: 'margin-bottom:12px' }, `“${title}” will be rendered to PDF and sent from ${k.fromAddress} via your SMTP account.`),
+      h('p', { class: 'hint', style: 'margin-bottom:12px' }, subline),
       h('label', { class: 'field' }, h('span', {}, 'Recipient email'), input),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn btn-primary btn-sm', onClick: doSend }, '✉ Send PDF'),
@@ -903,11 +1261,13 @@ function emailPdfModal(id, title) {
     const to = input.value.trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { toast('Enter a valid email address.', 'bad'); return; }
     overlay.remove();
-    toast('Rendering PDF and emailing…');
+    toast(usingSmtp ? 'Rendering PDF and emailing…' : 'Rendering PDF and opening Mail…');
     try {
-      await api.emailPdf(id, to);
+      const res = await api.emailPdf(id, to);
       state.settings = await api.getSettings();
-      toast(`✉ PDF emailed to ${to}.`, 'ok');
+      if (res && res.method === 'mail') toast(`✉ Mail is ready for ${to} — press Send.`, 'ok');
+      else if (res && res.method === 'saved') toast('PDF saved — attach it from the folder that opened.', 'ok');
+      else toast(`✉ PDF emailed to ${to}.`, 'ok');
     } catch (err) { toast(`Email failed: ${err.message}`, 'bad'); }
   }
 }
@@ -926,19 +1286,33 @@ function renderSettings() {
     h('h1', {}, 'Settings'),
     h('p', {}, 'Choose your AI engine & model, grounding options, and Kindle delivery.'));
 
+  const npmOk = !!(p.npm && p.npm.found);
   const statusRow = (key, label) => {
     const info = p[key];
     const ok = info && info.found;
+    const a = authOf(key);
+    const dot = !ok ? 'bad' : (a ? (a.signedIn ? 'ok' : 'warn') : 'warn');
+    const authChip = !ok ? null : h('span', {
+      style: `font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;${a ? (a.signedIn ? 'color:var(--ok);background:rgba(31,170,107,.14)' : 'color:var(--accent-2);background:rgba(192,138,46,.16)') : 'color:var(--text-dim)'}`,
+    }, a ? (a.signedIn ? '✓ Signed in' : 'Not signed in') : 'Checking…');
+    const actions = [
+      h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : 'not installed'),
+      authChip,
+    ];
+    if (!ok) actions.push(h('button', {
+      class: 'btn btn-gold btn-sm',
+      title: npmOk ? `Install ${label} via npm` : 'Requires npm (install Node.js first)',
+      onClick: () => openInstallModal(key),
+    }, '⬇ Install'));
+    if (!(a && a.signedIn)) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(key) }, '🔑 Sign in'));
     return h('div', { class: 'kv' },
-      h('span', { class: 'k' }, h('span', { class: `status-dot ${ok ? 'ok' : 'bad'}` }), label),
-      h('span', { style: 'display:flex;align-items:center;gap:10px' },
-        h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : 'not installed'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(key) }, '🔑 Sign in')));
+      h('span', { class: 'k' }, h('span', { class: `status-dot ${dot}` }), label),
+      h('span', { style: 'display:flex;align-items:center;gap:10px' }, ...actions.filter(Boolean)));
   };
 
   const engineCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'AI engines, models & fallback chain'),
-    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'Modulagent drives your locally installed CLI on your own subscription. With “Use subscription” on, API-key environment variables are stripped so billing always uses your plan login — never an API key. Research uses each CLI’s built-in web tools (Claude WebSearch/WebFetch, Codex --search, Gemini Google Search). Nothing is sent to any third-party server.'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'ChapterOne drives your locally installed CLI on your own subscription. With “Use subscription” on, API-key environment variables are stripped so billing always uses your plan login — never an API key. Research uses each CLI’s built-in web tools (Claude WebSearch/WebFetch, Codex --search, Gemini Google Search). Nothing is sent to any third-party server.'),
     engineBar(),
     h('div', { class: 'row', style: 'margin-top:16px' },
       h('label', { class: 'field' }, h('span', {}, 'Claude command'),
@@ -957,15 +1331,16 @@ function renderSettings() {
 
   const k = s.kindle || {};
   const sm = k.smtp || {};
-  const kindleCard = h('div', { class: 'card' },
-    h('p', { class: 'section-title' }, 'Send to Kindle'),
-    h('p', { class: 'hint', style: 'margin-bottom:14px' },
-      'Books are emailed straight to your Kindle. Add your “@kindle.com” address from Amazon → Manage Your Content & Devices → Preferences → Personal Document Settings, and add your sender email to the Approved list.'),
-    h('div', { class: 'row' },
-      h('label', { class: 'field' }, h('span', {}, 'Your Kindle address'),
-        h('input', { id: 's-k-to', value: k.toAddress || '', placeholder: 'yourname@kindle.com' })),
-      h('label', { class: 'field' }, h('span', {}, 'Approved sender (from)'),
-        h('input', { id: 's-k-from', value: k.fromAddress || '', placeholder: 'you@gmail.com' }))),
+  const method = k.method || 'mail';
+  const setMethod = (m) => updateSettings({ kindle: { method: m } }).then(() => renderSettings());
+
+  const methodSeg = h('div', { class: 'seg' },
+    h('button', { class: method === 'mail' ? 'active' : '', onClick: () => setMethod('mail') }, '✉️ Mail app — no setup'),
+    h('button', { class: method === 'smtp' ? 'active' : '', onClick: () => setMethod('smtp') }, '⚡ SMTP — one-click auto-send'));
+
+  const smtpRows = method === 'smtp' ? [
+    h('label', { class: 'field' }, h('span', {}, 'Approved sender (from)'),
+      h('input', { id: 's-k-from', value: k.fromAddress || '', placeholder: 'you@gmail.com' })),
     h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'SMTP host'),
         h('input', { id: 's-smtp-host', value: sm.host || '', placeholder: 'smtp.gmail.com' })),
@@ -976,14 +1351,234 @@ function renderSettings() {
         h('input', { id: 's-smtp-user', value: sm.user || '', placeholder: 'you@gmail.com' })),
       h('label', { class: 'field' }, h('span', {}, 'SMTP password / app password'),
         h('input', { id: 's-smtp-pass', value: sm.pass || '', type: 'password' }))),
-    h('div', { class: 'row' },
+  ] : [
+    h('p', { class: 'hint', style: 'margin:2px 0 4px' },
+      'No setup needed. When you send, ChapterOne exports the file and opens your Mac’s Mail app with it attached — you just press Send. Switch to SMTP above if you want fully automatic one-click sending.'),
+  ];
+
+  const kindleCard = h('div', { class: 'card' },
+    h('p', { class: 'section-title' }, 'Delivery & Send to Kindle'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' },
+      'For Kindle, add your “@kindle.com” address from Amazon → Manage Your Content & Devices → Preferences → Personal Document Settings. With SMTP, also add your sender email to Amazon’s Approved list.'),
+    h('label', { class: 'field' }, h('span', {}, 'How should books be sent?'), methodSeg),
+    h('div', { class: 'row', style: 'margin-top:14px' },
+      h('label', { class: 'field' }, h('span', {}, 'Your Kindle address'),
+        h('input', { id: 's-k-to', value: k.toAddress || '', placeholder: 'yourname@kindle.com' })),
       h('label', { class: 'field' }, h('span', {}, 'Default delivery format'),
         selectEl('s-k-format', ['epub', 'pdf'], k.preferredFormat || 'epub'))),
+    ...smtpRows,
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-primary btn-sm', onClick: saveKindle }, 'Save'),
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: verifyKindle }, 'Verify SMTP')));
+      method === 'smtp' ? h('button', { class: 'btn btn-ghost btn-sm', onClick: verifyKindle }, 'Verify SMTP') : null));
 
-  mount(h('div', { class: 'view' }, head, engineCard, kindleCard));
+  const imgs = s.images || {};
+  const imageModels = state.models.imageModels || [];
+  const imgModelSel = h('select', { id: 's-img-model' });
+  (imageModels.length ? imageModels : [{ id: 'gemini-3-pro-image', label: 'Nano Banana Pro' }])
+    .forEach((m) => imgModelSel.append(h('option', { value: m.id, selected: m.id === (imgs.model || 'gemini-3-pro-image') ? 'selected' : false }, m.label + (m.price ? ` (~$${m.price}/img)` : ''))));
+  const imageCard = h('div', { class: 'card' },
+    h('p', { class: 'section-title' }, 'AI Illustrations · Nano Banana'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' },
+      'Optional. Nano Banana (Google’s Gemini image model) creates real, theme-matched illustrations for any book — it isn’t available on any CLI, so it uses a Gemini API key. This key is for images only, stored locally on this Mac, and never touches your CLI/text subscription. Get a key at aistudio.google.com/apikey, then pick “🍌 Nano Banana” as the image option when writing.'),
+    h('div', { class: 'row' },
+      h('label', { class: 'field' }, h('span', {}, 'Gemini API key (image-only)'),
+        h('input', { id: 's-img-key', type: 'password', value: imgs.geminiApiKey || '', placeholder: 'AIza…' })),
+      h('label', { class: 'field' }, h('span', {}, 'Image model'), imgModelSel)),
+    h('div', { class: 'btn-row' },
+      h('button', { class: 'btn btn-primary btn-sm', onClick: saveImages }, 'Save'),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: verifyImages }, 'Test key')));
+
+  const aud = s.audio || {};
+  const audModels = state.models.audioModels || [{ id: 'eleven_multilingual_v2', label: 'Multilingual v2' }];
+  const audModelSel = h('select', { id: 's-aud-model' });
+  audModels.forEach((m) => audModelSel.append(h('option', { value: m.id, selected: m.id === (aud.model || 'eleven_multilingual_v2') ? 'selected' : false }, m.label)));
+  const voiceBox = h('div', { id: 'voice-pickers', class: 'voice-pickers' },
+    h('span', { class: 'hint' }, aud.elevenApiKey ? 'Click “Load voices” to choose your narrators.' : 'Add your ElevenLabs key, Save, then load voices.'));
+  const audioCard = h('div', { class: 'card' },
+    h('p', { class: 'section-title' }, 'Audiobook · ElevenLabs'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' },
+      'Optional. Listen to any book narrated by a top-tier AI voice. Uses your ElevenLabs API key — audio only, stored locally on this Mac, separate from your CLI/text subscription and the image key. Get a key at elevenlabs.io. ElevenLabs bills per character; ChapterOne narrates a chapter only when you press 🎧 Listen, and caches it.'),
+    h('div', { class: 'row' },
+      h('label', { class: 'field' }, h('span', {}, 'ElevenLabs API key (audio-only)'),
+        h('input', { id: 's-aud-key', type: 'password', value: aud.elevenApiKey || '', placeholder: 'sk_…' })),
+      h('label', { class: 'field' }, h('span', {}, 'Voice model'), audModelSel)),
+    voiceBox,
+    h('div', { class: 'btn-row' },
+      h('button', { class: 'btn btn-primary btn-sm', onClick: saveAudio }, 'Save'),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: loadVoices }, '🔊 Load voices'),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: verifyAudio }, 'Test key')),
+    h('div', { style: 'border-top:1px solid var(--hairline);margin:16px 0 0;padding-top:14px' }, cloneVoiceUI()));
+
+  mount(h('div', { class: 'view' }, head, engineCard, imageCard, audioCard, kindleCard));
+}
+
+async function saveImages() {
+  await updateSettings({ images: { geminiApiKey: $('#s-img-key').value.trim(), model: $('#s-img-model').value } });
+  toast('Image settings saved.', 'ok');
+}
+async function verifyImages() {
+  await saveImages();
+  if (!hasImageKey()) { toast('Enter a Gemini API key first.', 'bad'); return; }
+  toast('Testing Nano Banana key…');
+  try { await api.verifyImageKey(); toast('✅ Nano Banana key works.', 'ok'); }
+  catch (err) { toast(`Key test failed: ${err.message}`, 'bad'); }
+}
+
+// ---- audiobook settings ----
+function voiceSelectEl(id, voices, selected, recFlag) {
+  const sel = h('select', { id });
+  sel.append(h('option', { value: '', selected: !selected ? 'selected' : false }, '— none —'));
+  const rec = voices.filter((v) => v[recFlag]);
+  const rest = voices.filter((v) => !v[recFlag]);
+  const opt = (v, star) => h('option', { value: v.voice_id, selected: v.voice_id === selected ? 'selected' : false }, `${star ? '★ ' : ''}${v.name}${v.category ? ` · ${v.category}` : ''}`);
+  if (rec.length) { const og = h('optgroup', { label: '★ Recommended' }); rec.forEach((v) => og.append(opt(v, true))); sel.append(og); }
+  if (rest.length) { const og = h('optgroup', { label: 'All voices' }); rest.forEach((v) => og.append(opt(v, false))); sel.append(og); }
+  return sel;
+}
+function renderVoicePickers(box, voices) {
+  const a = state.settings.audio || {};
+  box.innerHTML = '';
+  box.append(
+    h('div', { class: 'row' },
+      h('label', { class: 'field' }, h('span', {}, 'Narrator voice (adult books)'), voiceSelectEl('s-aud-voice', voices, a.voiceId, 'recAdult')),
+      h('label', { class: 'field' }, h('span', {}, 'Kids narrator voice'), voiceSelectEl('s-aud-voice-kids', voices, a.voiceIdKids, 'recKids'))),
+    h('span', { class: 'hint' }, '★ marks voices our research recommends for audiobooks / for kids. Choose, then click Save.'));
+}
+async function saveAudio() {
+  const a = state.settings.audio || {};
+  await updateSettings({ audio: {
+    elevenApiKey: $('#s-aud-key').value.trim(),
+    model: $('#s-aud-model').value,
+    voiceId: $('#s-aud-voice') ? $('#s-aud-voice').value : (a.voiceId || ''),
+    voiceIdKids: $('#s-aud-voice-kids') ? $('#s-aud-voice-kids').value : (a.voiceIdKids || ''),
+  } });
+  toast('Audio settings saved.', 'ok');
+}
+async function loadVoices() {
+  await updateSettings({ audio: { elevenApiKey: $('#s-aud-key').value.trim(), model: $('#s-aud-model').value } });
+  if (!(state.settings.audio && state.settings.audio.elevenApiKey)) { toast('Enter your ElevenLabs key first.', 'bad'); return; }
+  const box = $('#voice-pickers');
+  box.innerHTML = ''; box.append(h('span', { class: 'hint' }, 'Loading voices…'));
+  try {
+    const voices = await api.listVoices();
+    if (!voices.length) { box.innerHTML = ''; box.append(h('span', { class: 'hint' }, 'No voices on this account yet — add some at elevenlabs.io.')); return; }
+    renderVoicePickers(box, voices);
+  } catch (err) { box.innerHTML = ''; box.append(h('span', { class: 'hint' }, `Could not load voices: ${err.message}`)); }
+}
+async function verifyAudio() {
+  await saveAudio();
+  if (!(state.settings.audio && state.settings.audio.elevenApiKey)) { toast('Enter your ElevenLabs key first.', 'bad'); return; }
+  toast('Testing ElevenLabs key…');
+  try { const r = await api.verifyAudio(); toast(`✅ Connected — ${r.count} voices available.`, 'ok'); }
+  catch (err) { toast(`Key test failed: ${err.message}`, 'bad'); }
+}
+function blobToSample(blob, filename) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve({ dataUri: r.result, filename });
+    r.onerror = () => reject(new Error('Could not read the audio sample.'));
+    r.readAsDataURL(blob);
+  });
+}
+/** "Clone your own voice": record via mic or upload a file, then send to ElevenLabs. */
+const CLONE_SCRIPT =
+  'The quick brown fox jumps over the lazy dog beside the river. ' +
+  'As the warm afternoon light spilled across the valley, she paused to consider how far she had come, and how much further the road ahead might wind. ' +
+  'Numbers and names, questions and quiet answers, all blended into one steady rhythm. ' +
+  'Read these sentences naturally, the way you would tell a story to a good friend, and let your voice rise and fall with the meaning of the words. ' +
+  'Take your time, breathe, and speak clearly. When you reach the end, you can stop recording.';
+
+function cloneVoiceUI() {
+  let recorder = null, recChunks = [], recordedBlob = null, uploadedFiles = [], stream = null;
+  const status = h('span', { class: 'hint' }, 'Pick your microphone, press Record, and read the passage below (~30s). Needs an ElevenLabs paid plan.');
+  const scriptBox = h('div', { class: 'clone-script' }, CLONE_SCRIPT);
+  const preview = h('audio', { controls: 'controls', style: 'display:none;width:100%;height:34px;margin-top:8px' });
+  const nameInput = h('input', { id: 'clone-name', placeholder: 'Voice name (e.g. “My Voice”)' });
+  const micSel = deviceSelect('audioinput', audioPrefs.mic, (v) => { audioPrefs.mic = v; }, '🎙️ Default microphone');
+  micSel.title = 'Input microphone';
+  const recBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, '⏺ Record');
+  const stopBtn = h('button', { class: 'btn btn-danger btn-sm', type: 'button', style: 'display:none' }, '⏹ Stop');
+  const delBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button', style: 'display:none' }, '🗑 Delete');
+  const fileInput = h('input', { type: 'file', accept: 'audio/*', multiple: 'multiple', style: 'padding:7px' });
+  const createBtn = h('button', { class: 'btn btn-primary btn-sm', type: 'button' }, '✨ Create my voice');
+
+  const resetRecording = () => {
+    recordedBlob = null; recChunks = [];
+    if (preview._url) { URL.revokeObjectURL(preview._url); preview._url = null; }
+    preview.removeAttribute('src'); preview.style.display = 'none';
+    delBtn.style.display = 'none';
+    status.textContent = 'Recording deleted. Record again, or upload a file.';
+  };
+
+  recBtn.addEventListener('click', async () => {
+    try {
+      const constraints = { audio: audioPrefs.mic ? { deviceId: { exact: audioPrefs.mic } } : true };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Refresh device labels now that permission is granted.
+      listDevices('audioinput').then((devs) => {
+        if (!devs.length || !devs[0].label) return;
+        micSel.innerHTML = '';
+        micSel.append(h('option', { value: '' }, '🎙️ Default microphone'));
+        devs.forEach((d, i) => micSel.append(h('option', { value: d.deviceId, selected: d.deviceId === audioPrefs.mic ? 'selected' : false }, d.label || `Microphone ${i + 1}`)));
+      });
+      recChunks = []; recordedBlob = null;
+      recorder = new MediaRecorder(stream);
+      recorder.addEventListener('dataavailable', (e) => { if (e.data && e.data.size) recChunks.push(e.data); });
+      recorder.addEventListener('stop', async () => {
+        recordedBlob = new Blob(recChunks, { type: recorder.mimeType || 'audio/webm' });
+        if (preview._url) URL.revokeObjectURL(preview._url);
+        preview._url = URL.createObjectURL(recordedBlob);
+        preview.src = preview._url; preview.style.display = 'block';
+        await applySink(preview);
+        (stream.getTracks() || []).forEach((t) => t.stop());
+        delBtn.style.display = '';
+        status.textContent = 'Recording captured — play it back to check, delete if you want to redo, then Create.';
+      });
+      recorder.start();
+      recBtn.style.display = 'none'; stopBtn.style.display = ''; delBtn.style.display = 'none';
+      scriptBox.classList.add('recording');
+      status.textContent = '● Recording… read the passage below aloud, naturally.';
+    } catch (err) { status.textContent = `Microphone unavailable: ${err.message}. You can upload an audio file instead.`; }
+  });
+  stopBtn.addEventListener('click', () => { try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch (_) {} recBtn.style.display = ''; stopBtn.style.display = 'none'; scriptBox.classList.remove('recording'); });
+  delBtn.addEventListener('click', resetRecording);
+  fileInput.addEventListener('change', () => { uploadedFiles = Array.from(fileInput.files || []); if (uploadedFiles.length) status.textContent = `${uploadedFiles.length} file(s) selected.`; });
+
+  createBtn.addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    if (!name) { toast('Name your voice first.', 'bad'); return; }
+    if (!(state.settings.audio && state.settings.audio.elevenApiKey)) { await saveAudio(); }
+    const samples = [];
+    try {
+      if (recordedBlob) samples.push(await blobToSample(recordedBlob, 'recording.webm'));
+      for (const f of uploadedFiles) samples.push(await blobToSample(f, f.name));
+    } catch (err) { toast(err.message, 'bad'); return; }
+    if (!samples.length) { toast('Record or upload a sample first.', 'bad'); return; }
+    createBtn.setAttribute('disabled', 'true'); createBtn.textContent = 'Cloning…';
+    status.textContent = 'Uploading to ElevenLabs and cloning your voice… (~20s)';
+    try {
+      const voice = await api.cloneVoice(name, samples);
+      state.settings = await api.getSettings();
+      toast(`✅ Cloned “${voice.name}” and set it as your narrator.`, 'ok');
+      renderSettings();
+    } catch (err) {
+      toast(`Cloning failed: ${err.message}`, 'bad');
+      status.textContent = err.message;
+      createBtn.removeAttribute('disabled'); createBtn.textContent = '✨ Create my voice';
+    }
+  });
+
+  return h('div', { class: 'clone-box' },
+    h('span', { class: 'mini-label' }, '🎙️ Clone your own voice'),
+    status,
+    h('div', { class: 'row', style: 'margin-top:8px' },
+      h('label', { class: 'field' }, h('span', {}, 'Voice name'), nameInput),
+      h('label', { class: 'field' }, h('span', {}, 'Microphone'), micSel)),
+    h('span', { class: 'mini-label' }, 'Read this aloud while recording:'),
+    scriptBox,
+    h('div', { class: 'btn-row' }, recBtn, stopBtn, delBtn, h('span', { style: 'align-self:center;color:var(--text-dim);font-size:12px' }, 'or upload:'), fileInput),
+    preview,
+    h('div', { class: 'btn-row' }, createBtn));
 }
 
 async function saveEngineCmds() {
@@ -1005,20 +1600,23 @@ async function testAuth() {
   finally { btn.textContent = 'Test connection'; btn.removeAttribute('disabled'); }
 }
 async function saveKindle() {
-  await updateSettings({
-    kindle: {
-      toAddress: $('#s-k-to').value.trim(),
-      fromAddress: $('#s-k-from').value.trim(),
-      preferredFormat: $('#s-k-format').value,
-      smtp: {
-        host: $('#s-smtp-host').value.trim(),
-        port: Number($('#s-smtp-port').value) || 587,
-        secure: Number($('#s-smtp-port').value) === 465,
-        user: $('#s-smtp-user').value.trim(),
-        pass: $('#s-smtp-pass').value,
-      },
-    },
-  });
+  // The delivery method is persisted the moment it's toggled; here we save the
+  // text fields, reading SMTP inputs only when they're rendered (SMTP mode).
+  const kindle = {
+    toAddress: $('#s-k-to').value.trim(),
+    preferredFormat: $('#s-k-format').value,
+  };
+  if ($('#s-k-from')) kindle.fromAddress = $('#s-k-from').value.trim();
+  if ($('#s-smtp-host')) {
+    kindle.smtp = {
+      host: $('#s-smtp-host').value.trim(),
+      port: Number($('#s-smtp-port').value) || 587,
+      secure: Number($('#s-smtp-port').value) === 465,
+      user: $('#s-smtp-user').value.trim(),
+      pass: $('#s-smtp-pass').value,
+    };
+  }
+  await updateSettings({ kindle });
   toast('Settings saved.', 'ok');
 }
 async function verifyKindle() {
@@ -1045,5 +1643,6 @@ if (api.onMenu) {
   try { state.models = await api.getModels(); } catch (_) { /* defaults */ }
   await refreshPrereq();
   go('library');
+  refreshAuthStatus(); // background: determine which CLIs are signed in
 })();
 })();

@@ -112,7 +112,7 @@ function mimeForExt(ext) {
 function httpGet(url, { json = false, maxBytes = 9_000_000, redirects = 4, timeoutMs = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
-    const req = lib.get(url, { headers: { 'User-Agent': 'ModulagentBookWriter/1.0', Accept: json ? 'application/json' : '*/*' } }, (res) => {
+    const req = lib.get(url, { headers: { 'User-Agent': 'ChapterOne/1.0', Accept: json ? 'application/json' : '*/*' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();
