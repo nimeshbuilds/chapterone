@@ -1,0 +1,17 @@
+node_modules/
+release/
+dist/
+out/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.env
+.env.*
+coverage/
+.idea/
+.vscode/
+*.epub
+*.mobi
+*.pdf
+!docs/**/*.pdf

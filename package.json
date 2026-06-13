@@ -1,0 +1,81 @@
+{
+  "name": "chapterone",
+  "version": "0.1.0",
+  "description": "ChapterOne — Your Personal Book Writer. Generate professional, bestseller-quality books with the Claude Code, Codex, or Gemini CLI on your own subscription, research-grounded with royalty-free images, read them in-app, export to Kindle (EPUB/PDF), and send to your Kindle.",
+  "author": {
+    "name": "Modulagent"
+  },
+  "license": "MIT",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac --universal",
+    "dist:mac:arm64": "electron-builder --mac --arm64",
+    "dist:mac:x64": "electron-builder --mac --x64",
+    "dist:win": "electron-builder --win --x64 --arm64",
+    "dist:all": "npm run dist:mac && npm run dist:win"
+  },
+  "dependencies": {
+    "archiver": "^6.0.1",
+    "marked": "^4.3.0",
+    "nodemailer": "^6.9.13"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.modulagent.chapterone",
+    "productName": "ChapterOne",
+    "copyright": "Copyright © 2026 Modulagent",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "!**/*.test.js",
+      "!**/__tests__/**"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg", "zip"],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "ChapterOne records short voice samples so you can narrate your books in your own cloned voice."
+      }
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64", "arm64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ChapterOne"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Office"
+    }
+  }
+}
