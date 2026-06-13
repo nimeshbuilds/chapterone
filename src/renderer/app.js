@@ -72,6 +72,18 @@ async function listDevices(kind) {
   try { return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === kind); }
   catch (_) { return []; }
 }
+// Reuse a single mic stream so re-recording doesn't re-trigger the macOS mic
+// permission prompt. Released when leaving Settings (see go()).
+let activeMicStream = null;
+function stopMicStream() {
+  if (activeMicStream) { try { activeMicStream.getTracks().forEach((t) => t.stop()); } catch (_) {} activeMicStream = null; }
+}
+async function getMicStream(deviceId) {
+  if (activeMicStream && activeMicStream.getTracks().some((t) => t.readyState === 'live')) return activeMicStream;
+  stopMicStream();
+  activeMicStream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
+  return activeMicStream;
+}
 async function applySink(audioEl) {
   const id = audioPrefs.speaker;
   if (id && audioEl && typeof audioEl.setSinkId === 'function') { try { await audioEl.setSinkId(id); } catch (_) { /* ignore */ } }
@@ -99,6 +111,7 @@ function deviceSelect(kind, current, onChange, firstLabel) {
 async function go(view, arg) {
   if (view !== 'reader' && state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
   if (view !== 'progress' && state.progressTimer) { clearInterval(state.progressTimer); state.progressTimer = null; }
+  if (state.view === 'settings' && view !== 'settings') stopMicStream(); // free the mic when leaving Settings
   state.view = view;
   setActiveNav(['library', 'create', 'kids', 'settings'].includes(view) ? view : 'library');
   if (view === 'library') return renderLibrary();
@@ -380,14 +393,16 @@ function openAuthModal(provider) {
     }
   }
 
-  // Auto-detect: poll sign-in every few seconds so the user doesn't have to
-  // click anything once they finish in Terminal/browser.
+  // Auto-detect: poll sign-in occasionally so the user doesn't have to click
+  // anything once they finish in Terminal/browser. Kept infrequent because each
+  // check spawns the CLI (which on macOS reads its Keychain token), and we don't
+  // want to trigger repeated permission prompts.
   let attempts = 0;
   poll = setInterval(async () => {
-    if (done || attempts++ > 60) { if (attempts > 60 && poll) clearInterval(poll); return; }
+    if (done || attempts++ >= 12) { if (poll) clearInterval(poll); poll = null; return; }
     const res = await api.checkAuth(provider).catch(() => ({ ok: false }));
     if (res.ok) await succeed();
-  }, 4000);
+  }, 10000);
 
   const recheckBtn = h('button', { class: 'btn btn-gold btn-sm', onClick: (e) => recheck(e.currentTarget) }, '✓ I’ve finished — re-check');
   const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
@@ -1537,8 +1552,7 @@ function cloneVoiceUI() {
 
   recBtn.addEventListener('click', async () => {
     try {
-      const constraints = { audio: audioPrefs.mic ? { deviceId: { exact: audioPrefs.mic } } : true };
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stream = await getMicStream(audioPrefs.mic); // reused across re-records → only one mic prompt
       // Refresh device labels now that permission is granted.
       listDevices('audioinput').then((devs) => {
         if (!devs.length || !devs[0].label) return;
@@ -1555,7 +1569,7 @@ function cloneVoiceUI() {
         preview._url = URL.createObjectURL(recordedBlob);
         preview.src = preview._url; preview.style.display = 'block';
         await applySink(preview);
-        (stream.getTracks() || []).forEach((t) => t.stop());
+        // Keep the stream alive for re-records; it's released when leaving Settings.
         delBtn.style.display = '';
         status.textContent = 'Recording captured — play it back to check, delete if you want to redo, then Create.';
       });
