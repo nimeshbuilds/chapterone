@@ -13,8 +13,8 @@ const { resolveImagesForBook } = require('./book/images');
 const { generateEpub } = require('./export/epub');
 const { generatePdf } = require('./export/pdf');
 const { bookToMarkdown } = require('./export/markdown');
-const { bookToHtml } = require('./export/html');
-const { sendToKindle, verifySmtp } = require('./kindle/sendToKindle');
+const { bookToHtml, chapterToHtml } = require('./export/html');
+const { sendToKindle, sendEmailWithAttachment, verifySmtp } = require('./kindle/sendToKindle');
 const { safeFilename } = require('./util');
 
 function registerIpc(store) {
@@ -178,6 +178,29 @@ function registerIpc(store) {
     const book = store.getBook(id);
     return bookToHtml(book, { resolveImage: imageResolver(book) });
   }));
+  // Structured content for the built-in EPUB reader: per-chapter HTML with
+  // images resolved to data URLs, plus metadata.
+  ipcMain.handle('book:content', wrap(async (_e, id) => {
+    const book = store.getBook(id);
+    const resolve = imageResolver(book);
+    return {
+      id: book.id,
+      title: book.title,
+      subtitle: book.subtitle,
+      author: book.author,
+      premise: book.premise,
+      status: book.status,
+      pausedReason: book.pausedReason || null,
+      words: book.words || 0,
+      images: (book.images || []).map((im) => ({ caption: im.caption, attribution: im.attribution, license: im.license, licenseUrl: im.licenseUrl, landing: im.landing })),
+      chapters: (book.chapters || []).filter(Boolean).map((c) => ({
+        number: c.number,
+        title: c.title,
+        words: c.words || 0,
+        html: chapterToHtml(c.content, resolve),
+      })),
+    };
+  }));
 
   // ---- export ----
   ipcMain.handle('book:export', wrap(async (_e, { id, format, saveAs }) => {
@@ -217,6 +240,27 @@ function registerIpc(store) {
     if (ext === 'epub') await generateEpub(book, outPath);
     else await generatePdf(book, outPath);
     return sendToKindle({ smtp: k.smtp, from: k.fromAddress, to: k.toAddress, filePath: outPath, title: book.title });
+  }));
+
+  // ---- export to PDF and email to any address ----
+  ipcMain.handle('email:pdf', wrap(async (_e, { id, to }) => {
+    const settings = store.getSettings();
+    const k = settings.kindle || {};
+    const book = store.getBook(id);
+    const recipient = (to || '').trim();
+    const outPath = path.join(store.exportsDir, `${safeFilename(book.title, 'book')}.pdf`);
+    await generatePdf(book, outPath);
+    const result = await sendEmailWithAttachment({
+      smtp: k.smtp,
+      from: k.fromAddress,
+      to: recipient,
+      filePath: outPath,
+      subject: `${book.title} (PDF)`,
+      text: `Your book "${book.title}" by ${book.author || 'Anonymous'} is attached as a PDF. Sent via Modulagent's Book Writer.`,
+    });
+    // Remember the recipient for next time.
+    store.saveSettings({ pdfEmailTo: recipient });
+    return result;
   }));
 
   return {

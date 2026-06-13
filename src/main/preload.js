@@ -49,15 +49,17 @@ contextBridge.exposeInMainWorld('api', {
   getBook: (id) => invoke('book:get', id),
   deleteBook: (id) => invoke('book:delete', id),
   getBookHtml: (id) => invoke('book:html', id),
+  getBookContent: (id) => invoke('book:content', id),
 
   // export & shell
   exportBook: (id, format, saveAs) => invoke('book:export', { id, format, saveAs }),
   openPath: (p) => invoke('shell:open', p),
   revealPath: (p) => invoke('shell:reveal', p),
 
-  // kindle
+  // kindle & email
   verifyKindle: () => invoke('kindle:verify'),
   sendToKindle: (id, format) => invoke('kindle:send', { id, format }),
+  emailPdf: (id, to) => invoke('email:pdf', { id, to }),
 
   // menu events
   onMenu: (cb) => {

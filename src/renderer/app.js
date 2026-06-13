@@ -58,6 +58,7 @@ async function updateSettings(partial) {
 
 // ---------- navigation ----------
 async function go(view, arg) {
+  if (view !== 'reader' && state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
   state.view = view;
   setActiveNav(['library', 'create', 'settings'].includes(view) ? view : 'library');
   if (view === 'library') return renderLibrary();
@@ -204,6 +205,7 @@ function engineBar() {
       h('span', { class: 'hint' }, 'If a provider’s quota runs out mid-book, writing continues automatically on the next engine in this chain. Click to add/remove fallbacks.')),
     h('div', { class: 'engine-row toggles' },
       toggle('t-research', s.research, '🔎 Research real facts & sources (web)', (v) => updateSettings({ research: v })),
+      toggle('t-polish', s.polish, '✨ Editor polish pass (higher quality)', (v) => updateSettings({ polish: v })),
       toggle('t-illustrate', s.illustrate, '🖼️ Add royalty-free images', (v) => updateSettings({ illustrate: v })),
       toggle('t-sub', s.forceSubscription, '🔐 Use subscription, not API key', (v) => updateSettings({ forceSubscription: v }))));
   return bar;
@@ -360,9 +362,10 @@ function readSpec() {
     tone: $('#f-tone').value.trim(),
     pov: $('#f-pov').value.trim(),
     notes: $('#f-notes').value.trim(),
-    model: s.provider === 'codex' ? s.codexModel : s.claudeModel,
+    model: s[modelField(s.provider || 'claude')] || '',
     research: !!s.research,
     illustrate: !!s.illustrate,
+    polish: s.polish !== false,
   };
 }
 
@@ -537,40 +540,197 @@ function renderProgress() {
     actions));
 }
 
-// ---------- READER ----------
+// ---------- READER (premium built-in EPUB reader) ----------
+const READER_DEFAULTS = { fontSize: 19, family: 'serif', theme: 'sepia', mode: 'chapter' };
+function readerPrefs() {
+  try { return { ...READER_DEFAULTS, ...JSON.parse(localStorage.getItem('bw.reader.prefs') || '{}') }; }
+  catch (_) { return { ...READER_DEFAULTS }; }
+}
+function saveReaderPrefs(p) { localStorage.setItem('bw.reader.prefs', JSON.stringify(p)); }
+function readerPos(id) { return Number(localStorage.getItem('bw.reader.pos.' + id) || 0); }
+function saveReaderPos(id, idx) { localStorage.setItem('bw.reader.pos.' + id, String(idx)); }
+
 async function renderReader(id) {
-  let book, html;
-  try { book = await api.getBook(id); html = await api.getBookHtml(id); }
+  if (state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
+  let content;
+  try { content = await api.getBookContent(id); }
   catch (err) { toast(`Could not open book: ${err.message}`, 'bad'); return go('library'); }
 
-  const paused = book.status === 'paused';
+  const chapters = content.chapters || [];
+  const paused = content.status === 'paused';
+  const prefs = readerPrefs();
+  let cur = Math.min(Math.max(readerPos(id), 0), Math.max(chapters.length - 1, 0));
+
+  // --- root + bar ---
+  const root = h('div', { class: 'view reader-view epub-reader' });
+  const setVars = () => {
+    root.setAttribute('data-theme', prefs.theme);
+    root.setAttribute('data-font', prefs.family);
+    root.style.setProperty('--reader-fs', prefs.fontSize + 'px');
+  };
+
+  const tocDrawer = h('aside', { class: 'toc-drawer' });
+  const contentEl = h('div', { class: 'reader-content' });
+  const progressFill = h('div', { class: 'rf' });
+  const pageInfo = h('span', { class: 'page-info' }, '');
+
+  const toggleToc = () => tocDrawer.classList.toggle('open');
+
   const bar = h('div', { class: 'reader-bar' },
-    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('library') }, '← Library'),
-    h('div', { class: 'title' }, book.title),
+    h('button', { class: 'icon-btn', title: 'Library', onClick: () => go('library') }, '←'),
+    h('button', { class: 'icon-btn', title: 'Contents', onClick: toggleToc }, '☰'),
+    h('div', { class: 'title' }, content.title),
     h('div', { class: 'spacer' }),
-    paused ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue') : null,
-    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => doExport(id, 'epub') }, 'EPUB'),
-    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => doExport(id, 'pdf') }, 'PDF'),
-    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => doExport(id, 'markdown') }, 'Markdown'),
-    h('button', { class: 'btn btn-gold btn-sm', onClick: () => sendKindle(id) }, '📨 Send to Kindle'),
-    h('button', { class: 'btn btn-danger btn-sm', onClick: () => deleteBook(id) }, 'Delete'));
+    // typography controls
+    h('div', { class: 'reader-tools' },
+      h('button', { class: 'icon-btn', title: 'Smaller text', onClick: () => bumpFont(-1) }, 'A−'),
+      h('button', { class: 'icon-btn', title: 'Larger text', onClick: () => bumpFont(1) }, 'A+'),
+      familySelect(),
+      themeSelect(),
+      modeSelect()),
+    h('div', { class: 'reader-actions' },
+      paused ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue') : null,
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Save EPUB file', onClick: () => downloadEpub(id) }, '⤓ EPUB'),
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Email a PDF', onClick: () => emailPdfModal(id, content.title) }, '✉ PDF'),
+      h('button', { class: 'btn btn-gold btn-sm', title: 'Send EPUB to Kindle', onClick: () => sendKindle(id) }, '📨 Kindle'),
+      h('button', { class: 'icon-btn danger', title: 'Delete', onClick: () => deleteBook(id) }, '🗑')));
 
-  const note = paused && book.pausedReason
-    ? h('div', { class: 'pause-note' }, `⏸️ ${book.pausedReason.detail || 'Paused.'} `,
-        h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue writing'))
-    : null;
+  const nav = h('div', { class: 'reader-nav' },
+    h('button', { class: 'btn btn-ghost btn-sm', id: 'r-prev', onClick: () => step(-1) }, '‹ Prev'),
+    pageInfo,
+    h('button', { class: 'btn btn-ghost btn-sm', id: 'r-next', onClick: () => step(1) }, 'Next ›'));
 
-  const frame = h('iframe', { class: 'reader-frame', sandbox: 'allow-same-origin' });
-  mount(h('div', { class: 'view reader-view' }, bar, note, frame));
-  frame.srcdoc = html;
+  const main = h('main', { class: 'reader-main' },
+    paused && content.pausedReason
+      ? h('div', { class: 'pause-note' }, `⏸️ ${content.pausedReason.detail || 'Paused.'} `,
+          h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue writing'))
+      : null,
+    contentEl, nav);
+
+  root.append(bar, h('div', { class: 'reader-progress' }, progressFill), h('div', { class: 'reader-body' }, tocDrawer, main));
+  setVars();
+  mount(root);
+
+  // --- TOC ---
+  function buildToc() {
+    tocDrawer.innerHTML = '';
+    tocDrawer.append(h('div', { class: 'toc-head' }, 'Contents'));
+    chapters.forEach((c, i) => {
+      tocDrawer.append(h('button', {
+        class: `toc-item ${i === cur ? 'active' : ''}`, 'data-i': i,
+        onClick: () => { goChapter(i); if (window.innerWidth < 760) tocDrawer.classList.remove('open'); },
+      }, h('span', { class: 'toc-n' }, String(c.number)), c.title));
+    });
+  }
+
+  // --- rendering ---
+  function renderBody() {
+    contentEl.innerHTML = '';
+    if (!chapters.length) { contentEl.append(h('p', { style: 'text-align:center;color:#999' }, 'No chapters yet.')); return; }
+    if (prefs.mode === 'scroll') {
+      chapters.forEach((c, i) => {
+        const sec = h('section', { class: 'epub-chapter', 'data-i': i });
+        sec.innerHTML = c.html;
+        contentEl.append(sec);
+      });
+      nav.style.display = 'none';
+    } else {
+      const c = chapters[cur];
+      const sec = h('section', { class: 'epub-chapter', 'data-i': cur });
+      sec.innerHTML = c.html;
+      contentEl.append(sec);
+      nav.style.display = 'flex';
+    }
+    updateProgress();
+    buildToc();
+    contentEl.scrollTop = 0;
+    const mainEl = main;
+    if (mainEl) mainEl.scrollTop = 0;
+  }
+
+  function updateProgress() {
+    document.querySelectorAll('.toc-item').forEach((b) => b.classList.toggle('active', Number(b.getAttribute('data-i')) === cur));
+    if (prefs.mode === 'chapter') {
+      pageInfo.textContent = `Chapter ${cur + 1} of ${chapters.length}`;
+      const pct = chapters.length ? ((cur + 1) / chapters.length) * 100 : 0;
+      progressFill.style.width = pct + '%';
+      const prev = document.getElementById('r-prev'); const next = document.getElementById('r-next');
+      if (prev) prev.disabled = cur <= 0;
+      if (next) next.disabled = cur >= chapters.length - 1;
+    }
+  }
+
+  function goChapter(i) {
+    cur = Math.min(Math.max(i, 0), chapters.length - 1);
+    saveReaderPos(id, cur);
+    if (prefs.mode === 'scroll') {
+      const sec = contentEl.querySelector(`.epub-chapter[data-i="${cur}"]`);
+      if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      updateProgress();
+    } else {
+      renderBody();
+    }
+  }
+  function step(d) { goChapter(cur + d); }
+
+  // --- controls ---
+  function bumpFont(d) {
+    prefs.fontSize = Math.min(28, Math.max(14, prefs.fontSize + d));
+    saveReaderPrefs(prefs); setVars();
+  }
+  function familySelect() {
+    const sel = h('select', { class: 'reader-select', title: 'Typeface' },
+      h('option', { value: 'serif', selected: prefs.family === 'serif' ? 'selected' : false }, 'Serif'),
+      h('option', { value: 'sans', selected: prefs.family === 'sans' ? 'selected' : false }, 'Sans'));
+    sel.addEventListener('change', () => { prefs.family = sel.value; saveReaderPrefs(prefs); setVars(); });
+    return sel;
+  }
+  function themeSelect() {
+    const sel = h('select', { class: 'reader-select', title: 'Theme' },
+      h('option', { value: 'light', selected: prefs.theme === 'light' ? 'selected' : false }, '☀ Light'),
+      h('option', { value: 'sepia', selected: prefs.theme === 'sepia' ? 'selected' : false }, '🜂 Sepia'),
+      h('option', { value: 'night', selected: prefs.theme === 'night' ? 'selected' : false }, '🌙 Night'));
+    sel.addEventListener('change', () => { prefs.theme = sel.value; saveReaderPrefs(prefs); setVars(); });
+    return sel;
+  }
+  function modeSelect() {
+    const sel = h('select', { class: 'reader-select', title: 'Reading mode' },
+      h('option', { value: 'chapter', selected: prefs.mode === 'chapter' ? 'selected' : false }, 'Page'),
+      h('option', { value: 'scroll', selected: prefs.mode === 'scroll' ? 'selected' : false }, 'Scroll'));
+    sel.addEventListener('change', () => { prefs.mode = sel.value; saveReaderPrefs(prefs); renderBody(); });
+    return sel;
+  }
+
+  // scroll-mode progress + active chapter tracking
+  main.addEventListener('scroll', () => {
+    if (prefs.mode !== 'scroll') return;
+    const max = main.scrollHeight - main.clientHeight;
+    progressFill.style.width = (max > 0 ? (main.scrollTop / max) * 100 : 0) + '%';
+    let active = cur;
+    contentEl.querySelectorAll('.epub-chapter').forEach((sec) => {
+      if (sec.getBoundingClientRect().top < 160) active = Number(sec.getAttribute('data-i'));
+    });
+    if (active !== cur) { cur = active; saveReaderPos(id, cur); updateProgress(); }
+  });
+
+  // keyboard navigation
+  state.readerKeys = (e) => {
+    if (state.view !== 'reader') return;
+    if (e.key === 'ArrowRight' && prefs.mode === 'chapter') step(1);
+    else if (e.key === 'ArrowLeft' && prefs.mode === 'chapter') step(-1);
+    else if (e.key === 'Escape') go('library');
+  };
+  document.addEventListener('keydown', state.readerKeys);
+
+  renderBody();
 }
 
-async function doExport(id, format) {
-  toast(`Exporting ${format.toUpperCase()}…`);
+async function downloadEpub(id) {
+  toast('Exporting EPUB…');
   try {
-    const res = await api.exportBook(id, format, true);
+    const res = await api.exportBook(id, 'epub', true);
     if (res.canceled) return;
-    toast(`Saved ${format.toUpperCase()}. Opening…`, 'ok');
+    toast('Saved EPUB. Opening…', 'ok');
     await api.openPath(res.path);
   } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
 }
@@ -580,9 +740,39 @@ async function sendKindle(id) {
     toast('Set up your Kindle email & SMTP in Settings first.', 'bad');
     return go('settings');
   }
-  toast('Building and emailing your book to Kindle…');
+  toast('Building EPUB and emailing it to Kindle…');
   try { await api.sendToKindle(id); toast('📨 Sent! It will appear on your Kindle shortly.', 'ok'); }
   catch (err) { toast(`Send failed: ${err.message}`, 'bad'); }
+}
+function emailPdfModal(id, title) {
+  const k = state.settings && state.settings.kindle;
+  if (!k || !k.smtp || !k.smtp.host || !k.fromAddress) {
+    toast('Add your SMTP details and a sender address in Settings first.', 'bad');
+    return go('settings');
+  }
+  const input = h('input', { type: 'email', placeholder: 'name@example.com',
+    value: state.settings.pdfEmailTo || '', onkeydown: (e) => { if (e.key === 'Enter') doSend(); } });
+  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+    h('div', { class: 'modal', style: 'max-width:460px' },
+      h('h2', { style: 'margin:0 0 6px' }, 'Email this book as a PDF'),
+      h('p', { class: 'hint', style: 'margin-bottom:12px' }, `“${title}” will be rendered to PDF and sent from ${k.fromAddress} via your SMTP account.`),
+      h('label', { class: 'field' }, h('span', {}, 'Recipient email'), input),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn btn-primary btn-sm', onClick: doSend }, '✉ Send PDF'),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Cancel'))));
+  document.body.append(overlay);
+  setTimeout(() => input.focus(), 30);
+  async function doSend() {
+    const to = input.value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { toast('Enter a valid email address.', 'bad'); return; }
+    overlay.remove();
+    toast('Rendering PDF and emailing…');
+    try {
+      await api.emailPdf(id, to);
+      state.settings = await api.getSettings();
+      toast(`✉ PDF emailed to ${to}.`, 'ok');
+    } catch (err) { toast(`Email failed: ${err.message}`, 'bad'); }
+  }
 }
 async function deleteBook(id) {
   if (!window.confirm('Delete this book permanently?')) return;

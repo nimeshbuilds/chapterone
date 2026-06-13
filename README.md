@@ -21,9 +21,20 @@ third-party servers.
   screen, before you write.
 - **Smart clarification** — if the brief is ambiguous, the author asks 2–5
   sharp questions (with suggested answers) before writing.
+- **Agentic, multi-pass writing** — a planner designs the outline, a
+  research-grounded writer drafts each chapter, and an **editor agent** then
+  revises it to bestseller quality, with rolling continuity notes keeping the
+  whole book coherent.
 - **Research-grounded** — with web search enabled, the author looks up real
   facts, places, names, dates and current details so the book is authentic and
-  accurate — never fabricated.
+  accurate — never fabricated. The searching is done by the selected CLI's own
+  web tools (Claude WebSearch/WebFetch, Codex `--search`, Gemini Google Search).
+- **Three engines + automatic fallback chain** — Claude Code, Codex, or Gemini,
+  each on your own subscription. Build an ordered chain so that if one provider's
+  quota runs out mid-book, writing continues automatically on the next.
+- **Guided sign-in** — not logged in? The app launches the CLI's sign-in,
+  opens the OAuth page in your browser, and accepts any pasted code — no terminal
+  needed.
 - **Royalty-free images** — optionally illustrates the book with openly-licensed
   / public-domain images sourced from [Openverse](https://openverse.org), with a
   full image-credits page (no copyright headaches).
@@ -33,10 +44,15 @@ third-party servers.
   subscription lapses, the network drops, or you hit a rate limit mid-book, the
   book is saved exactly where it stopped. Reactivate and hit **▶ Continue** (or
   resume any paused book from the library) to finish it.
-- **Read in-app** — a clean, book-like reader.
-- **Export** — EPUB (Kindle/KDP-ready), PDF, or Markdown.
-- **Send to Kindle** — emails the EPUB/PDF to your `@kindle.com` address so it
+- **Premium built-in EPUB reader** — read your books in a distraction-free,
+  book-grade reader with a contents drawer, Page or Scroll modes, adjustable
+  type size and typeface, Light/Sepia/Night themes, a reading-progress bar, and
+  remembered position. EPUB is the canonical format.
+- **Send to Kindle** — emails the **EPUB** to your `@kindle.com` address so it
   appears on your device, and gives you a KDP-ready EPUB to publish for others.
+- **Export to PDF & email** — one button renders a PDF and emails it to any
+  address you choose, through your own SMTP account.
+- **Download EPUB** — save the Kindle/KDP-ready `.epub` file anywhere.
 - **Subscription, not API key** — by default the app strips `ANTHROPIC_API_KEY`
   / `OPENAI_API_KEY` from the CLI's environment so it always authenticates with
   your subscription login and never bills an API key.
@@ -148,12 +164,24 @@ src/
 test/                       node:test suite for the pure-logic modules
 ```
 
-### How generation stays coherent
-Each chapter is written in its own CLI call (so no single context has to hold
-the whole book). Before writing chapter *N*, the app sends a compact 3–4
-sentence **continuity recap** of chapter *N−1* plus the book's style guide,
-premise and planned beats. Progress is saved after every chapter, so a crash,
-cancel, or lapsed subscription always leaves a resumable draft.
+### The agentic writing pipeline
+Modulagent treats book-writing as a small multi-agent workflow, leaning on each
+CLI's agentic abilities (web search, long-context reasoning, tool use):
+
+1. **Triage** — decides if the brief is clear or needs clarifying questions.
+2. **Planner** — designs the title, premise, style guide and a concrete chapter
+   outline (optionally research-grounded).
+3. **Writer** — drafts each chapter in its own call, grounded by web research and
+   the book's style guide, and only the *previous chapter's* compact continuity
+   recap (so no single context must hold the whole book).
+4. **Editor** — a second pass critiques and rewrites the draft to bestseller
+   quality (toggleable).
+5. **Illustrator** — sources high-resolution, openly-licensed images for any
+   image markers and builds a credits page.
+6. **Fallback chain** — every model call runs through the provider chain, so a
+   quota/rate/auth/network failure transparently switches engines and keeps
+   going. Progress is saved after every chapter, so a crash, cancel, or lapsed
+   subscription always leaves a resumable draft.
 
 ### Privacy
 Everything runs locally through your CLI on your subscription. Outbound network

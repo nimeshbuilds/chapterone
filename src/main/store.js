@@ -34,6 +34,8 @@ class Store {
       forceSubscription: true, // strip API-key env vars; use subscription login
       research: true, // ground content with web search by default
       illustrate: false, // source royalty-free images when requested
+      polish: true, // agentic editor pass for bestseller-grade prose
+      pdfEmailTo: '', // remembered recipient for "Email as PDF"
       kindle: {
         toAddress: '', // <name>@kindle.com
         fromAddress: '',

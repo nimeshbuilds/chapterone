@@ -50,6 +50,18 @@ test('chapter prompt adds research and image instructions when flagged', () => {
   assert.match(rich, /high-resolution|stock photo|premium quality/i);
 });
 
+test('edit prompt asks for a bestseller revision and preserves image lines', () => {
+  const { editPrompt } = require('../src/main/book/prompts');
+  const book = { genre: 'Thriller', premise: 'p', styleGuide: 'tense' };
+  const ch = { number: 3, title: 'The Trap' };
+  const p = editPrompt(book, ch, '# The Trap\n\nDraft text.', { research: true });
+  assert.match(p, /developmental editor/i);
+  assert.match(p, /# The Trap/);
+  assert.match(p, /Draft text\./);
+  assert.match(p, /image-search/); // instructs preserving image markers
+  assert.match(p, /web search/i); // research-aware
+});
+
 test('word targets scale with length', () => {
   assert.ok(targetWordsForLength('short novella') < targetWordsForLength('standard'));
   assert.ok(targetWordsForLength('epic long') > targetWordsForLength('standard'));

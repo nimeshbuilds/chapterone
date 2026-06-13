@@ -5,6 +5,7 @@ const {
   clarifyPrompt,
   outlinePrompt,
   chapterPrompt,
+  editPrompt,
   recapPrompt,
   targetWordsForLength,
 } = require('./prompts');
@@ -116,7 +117,7 @@ class BookGenerator {
     const emit = (phase, payload = {}) => onProgress({ phase, ...payload });
     const spec = book.spec || {};
     const targetWords = targetWordsForLength(spec.length);
-    const flags = { research: !!spec.research, illustrate: !!spec.illustrate };
+    const flags = { research: !!spec.research, illustrate: !!spec.illustrate, polish: spec.polish !== false };
 
     for (let i = startIndex; i < book.outline.length; i++) {
       if (signal && signal.aborted) {
@@ -147,11 +148,38 @@ class BookGenerator {
         throw err;
       }
 
+      let finalProse = prose;
+      // Agentic editor pass: a second model call revises the draft to
+      // bestseller quality before we keep it.
+      if (flags.polish) {
+        emit('chapter:polish', {
+          index: i, number: planned.number, title: planned.title,
+          message: `Editing & polishing Chapter ${planned.number}: ${planned.title}`,
+        });
+        try {
+          const revised = await this.engine.complete(
+            editPrompt(book, planned, cleanChapter(prose, planned.title), flags),
+            {
+              system: 'You are a world-class book editor. Output only the revised chapter in Markdown.',
+              research: flags.research,
+              timeoutMs: 900000,
+              signal,
+            }
+          );
+          if (revised && revised.trim().length > prose.trim().length * 0.5) {
+            finalProse = revised; // accept only a substantive revision
+          }
+        } catch (err) {
+          if (signal && signal.aborted) { this._markPaused(book, err.message); if (onChapter) await onChapter(book); throw err; }
+          // Non-fatal: keep the solid draft if the polish pass fails.
+        }
+      }
+
       const chapter = {
         number: planned.number,
         title: planned.title,
-        content: cleanChapter(prose, planned.title),
-        words: wordCount(prose),
+        content: cleanChapter(finalProse, planned.title),
+        words: wordCount(finalProse),
       };
       book.chapters[i] = chapter;
       book.updatedAt = new Date().toISOString();

@@ -155,6 +155,33 @@ function imageInstruction() {
 }
 
 /**
+ * Step 3b (agentic editor pass) — a senior developmental editor critiques and
+ * rewrites the freshly drafted chapter to bestseller quality. Returns Markdown.
+ */
+function editPrompt(book, chapter, draft, flags = {}) {
+  return [
+    `You are a ruthless, world-class developmental editor and line editor for #1 bestsellers in ${book.genre || 'this genre'}.`,
+    `Revise the chapter below into its strongest possible final form. This book is sold to paying readers — every line must earn its place.`,
+    ``,
+    `STYLE GUIDE (must hold): ${book.styleGuide || 'vivid, immersive, consistent voice'}`,
+    `PREMISE: ${book.premise}`,
+    ``,
+    `Editing priorities:`,
+    `- Sharpen the opening hook and the closing line.`,
+    `- Improve pacing and flow; cut filler, clichés, repetition, and throat-clearing.`,
+    `- Deepen sensory detail, subtext, and character/idea specificity. Strengthen weak verbs.`,
+    `- Fix continuity, tense, POV and factual consistency. Keep all names/facts intact.`,
+    `- Preserve the chapter's events, length, and any "![caption](image-search: …)" or "![caption](bwimg:…)" image lines exactly.`,
+    flags.research ? `- You may use web search to verify any real-world facts before finalizing; never invent sources.` : '',
+    ``,
+    `Return ONLY the revised chapter in Markdown, starting with "# ${chapter.title}". No notes, no commentary, no explanation of changes.`,
+    ``,
+    `--- DRAFT TO REVISE ---`,
+    draft,
+  ].filter(Boolean).join('\n');
+}
+
+/**
  * Step 4 — Compress a freshly written chapter into a short continuity note,
  * so the next chapter stays coherent without resending full text.
  */
@@ -204,6 +231,7 @@ module.exports = {
   clarifyPrompt,
   outlinePrompt,
   chapterPrompt,
+  editPrompt,
   recapPrompt,
   researchInstruction,
   imageInstruction,
