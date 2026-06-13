@@ -7,10 +7,19 @@ const {
   chapterPrompt,
   editPrompt,
   recapPrompt,
+  coverSvgPrompt,
+  chapterArtSvgPrompt,
   targetWordsForLength,
 } = require('./prompts');
 const { extractJson } = require('./json');
+const { sanitizeSvg } = require('./aiArt');
 const { classifyError, isResumable, describe } = require('./errors');
+
+/** Resolve the image strategy from a spec (back-compat with the old flag). */
+function imageModeOf(spec) {
+  if (spec && spec.imageMode) return spec.imageMode; // 'ai' | 'stock' | 'off'
+  return spec && spec.illustrate ? 'stock' : 'off';
+}
 
 /**
  * Orchestrates the multi-step book generation pipeline against a CLI engine.
@@ -83,7 +92,33 @@ class BookGenerator {
     emit('outline:done', { title: book.title, chapters: book.outline.length, book });
     if (onChapter) await onChapter(book);
 
+    await this._maybeCover(book, hooks);
+
     return this._writeChapters(book, 0, '', hooks);
+  }
+
+  /** Generate an AI-designed SVG cover when image art is enabled. */
+  async _maybeCover(book, hooks = {}) {
+    const { onProgress = () => {}, onChapter, signal } = hooks;
+    if (imageModeOf(book.spec) === 'off' || book.coverSvg) return;
+    onProgress({ phase: 'cover:start', message: 'Designing the book cover…' });
+    try {
+      const raw = await this.engine.complete(coverSvgPrompt(book), {
+        system: 'You are a master book-cover designer. Output only a single valid SVG.',
+        timeoutMs: 300000,
+        signal,
+      });
+      const svg = sanitizeSvg(raw);
+      if (svg) {
+        book.coverSvg = svg;
+        book.updatedAt = new Date().toISOString();
+        onProgress({ phase: 'cover:done', book });
+        if (onChapter) await onChapter(book);
+      }
+    } catch (err) {
+      if (signal && signal.aborted) throw err;
+      // Non-fatal: a missing cover never blocks the book.
+    }
   }
 
   /**
@@ -108,6 +143,7 @@ class BookGenerator {
     if (hooks.onProgress) {
       hooks.onProgress({ phase: 'resume', startIndex, total: book.outline.length, book });
     }
+    await this._maybeCover(book, hooks);
     return this._writeChapters(book, startIndex, prevRecap, hooks);
   }
 
@@ -116,8 +152,9 @@ class BookGenerator {
     const { onProgress = () => {}, onChapter, signal } = hooks;
     const emit = (phase, payload = {}) => onProgress({ phase, ...payload });
     const spec = book.spec || {};
-    const targetWords = targetWordsForLength(spec.length);
-    const flags = { research: !!spec.research, illustrate: !!spec.illustrate, polish: spec.polish !== false };
+    const targetWords = targetWordsForLength(spec);
+    const imageMode = imageModeOf(spec);
+    const flags = { research: !!spec.research, illustrate: imageMode === 'stock', polish: spec.polish !== false };
 
     for (let i = startIndex; i < book.outline.length; i++) {
       if (signal && signal.aborted) {
@@ -133,11 +170,23 @@ class BookGenerator {
 
       let prose;
       try {
+        // Stream the draft to the UI in near real time (throttled).
+        let acc = '';
+        let lastEmit = 0;
+        const onStdout = (chunk) => {
+          acc += chunk;
+          const now = Date.now();
+          if (now - lastEmit > 180) {
+            lastEmit = now;
+            emit('chapter:stream', { index: i, number: planned.number, title: planned.title, preview: acc.slice(-1600) });
+          }
+        };
         prose = await this.engine.complete(
           chapterPrompt(book, planned, prevRecap, targetWords, flags),
           {
             system: 'You are writing publishable prose for a bestselling book. Obey the style guide. Output only the chapter in Markdown.',
             research: flags.research,
+            onStdout,
             timeoutMs: 900000,
             signal,
           }
@@ -183,6 +232,22 @@ class BookGenerator {
       };
       book.chapters[i] = chapter;
       book.updatedAt = new Date().toISOString();
+
+      // One AI-designed illustration per chapter (when AI art is enabled).
+      if (imageMode === 'ai') {
+        emit('art:start', { index: i, number: planned.number, title: planned.title, message: `Illustrating Chapter ${planned.number}…` });
+        try {
+          const rawArt = await this.engine.complete(chapterArtSvgPrompt(book, planned), {
+            system: 'You are an editorial illustrator. Output only a single valid SVG.',
+            timeoutMs: 300000, signal,
+          });
+          const art = sanitizeSvg(rawArt);
+          if (art) { chapter.artSvg = art; emit('art:done', { index: i, number: planned.number }); }
+        } catch (err) {
+          if (signal && signal.aborted) { this._markPaused(book, err.message); if (onChapter) await onChapter(book); throw err; }
+          // Non-fatal: a chapter without art is fine.
+        }
+      }
 
       emit('chapter:done', {
         index: i, total: book.outline.length, number: planned.number,

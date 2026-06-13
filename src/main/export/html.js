@@ -1,8 +1,16 @@
 'use strict';
 
 const { marked } = require('marked');
+const { svgToDataUri } = require('../book/aiArt');
 
 marked.setOptions({ mangle: false, headerIds: true, headerPrefix: 'h-' });
+
+/** Wrap a sanitized SVG string as a static <img> figure (no script execution). */
+function svgFigure(svg, cls = 'chapter-art') {
+  const uri = svgToDataUri(svg);
+  if (!uri) return '';
+  return `<figure class="${cls}"><img src="${uri}" alt="" /></figure>`;
+}
 
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -65,6 +73,10 @@ const BOOK_CSS = `
   .titlepage .subtitle { font-size: 1.3rem; color: #5a5a5a; margin-top: 1rem; font-style: italic; }
   .titlepage .author { margin-top: 3rem; font-size: 1.1rem; letter-spacing: .12em; text-transform: uppercase; }
   .chapter { page-break-before: always; }
+  .cover-page { page-break-after: always; text-align: center; margin: 0; padding: 0; }
+  .cover-art img, .cover-page img { max-width: 100%; max-height: 100vh; border-radius: 4px; }
+  .chapter-art { margin: 0 0 1.6rem; text-align: center; }
+  .chapter-art img { max-width: 100%; border-radius: 8px; }
   .credits { page-break-before: always; font-size: .9rem; color: #444; }
   .credits h2 { font-size: 1.2rem; }
   .credits li { margin-bottom: .6rem; }
@@ -96,9 +108,10 @@ function bookToHtml(book, opts = {}) {
     .filter(Boolean)
     .map(
       (c) =>
-        `<section class="chapter" id="ch-${c.number}">${chapterToHtml(c.content, opts.resolveImage)}</section>`
+        `<section class="chapter" id="ch-${c.number}">${c.artSvg ? svgFigure(c.artSvg) : ''}${chapterToHtml(c.content, opts.resolveImage)}</section>`
     )
     .join('\n');
+  const coverPage = book.coverSvg ? `<section class="cover-page">${svgFigure(book.coverSvg, 'cover-art')}</section>` : '';
 
   const title = `${escapeHtml(book.title)}${book.subtitle ? ` — ${escapeHtml(book.subtitle)}` : ''}`;
   const titlePage = `
@@ -118,6 +131,7 @@ function bookToHtml(book, opts = {}) {
 </head>
 <body>
 <div class="page">
+${coverPage}
 ${opts.includeTitlePage === false ? '' : titlePage}
 ${chapters}
 ${opts.includeCredits === false ? '' : creditsHtml(book)}
@@ -126,4 +140,4 @@ ${opts.includeCredits === false ? '' : creditsHtml(book)}
 </html>`;
 }
 
-module.exports = { bookToHtml, chapterToHtml, escapeHtml, applyImageSources, creditsHtml, BOOK_CSS };
+module.exports = { bookToHtml, chapterToHtml, svgFigure, escapeHtml, applyImageSources, creditsHtml, BOOK_CSS };

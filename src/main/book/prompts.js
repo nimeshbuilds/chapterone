@@ -53,7 +53,7 @@ function clarifyPrompt(spec) {
  */
 function outlinePrompt(spec, answers) {
   const answerBlock = formatAnswers(answers);
-  const chapterHint = lengthToChapterHint(spec.length);
+  const chapterHint = chapterHintForSize(spec);
   return [
     bestsellerPersona(spec.genre),
     ``,
@@ -63,7 +63,7 @@ function outlinePrompt(spec, answers) {
     `- Request: ${spec.request || '(none)'}`,
     `- Genre: ${spec.genre || '(you choose the best fit)'}`,
     `- Audience: ${spec.audience || '(you choose)'}`,
-    `- Desired length: ${spec.length || 'standard'} (${chapterHint})`,
+    `- Target book size: ${chapterHint}. Plan the number and scope of chapters so the finished book lands in that page range based on what the topic genuinely needs — do not pad.`,
     `- Tone/style: ${spec.tone || '(you choose what sells best)'}`,
     `- Point of view: ${spec.pov || '(you choose)'}`,
     `- Notes: ${spec.notes || '(none)'}`,
@@ -182,6 +182,53 @@ function editPrompt(book, chapter, draft, flags = {}) {
 }
 
 /**
+ * Cover art — ask the model (acting as a senior book-cover designer) to
+ * produce a single, self-contained SVG cover that matches the book's soul.
+ * Text models can't draw raster images, but they design excellent vector art.
+ */
+function coverSvgPrompt(book, { width = 1200, height = 1800 } = {}) {
+  return [
+    `You are a celebrated book-cover designer. Design a striking, professional, sales-ready front cover for the book below, as a single self-contained SVG.`,
+    ``,
+    `TITLE: ${book.title}`,
+    book.subtitle ? `SUBTITLE: ${book.subtitle}` : '',
+    `AUTHOR: ${book.author || ''}`,
+    `GENRE: ${book.genre || ''}`,
+    `THEMES: ${(book.themes || []).join(', ')}`,
+    `MOOD/PREMISE: ${book.premise || ''}`,
+    ``,
+    `Design rules:`,
+    `- Capture the genre and emotional tone through composition, an evocative color palette, gradients, geometry, and tasteful iconography/symbolism. Think comparable bestsellers.`,
+    `- Include the TITLE prominently and the AUTHOR name, with strong typographic hierarchy. Keep text legible and well-kerned.`,
+    `- Use only vector shapes, paths, gradients, and <text>. NO external images, fonts, or links. Use generic font-family stacks (e.g. Georgia, serif / Helvetica, sans-serif).`,
+    `- It must be a complete, valid SVG with viewBox="0 0 ${width} ${height}". No raster <image>, no <script>, no <foreignObject>, no event handlers.`,
+    ``,
+    `Output ONLY the SVG markup, starting with <svg and ending with </svg>. No code fences, no commentary.`,
+  ].filter(Boolean).join('\n');
+}
+
+/**
+ * Chapter illustration — one tasteful, theme-matched SVG vignette per chapter.
+ */
+function chapterArtSvgPrompt(book, chapter, { width = 1200, height = 700 } = {}) {
+  return [
+    `You are an editorial illustrator for a premium ${book.genre || ''} book. Create ONE elegant, atmospheric chapter illustration as a single self-contained SVG that visually echoes this chapter and the book's overall design.`,
+    ``,
+    `BOOK: ${book.title} — ${book.premise || ''}`,
+    `BOOK THEMES: ${(book.themes || []).join(', ')}`,
+    `CHAPTER ${chapter.number}: ${chapter.title}`,
+    `CHAPTER GIST: ${chapter.summary || (chapter.beats || []).join('; ')}`,
+    ``,
+    `Rules:`,
+    `- Wide banner composition, viewBox="0 0 ${width} ${height}". Cohesive palette that fits the book's mood; can be minimalist or richly layered.`,
+    `- Vector only: shapes, paths, gradients. Little or no text (a small motif is fine). NO external images/fonts/links, NO <script>, NO <foreignObject>, NO event handlers.`,
+    `- Must read clearly at small sizes and feel like part of a designed book.`,
+    ``,
+    `Output ONLY the SVG markup, starting with <svg and ending with </svg>. No code fences, no commentary.`,
+  ].filter(Boolean).join('\n');
+}
+
+/**
  * Step 4 — Compress a freshly written chapter into a short continuity note,
  * so the next chapter stays coherent without resending full text.
  */
@@ -207,23 +254,39 @@ function formatAnswers(answers) {
   return lines.length > 2 ? lines.join('\n') : '';
 }
 
-function lengthToChapterHint(length) {
-  const l = (length || '').toLowerCase();
-  if (l.includes('short') || l.includes('novella') || l.includes('quick')) {
-    return 'about 6-10 chapters';
-  }
-  if (l.includes('epic') || l.includes('long') || l.includes('800')) {
-    return 'about 24-40 chapters';
-  }
-  return 'about 12-20 chapters';
+// ---- book size ----
+
+/**
+ * Book sizes the reader can pick, with page ranges and the chapter/word plan we
+ * use to hit them (~275 words per typeset page).
+ */
+const SIZES = {
+  small: { key: 'small', label: 'Small', pages: '35–60 pages', minCh: 8, maxCh: 12, words: 1500 },
+  medium: { key: 'medium', label: 'Medium', pages: '75–125 pages', minCh: 12, maxCh: 16, words: 2000 },
+  large: { key: 'large', label: 'Large', pages: '150–250 pages', minCh: 20, maxCh: 28, words: 2500 },
+};
+
+/** Resolve a spec to a size definition (new `size` field, or legacy `length`). */
+function sizeOf(spec) {
+  const raw = String((spec && (spec.size || spec.length)) || '').toLowerCase();
+  if (raw.includes('small') || raw.includes('short') || raw.includes('novella')) return SIZES.small;
+  if (raw.includes('large') || raw.includes('epic') || raw.includes('long')) return SIZES.large;
+  return SIZES.medium;
 }
 
-/** Map a length preference to a per-chapter word target. */
-function targetWordsForLength(length) {
-  const l = (length || '').toLowerCase();
-  if (l.includes('short') || l.includes('novella')) return 1600;
-  if (l.includes('epic') || l.includes('long')) return 3200;
-  return 2400;
+function chapterHintForSize(spec) {
+  const s = sizeOf(spec);
+  return `${s.pages}, about ${s.minCh}-${s.maxCh} chapters`;
+}
+
+/** Per-chapter word target for a spec's size. */
+function targetWordsForLength(spec) {
+  // Accepts a spec object or a legacy length string.
+  return sizeOf(typeof spec === 'string' ? { length: spec } : spec).words;
+}
+// Back-compat alias used by older callers/tests.
+function lengthToChapterHint(length) {
+  return chapterHintForSize({ length });
 }
 
 module.exports = {
@@ -235,6 +298,11 @@ module.exports = {
   recapPrompt,
   researchInstruction,
   imageInstruction,
+  coverSvgPrompt,
+  chapterArtSvgPrompt,
+  SIZES,
+  sizeOf,
+  chapterHintForSize,
   targetWordsForLength,
   lengthToChapterHint,
 };

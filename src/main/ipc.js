@@ -13,7 +13,8 @@ const { resolveImagesForBook } = require('./book/images');
 const { generateEpub } = require('./export/epub');
 const { generatePdf } = require('./export/pdf');
 const { bookToMarkdown } = require('./export/markdown');
-const { bookToHtml, chapterToHtml } = require('./export/html');
+const { bookToHtml, chapterToHtml, svgFigure } = require('./export/html');
+const { svgToDataUri } = require('./book/aiArt');
 const { sendToKindle, sendEmailWithAttachment, verifySmtp } = require('./kindle/sendToKindle');
 const { safeFilename } = require('./util');
 
@@ -46,7 +47,8 @@ function registerIpc(store) {
 
   /** Run image sourcing for a finished book if the user opted in. */
   const maybeIllustrate = async (book, sender, jobId, signal) => {
-    if (!book.spec || !book.spec.illustrate) return book;
+    const mode = book.spec && (book.spec.imageMode || (book.spec.illustrate ? 'stock' : 'off'));
+    if (mode !== 'stock') return book; // AI art is generated inline by the writer
     const onProgress = (e) => {
       if (sender && !sender.isDestroyed()) sender.send('book:progress', { jobId, phase: 'images', ...e });
     };
@@ -192,12 +194,13 @@ function registerIpc(store) {
       status: book.status,
       pausedReason: book.pausedReason || null,
       words: book.words || 0,
+      cover: book.coverSvg ? svgToDataUri(book.coverSvg) : null,
       images: (book.images || []).map((im) => ({ caption: im.caption, attribution: im.attribution, license: im.license, licenseUrl: im.licenseUrl, landing: im.landing })),
       chapters: (book.chapters || []).filter(Boolean).map((c) => ({
         number: c.number,
         title: c.title,
         words: c.words || 0,
-        html: chapterToHtml(c.content, resolve),
+        html: (c.artSvg ? svgFigure(c.artSvg) : '') + chapterToHtml(c.content, resolve),
       })),
     };
   }));

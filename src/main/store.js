@@ -33,7 +33,9 @@ class Store {
       geminiModel: '',
       forceSubscription: true, // strip API-key env vars; use subscription login
       research: true, // ground content with web search by default
-      illustrate: false, // source royalty-free images when requested
+      size: 'medium', // small | medium | large
+      imageMode: 'off', // 'off' | 'ai' (CLI-designed SVG art) | 'stock' (Openverse)
+      illustrate: false, // legacy flag (mapped to imageMode='stock')
       polish: true, // agentic editor pass for bestseller-grade prose
       pdfEmailTo: '', // remembered recipient for "Email as PDF"
       kindle: {
@@ -106,6 +108,7 @@ class Store {
           words: b.words || (b.chapters || []).filter(Boolean).reduce((n, c) => n + (c.words || 0), 0),
           chapters: (b.chapters || []).filter(Boolean).length,
           plannedChapters: (b.outline || []).length,
+          coverSvg: b.coverSvg || null,
           createdAt: b.createdAt,
           updatedAt: b.updatedAt,
         });

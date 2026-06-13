@@ -41,6 +41,10 @@ function toast(msg, type = '') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 4600);
 }
+function svgDataUri(svg) {
+  try { return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg))); }
+  catch (_) { return ''; }
+}
 function coverGradient(seed) {
   let hash = 0;
   for (let i = 0; i < (seed || 'book').length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
@@ -59,6 +63,7 @@ async function updateSettings(partial) {
 // ---------- navigation ----------
 async function go(view, arg) {
   if (view !== 'reader' && state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
+  if (view !== 'progress' && state.progressTimer) { clearInterval(state.progressTimer); state.progressTimer = null; }
   state.view = view;
   setActiveNav(['library', 'create', 'settings'].includes(view) ? view : 'library');
   if (view === 'library') return renderLibrary();
@@ -115,13 +120,13 @@ function modelOptionsFor(provider) {
   const field = modelField(provider);
   const current = state.settings[field] || '';
   const known = list.map((m) => m.id);
-  const sel = h('select', { id: 'eng-model' });
+  const sel = h('select', { id: `eng-model-${provider}`, class: 'model-select' });
   for (const m of list) sel.append(h('option', { value: m.id, selected: m.id === current ? 'selected' : false }, m.label));
   if (current && !known.includes(current)) sel.append(h('option', { value: current, selected: 'selected' }, `Custom: ${current}`));
   sel.append(h('option', { value: '__custom__' }, 'Custom model…'));
   sel.addEventListener('change', async () => {
     if (sel.value === '__custom__') {
-      const v = window.prompt('Enter a custom model id for this provider:', current || '');
+      const v = window.prompt(`Enter a custom model id for ${providerLabel(provider)}:`, current || '');
       if (v == null) { sel.value = current || ''; return; }
       await updateSettings({ [field]: v.trim() });
       renderEngineBarInPlace();
@@ -150,35 +155,68 @@ function currentChain() {
   return [...new Set(ordered)];
 }
 
-function chainToggles() {
+async function setChain(ordered) {
+  await updateSettings({ chain: ordered });
+  renderEngineBarInPlace();
+}
+
+/** Ordered chain rows (each with a per-provider model picker) + add buttons. */
+function chainBuilder() {
   const s = state.settings;
   const primary = s.provider || 'claude';
   const chain = currentChain();
-  const wrap = h('div', { class: 'chain-row' });
-  for (const p of (state.models.providers || [])) {
-    const inChain = chain.includes(p.id);
-    const isPrimary = p.id === primary;
-    const order = chain.indexOf(p.id);
-    const chip = h('button', {
-      class: `chain-chip ${inChain ? 'on' : ''} ${isPrimary ? 'primary' : ''}`,
-      title: isPrimary ? 'Primary engine (always first)' : 'Toggle as fallback',
-      onClick: async () => {
-        if (isPrimary) return; // can't remove primary
-        const next = new Set(currentChain());
-        if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
-        // rebuild ordered list
-        const ids = (state.models.providers || []).map((x) => x.id);
-        const ordered = [primary, ...ids.filter((id) => id !== primary && next.has(id))];
-        await updateSettings({ chain: ordered });
-        renderEngineBarInPlace();
-      },
-    },
-      h('span', { class: 'chain-order' }, inChain ? `${order + 1}` : '+'),
-      ` ${p.label}`,
-      isPrimary ? h('span', { class: 'chain-tag' }, 'primary') : null);
-    wrap.append(chip);
+  const ids = (state.models.providers || []).map((p) => p.id);
+  const wrap = h('div', { class: 'chain-builder' });
+
+  chain.forEach((pid, idx) => {
+    const isPrimary = pid === primary;
+    const row = h('div', { class: `chain-step ${isPrimary ? 'primary' : ''}` },
+      h('span', { class: 'chain-order' }, String(idx + 1)),
+      h('div', { class: 'chain-name' }, providerLabel(pid), isPrimary ? h('span', { class: 'chain-tag' }, 'primary') : null),
+      modelOptionsFor(pid),
+      h('button', { class: 'icon-btn', title: 'Sign in', onClick: () => openAuthModal(pid) }, '🔑'),
+      isPrimary ? null : h('button', {
+        class: 'icon-btn danger', title: 'Remove from chain',
+        onClick: () => setChain(chain.filter((x) => x !== pid)),
+      }, '✕'),
+      isPrimary || idx <= 1 ? null : h('button', {
+        class: 'icon-btn', title: 'Move up',
+        onClick: () => { const a = chain.slice(); [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; setChain(a); },
+      }, '↑'));
+    wrap.append(row);
+  });
+
+  const addable = ids.filter((id) => !chain.includes(id));
+  if (addable.length) {
+    const add = h('div', { class: 'chain-add' }, h('span', { class: 'mini-label' }, 'Add fallback:'));
+    for (const id of addable) {
+      add.append(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => setChain([...chain, id]) }, `+ ${providerLabel(id)}`));
+    }
+    wrap.append(add);
   }
   return wrap;
+}
+
+/** Off / AI art / Stock photos segmented control. */
+function imageModeControl() {
+  const mode = state.settings.imageMode || 'off';
+  const seg = h('div', { class: 'seg' });
+  const opts = [
+    { v: 'off', l: 'No images' },
+    { v: 'ai', l: '🎨 AI-designed art' },
+    { v: 'stock', l: '📷 Stock photos' },
+  ];
+  for (const o of opts) {
+    seg.append(h('button', { class: mode === o.v ? 'active' : '', onClick: () => updateSettings({ imageMode: o.v }).then(renderEngineBarInPlace) }, o.l));
+  }
+  return h('div', { class: 'engine-col grow' },
+    h('span', { class: 'mini-label' }, 'Cover & illustrations (one per chapter)'),
+    seg,
+    h('span', { class: 'hint' }, mode === 'ai'
+      ? 'Your selected engine designs a bespoke vector cover and a chapter illustration that match the book’s theme — copyright-free.'
+      : mode === 'stock'
+        ? 'Sources high-resolution, openly-licensed photos from Openverse, with a credits page.'
+        : 'No images will be added.'));
 }
 
 function engineBar() {
@@ -192,21 +230,15 @@ function engineBar() {
     h('div', { class: 'engine-row' },
       h('div', { class: 'engine-col' },
         h('span', { class: 'mini-label' }, 'Primary engine'),
-        seg),
-      h('div', { class: 'engine-col grow' },
-        h('span', { class: 'mini-label' }, `${providerLabel(provider)} model`),
-        modelOptionsFor(provider)),
-      h('div', { class: 'engine-col' },
-        h('span', { class: 'mini-label' }, 'Account'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(provider) }, '🔑 Sign in'))),
-    h('div', { class: 'engine-row', style: 'margin-top:14px;flex-direction:column;align-items:stretch;gap:7px' },
-      h('span', { class: 'mini-label' }, 'Automatic fallback chain'),
-      chainToggles(),
-      h('span', { class: 'hint' }, 'If a provider’s quota runs out mid-book, writing continues automatically on the next engine in this chain. Click to add/remove fallbacks.')),
+        seg)),
+    h('div', { class: 'engine-row', style: 'margin-top:14px;flex-direction:column;align-items:stretch;gap:8px' },
+      h('span', { class: 'mini-label' }, 'Engines, models & automatic fallback chain'),
+      chainBuilder(),
+      h('span', { class: 'hint' }, 'Writing runs top-to-bottom. If an engine’s quota runs out mid-book, it continues automatically on the next — pick a model for each.')),
+    h('div', { class: 'engine-row', style: 'margin-top:14px' }, imageModeControl()),
     h('div', { class: 'engine-row toggles' },
       toggle('t-research', s.research, '🔎 Research real facts & sources (web)', (v) => updateSettings({ research: v })),
       toggle('t-polish', s.polish, '✨ Editor polish pass (higher quality)', (v) => updateSettings({ polish: v })),
-      toggle('t-illustrate', s.illustrate, '🖼️ Add royalty-free images', (v) => updateSettings({ illustrate: v })),
       toggle('t-sub', s.forceSubscription, '🔐 Use subscription, not API key', (v) => updateSettings({ forceSubscription: v }))));
   return bar;
 }
@@ -299,10 +331,13 @@ async function renderLibrary() {
     for (const b of books) {
       const paused = b.status === 'paused';
       const statusLabel = b.status === 'generating' ? 'Writing…' : (paused ? 'Paused' : (b.status || 'draft'));
+      const coverEl = b.coverSvg
+        ? h('div', { class: 'book-cover has-art' }, h('img', { src: svgDataUri(b.coverSvg), alt: '' }))
+        : h('div', { class: 'book-cover', style: `background:${coverGradient(b.title)}` },
+            h('h3', {}, b.title || 'Untitled'),
+            h('div', { class: 'by' }, `by ${b.author || 'Anonymous'}`));
       const card = h('div', { class: 'book-card', onClick: () => go('reader', b.id) },
-        h('div', { class: 'book-cover', style: `background:${coverGradient(b.title)}` },
-          h('h3', {}, b.title || 'Untitled'),
-          h('div', { class: 'by' }, `by ${b.author || 'Anonymous'}`)),
+        coverEl,
         h('div', { class: 'book-meta' },
           h('div', { class: 'stat' },
             h('span', { class: `badge ${b.status}` }, statusLabel),
@@ -330,6 +365,16 @@ function selectEl(id, options, selected) {
   for (const o of options) s.append(h('option', { value: o, selected: o === selected ? 'selected' : false }, o));
   return s;
 }
+function sizeSelect(selected) {
+  const opts = [
+    { v: 'small', l: 'Small — 35–60 pages' },
+    { v: 'medium', l: 'Medium — 75–125 pages' },
+    { v: 'large', l: 'Large — 150–250 pages' },
+  ];
+  const s = h('select', { id: 'f-size' });
+  for (const o of opts) s.append(h('option', { value: o.v, selected: o.v === selected ? 'selected' : false }, o.l));
+  return s;
+}
 function specForm(values = {}) {
   const v = values;
   return h('div', { class: 'card' },
@@ -342,8 +387,8 @@ function specForm(values = {}) {
       h('label', { class: 'field' }, h('span', {}, 'Target audience'),
         h('input', { id: 'f-audience', placeholder: 'Adults, YA, professionals…', value: v.audience || '' }))),
     h('div', { class: 'row' },
-      h('label', { class: 'field' }, h('span', {}, 'Length'),
-        selectEl('f-length', ['Standard (12–20 ch)', 'Short / novella (6–10 ch)', 'Epic (24–40 ch)'], v.length)),
+      h('label', { class: 'field' }, h('span', {}, 'Book size'),
+        sizeSelect(v.size || (state.settings && state.settings.size) || 'medium')),
       h('label', { class: 'field' }, h('span', {}, 'Tone / style'),
         h('input', { id: 'f-tone', placeholder: 'Warm & witty, dark & gritty…', value: v.tone || '' }))),
     h('div', { class: 'row' },
@@ -358,13 +403,13 @@ function readSpec() {
     request: $('#f-request').value.trim(),
     genre: $('#f-genre').value.trim(),
     audience: $('#f-audience').value.trim(),
-    length: $('#f-length').value,
+    size: $('#f-size').value,
     tone: $('#f-tone').value.trim(),
     pov: $('#f-pov').value.trim(),
     notes: $('#f-notes').value.trim(),
     model: s[modelField(s.provider || 'claude')] || '',
     research: !!s.research,
-    illustrate: !!s.illustrate,
+    imageMode: s.imageMode || 'off',
     polish: s.polish !== false,
   };
 }
@@ -446,7 +491,16 @@ function renderClarify() {
 
 // ---------- GENERATION / RESUME ----------
 function newJob(spec) {
-  return { jobId: `job-${Date.now()}`, spec, phase: 'starting', chapters: [], outline: [], title: (spec && spec.request || 'Book').slice(0, 40), bookId: null, error: null, done: false, activity: '' };
+  return {
+    jobId: `job-${Date.now()}`, spec, phase: 'starting', chapters: [], outline: [],
+    title: (spec && spec.request || 'Book').slice(0, 40), bookId: null, error: null, done: false,
+    activity: '', activityLog: [], stream: '', streamCh: null, engine: (spec && spec.provider) || null,
+    startedAt: Date.now(),
+  };
+}
+function logActivity(j, icon, text) {
+  j.activityLog.push({ t: Date.now(), icon, text });
+  if (j.activityLog.length > 120) j.activityLog.shift();
 }
 function startGeneration(spec, answers) {
   state.job = newJob(spec);
@@ -476,19 +530,57 @@ function handleProgress(e) {
   const j = state.job;
   if (!j) return;
   j.phase = e.phase;
-  if (e.phase === 'outline:done' || e.phase === 'resume') {
-    if (e.book) { j.title = e.book.title || j.title; j.outline = e.book.outline || []; j.bookId = e.book.id; j.chapters = (e.book.chapters || []).map((c) => c && { number: c.number, title: c.title, words: c.words }); }
-  }
-  if (e.phase === 'chapter:start') j.activeIndex = e.index;
-  if (e.phase === 'chapter:done') { j.chapters[e.index] = { number: e.number, title: e.title, words: e.words }; j.activeIndex = e.index + 1; }
-  if (e.phase === 'images' && e.query) j.activity = `Finding image: “${e.query}”`;
-  if (e.phase === 'engine:switch') {
-    if (e.type === 'falling-back') { j.activity = `⚠️ ${providerLabel(e.fromId)} hit a ${e.kind} limit — switching to ${providerLabel(e.toId)}…`; toast(j.activity, 'bad'); }
-    else if (e.type === 'switched') { j.activity = `Now writing with ${providerLabel(e.toId)}.`; j.engine = e.toId; }
-    else if (e.type === 'exhausted') { j.activity = `All providers in the chain failed (${e.kind}).`; }
+  switch (e.phase) {
+    case 'outline:start': logActivity(j, '🗂️', 'Designing the book concept & chapter outline…'); break;
+    case 'outline:done':
+    case 'resume':
+      if (e.book) { j.title = e.book.title || j.title; j.outline = e.book.outline || []; j.bookId = e.book.id; j.chapters = (e.book.chapters || []).map((c) => c && { number: c.number, title: c.title, words: c.words }); }
+      if (e.phase === 'outline:done') logActivity(j, '✅', `Outline ready — ${j.outline.length} chapters planned`);
+      else logActivity(j, '▶️', `Resuming from chapter ${(e.startIndex || 0) + 1}`);
+      break;
+    case 'cover:start': j.activity = 'Designing the cover…'; logActivity(j, '🎨', 'Designing the book cover'); break;
+    case 'cover:done': logActivity(j, '🖼️', 'Cover designed'); if (e.book && e.book.coverSvg) j.coverSvg = e.book.coverSvg; break;
+    case 'chapter:start':
+      j.activeIndex = e.index; j.streamCh = e.index; j.stream = '';
+      j.activity = e.message || `Writing Chapter ${e.number}`;
+      logActivity(j, '✍️', `Chapter ${e.number}: ${e.title} — drafting`);
+      break;
+    case 'chapter:stream':
+      if (e.index === j.streamCh) j.stream = e.preview || '';
+      break;
+    case 'chapter:polish':
+      j.activity = e.message || `Polishing Chapter ${e.number}`;
+      logActivity(j, '✨', `Chapter ${e.number}: editor polish pass`);
+      break;
+    case 'art:start': j.activity = e.message || 'Illustrating…'; logActivity(j, '🎨', `Chapter ${e.number}: creating illustration`); break;
+    case 'art:done': logActivity(j, '🖼️', `Chapter ${e.number}: illustration ready`); break;
+    case 'chapter:done':
+      j.chapters[e.index] = { number: e.number, title: e.title, words: e.words };
+      j.activeIndex = e.index + 1; j.stream = ''; j.streamCh = null;
+      logActivity(j, '✅', `Chapter ${e.number}: ${e.title} — done (${(e.words || 0).toLocaleString()} words)`);
+      break;
+    case 'images':
+      if (e.query) { j.activity = `Finding image: “${e.query}”`; logActivity(j, '🔎', `Sourcing image: ${e.query}`); }
+      break;
+    case 'engine:switch':
+      if (e.type === 'falling-back') { j.activity = `⚠️ ${providerLabel(e.fromId)} hit a ${e.kind} limit — switching to ${providerLabel(e.toId)}…`; logActivity(j, '🔁', j.activity); toast(j.activity, 'bad'); }
+      else if (e.type === 'switched') { j.engine = e.toId; logActivity(j, '✅', `Now writing with ${providerLabel(e.toId)}`); }
+      else if (e.type === 'exhausted') { logActivity(j, '⛔', `All engines in the chain failed (${e.kind})`); }
+      break;
+    case 'complete': logActivity(j, '🎉', 'Book complete'); break;
+    default: break;
   }
   if (e.message) j.message = e.message;
   redrawProgress();
+}
+
+function fmtElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+function statCard(label, value, id) {
+  return h('div', { class: 'stat-card' }, h('div', { class: 'stat-val', id: id || false }, value), h('div', { class: 'stat-label' }, label));
 }
 
 function renderProgress() {
@@ -498,16 +590,33 @@ function renderProgress() {
   const doneCount = j.chapters.filter(Boolean).length;
   const pct = total ? Math.round((doneCount / total) * 100) : (j.phase === 'starting' ? 6 : 12);
   const working = !j.done && !j.error;
+  const wordsSoFar = j.chapters.reduce((n, c) => n + ((c && c.words) || 0), 0);
 
   const head = h('div', { class: 'progress-head' },
-    working ? h('div', { class: 'spinner' }) : h('div', { style: 'font-size:24px' }, j.error ? '⏸️' : '✅'),
-    h('div', {},
+    working ? h('div', { class: 'spinner' }) : h('div', { style: 'font-size:26px' }, j.error ? '⏸️' : '🎉'),
+    h('div', { style: 'flex:1' },
       h('h1', { style: 'margin:0;font-size:22px' }, j.done ? j.title : (j.error ? 'Writing paused' : 'Writing your book…')),
       h('p', { style: 'margin:4px 0 0;color:var(--text-dim);font-size:14px' },
         j.error ? j.error : (j.activity || j.message || 'Working with the bestselling author…'))));
 
   const bar = h('div', { class: 'progress-bar' }, h('div', { style: `width:${pct}%` }));
 
+  const stats = h('div', { class: 'stat-row' },
+    statCard('Chapters', `${doneCount}/${total || '—'}`),
+    statCard('Words written', wordsSoFar.toLocaleString(), 'stat-words'),
+    statCard('Elapsed', fmtElapsed(Date.now() - j.startedAt), 'stat-elapsed'),
+    statCard('Engine', providerLabel(j.engine || (j.spec && j.spec.provider) || 'claude')));
+
+  // live writing preview
+  let preview = null;
+  if (working && j.stream) {
+    preview = h('div', { class: 'live-preview card' },
+      h('div', { class: 'live-head' }, h('span', { class: 'live-dot' }), 'Live draft',
+        j.streamCh != null && j.outline[j.streamCh] ? h('span', { class: 'live-ch' }, `Chapter ${j.outline[j.streamCh].number}: ${j.outline[j.streamCh].title}`) : null),
+      h('div', { class: 'live-text' }, j.stream, h('span', { class: 'live-cursor' }, '▍')));
+  }
+
+  // chapter checklist
   const list = h('ul', { class: 'chapter-list' });
   if (j.outline.length) {
     j.outline.forEach((c, i) => {
@@ -516,11 +625,20 @@ function renderProgress() {
       list.append(h('li', { class: done ? 'done' : (active ? 'active' : '') },
         h('span', { class: 'ci' }, done ? '✓' : (active ? '✍️' : '·')),
         h('span', {}, c.title),
-        done && j.chapters[i].words ? h('span', { style: 'margin-left:auto;font-size:12px;color:var(--text-dim)' }, `${j.chapters[i].words} w`) : null));
+        done && j.chapters[i].words ? h('span', { style: 'margin-left:auto;font-size:12px;color:var(--text-dim)' }, `${j.chapters[i].words.toLocaleString()} w`) : null));
     });
   } else {
     list.append(h('li', { class: 'active' }, h('span', { class: 'ci' }, '✍️'), 'Designing the outline…'));
   }
+
+  // live activity feed
+  const feed = h('div', { class: 'activity-feed' });
+  j.activityLog.slice(-40).reverse().forEach((a) => {
+    feed.append(h('div', { class: 'activity-item' },
+      h('span', { class: 'a-ico' }, a.icon),
+      h('span', { class: 'a-text' }, a.text),
+      h('span', { class: 'a-time' }, new Date(a.t).toLocaleTimeString())));
+  });
 
   const actions = h('div', { class: 'btn-row', style: 'margin-top:22px' });
   if (j.done && j.bookId) {
@@ -535,9 +653,22 @@ function renderProgress() {
   }
 
   mount(h('div', { class: 'view' },
-    head, bar,
-    h('div', { class: 'card' }, h('p', { class: 'section-title' }, total ? `${doneCount} of ${total} chapters` : 'Preparing'), list),
+    head, bar, stats,
+    preview,
+    h('div', { class: 'progress-grid' },
+      h('div', { class: 'card' }, h('p', { class: 'section-title' }, total ? `Chapters · ${doneCount} of ${total}` : 'Preparing'), list),
+      h('div', { class: 'card' }, h('p', { class: 'section-title' }, 'Live activity'), feed)),
     actions));
+
+  // tick the elapsed clock without re-rendering the whole view
+  if (state.progressTimer) clearInterval(state.progressTimer);
+  if (working) {
+    state.progressTimer = setInterval(() => {
+      const el = document.getElementById('stat-elapsed');
+      if (el && state.view === 'progress') el.textContent = fmtElapsed(Date.now() - j.startedAt);
+      else { clearInterval(state.progressTimer); state.progressTimer = null; }
+    }, 1000);
+  }
 }
 
 // ---------- READER (premium built-in EPUB reader) ----------
@@ -624,10 +755,15 @@ async function renderReader(id) {
   }
 
   // --- rendering ---
+  function coverEl() {
+    if (!content.cover) return null;
+    return h('div', { class: 'reader-cover' }, h('img', { src: content.cover, alt: 'Cover' }));
+  }
   function renderBody() {
     contentEl.innerHTML = '';
     if (!chapters.length) { contentEl.append(h('p', { style: 'text-align:center;color:#999' }, 'No chapters yet.')); return; }
     if (prefs.mode === 'scroll') {
+      const cv = coverEl(); if (cv) contentEl.append(cv);
       chapters.forEach((c, i) => {
         const sec = h('section', { class: 'epub-chapter', 'data-i': i });
         sec.innerHTML = c.html;
@@ -635,6 +771,7 @@ async function renderReader(id) {
       });
       nav.style.display = 'none';
     } else {
+      if (cur === 0) { const cv = coverEl(); if (cv) contentEl.append(cv); }
       const c = chapters[cur];
       const sec = h('section', { class: 'epub-chapter', 'data-i': cur });
       sec.innerHTML = c.html;

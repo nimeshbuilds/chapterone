@@ -45,13 +45,25 @@ function generateEpub(book, outPath) {
     const imageById = new Map(images.map((im) => [im.id, im]));
     const resolveImage = (id) => (imageById.has(id) ? `images/${id}.${imageById.get(id).ext}` : null);
 
-    const chapters = (book.chapters || []).filter(Boolean).map((c, i) => ({
-      id: `chapter-${i + 1}`,
-      file: `chapter-${i + 1}.xhtml`,
-      number: c.number || i + 1,
-      title: c.title || `Chapter ${i + 1}`,
-      xhtml: xhtmlDoc(c.title || `Chapter ${i + 1}`, toXhtml(chapterToHtml(c.content, resolveImage))),
-    }));
+    // AI-designed SVG art (cover + per-chapter), embedded as SVG image files.
+    const artFiles = []; // { name, svg }
+    const chapters = (book.chapters || []).filter(Boolean).map((c, i) => {
+      let artHtml = '';
+      if (c.artSvg) {
+        const name = `art/chapter-${i + 1}.svg`;
+        artFiles.push({ id: `art-${i + 1}`, name, svg: c.artSvg });
+        artHtml = `<figure class="chapter-art"><img src="${name}" alt="" /></figure>`;
+      }
+      return {
+        id: `chapter-${i + 1}`,
+        file: `chapter-${i + 1}.xhtml`,
+        artId: c.artSvg ? `art-${i + 1}` : null,
+        number: c.number || i + 1,
+        title: c.title || `Chapter ${i + 1}`,
+        xhtml: xhtmlDoc(c.title || `Chapter ${i + 1}`, artHtml + toXhtml(chapterToHtml(c.content, resolveImage))),
+      };
+    });
+    const coverSvg = book.coverSvg || null;
 
     const output = fs.createWriteStream(outPath);
     const archive = archiver('zip', { zlib: { level: 9 } });
@@ -71,6 +83,19 @@ function generateEpub(book, outPath) {
     );
 
     archive.append(BOOK_CSS, { name: 'OEBPS/style.css' });
+
+    // Cover (AI-designed SVG) + cover page.
+    if (coverSvg) {
+      archive.append(coverSvg, { name: 'OEBPS/cover.svg' });
+      archive.append(
+        xhtmlDoc('Cover', '<section class="cover-page"><img src="cover.svg" alt="Cover" /></section>'),
+        { name: 'OEBPS/cover.xhtml' }
+      );
+    }
+    // Chapter art SVG files.
+    for (const a of artFiles) {
+      archive.append(a.svg, { name: `OEBPS/${a.name}` });
+    }
 
     const titleXhtml = xhtmlDoc(
       title,
@@ -147,16 +172,23 @@ ${navPoints}
     const imageManifest = images
       .map((im) => `    <item id="${im.id}" href="images/${im.id}.${im.ext}" media-type="${mimeForExt(im.ext)}"/>`)
       .join('\n');
+    const artManifest = artFiles
+      .map((a) => `    <item id="${a.id}" href="${a.name}" media-type="image/svg+xml"/>`)
+      .join('\n');
     const manifestItems = [
       '    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
       '    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>',
       '    <item id="css" href="style.css" media-type="text/css"/>',
+      coverSvg ? '    <item id="cover-img" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>' : '',
+      coverSvg ? '    <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>' : '',
       '    <item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>',
       ...chapters.map((c) => `    <item id="${c.id}" href="${c.file}" media-type="application/xhtml+xml"/>`),
       hasCredits ? '    <item id="credits" href="credits.xhtml" media-type="application/xhtml+xml"/>' : '',
       imageManifest,
+      artManifest,
     ].filter(Boolean).join('\n');
     const spineItems = [
+      coverSvg ? '    <itemref idref="cover"/>' : '',
       '    <itemref idref="title"/>',
       ...chapters.map((c) => `    <itemref idref="${c.id}"/>`),
       hasCredits ? '    <itemref idref="credits"/>' : '',

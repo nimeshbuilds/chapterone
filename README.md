@@ -30,8 +30,19 @@ third-party servers.
   accurate — never fabricated. The searching is done by the selected CLI's own
   web tools (Claude WebSearch/WebFetch, Codex `--search`, Gemini Google Search).
 - **Three engines + automatic fallback chain** — Claude Code, Codex, or Gemini,
-  each on your own subscription. Build an ordered chain so that if one provider's
-  quota runs out mid-book, writing continues automatically on the next.
+  each on your own subscription, **each with its own model**. Build an ordered
+  chain so that if one provider's quota runs out mid-book, writing continues
+  automatically on the next.
+- **Book size** — choose Small (35–60 pages), Medium (75–125) or Large
+  (150–250); the planner sizes the chapter count and length to land in range.
+- **AI-designed art** — pick *AI-designed art* and the selected engine designs a
+  bespoke **vector cover** and **one chapter illustration each**, matched to the
+  book's theme and copyright-free. (The coding CLIs can't emit raster images, but
+  they're excellent SVG designers — output is sanitized before use.) Or choose
+  *Stock photos* (Openverse) instead.
+- **Live progress dashboard** — watch it write in real time: a streaming draft
+  preview, running word count, elapsed timer, active engine, a chapter checklist,
+  and a timestamped activity feed.
 - **Guided sign-in** — not logged in? The app launches the CLI's sign-in,
   opens the OAuth page in your browser, and accepts any pasted code — no terminal
   needed.

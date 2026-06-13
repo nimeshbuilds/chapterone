@@ -62,7 +62,29 @@ test('edit prompt asks for a bestseller revision and preserves image lines', () 
   assert.match(p, /web search/i); // research-aware
 });
 
-test('word targets scale with length', () => {
+test('word targets scale with size', () => {
   assert.ok(targetWordsForLength('short novella') < targetWordsForLength('standard'));
   assert.ok(targetWordsForLength('epic long') > targetWordsForLength('standard'));
+});
+
+test('book sizes map to page ranges and chapter plans', () => {
+  const { sizeOf, chapterHintForSize, SIZES } = require('../src/main/book/prompts');
+  assert.strictEqual(sizeOf({ size: 'small' }).key, 'small');
+  assert.strictEqual(sizeOf({ size: 'large' }).key, 'large');
+  assert.strictEqual(sizeOf({}).key, 'medium'); // default
+  assert.match(chapterHintForSize({ size: 'small' }), /35–60 pages/);
+  assert.match(chapterHintForSize({ size: 'large' }), /150–250 pages/);
+  assert.ok(SIZES.small.words < SIZES.large.words);
+});
+
+test('cover and chapter-art prompts request a single SVG', () => {
+  const { coverSvgPrompt, chapterArtSvgPrompt } = require('../src/main/book/prompts');
+  const book = { title: 'Tide', author: 'X', genre: 'Mystery', themes: ['sea'], premise: 'p' };
+  const cover = coverSvgPrompt(book);
+  assert.match(cover, /SVG/);
+  assert.match(cover, /Tide/);
+  assert.match(cover, /viewBox/);
+  const art = chapterArtSvgPrompt(book, { number: 2, title: 'Deep', summary: 's' });
+  assert.match(art, /viewBox/);
+  assert.match(art, /NO <script>|no <script>|NO <script/i);
 });
