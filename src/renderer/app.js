@@ -649,12 +649,15 @@ function renderKidsCreate() {
 
   const ageSel = h('select', { id: 'k-age' });
   KIDS_AGES.forEach(([val, label]) => ageSel.append(h('option', { value: val, selected: (v.ageBand || '6-8') === val ? 'selected' : false }, label)));
+  const lenSel = h('select', { id: 'k-length' });
+  [['short', 'Short'], ['standard', 'Standard'], ['long', 'Long']].forEach(([val, label]) => lenSel.append(h('option', { value: val, selected: (v.kidsLength || 'standard') === val ? 'selected' : false }, label)));
 
   const form = h('div', { class: 'card' },
     h('label', { class: 'field' }, h('span', {}, 'What should the story be about?'),
       h('textarea', { id: 'k-request', placeholder: 'e.g. A shy little dragon who is scared of the dark — until she discovers her fire can light up the whole forest.' }, v.request || '')),
     h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'Child’s age'), ageSel),
+      h('label', { class: 'field' }, h('span', {}, 'Length'), lenSel),
       h('label', { class: 'field' }, h('span', {}, 'Kind of story (optional)'),
         h('input', { id: 'k-genre', placeholder: 'Bedtime, adventure, learning, fairy tale…', value: v.genre || '' })),
       h('label', { class: 'field' }, h('span', {}, 'Author name (optional)'),
@@ -672,6 +675,7 @@ function readKidsSpec() {
   return {
     request: $('#k-request').value.trim(),
     ageBand: $('#k-age').value,
+    kidsLength: $('#k-length') ? $('#k-length').value : 'standard',
     genre: $('#k-genre').value.trim(),
     authorName: $('#k-author') ? $('#k-author').value.trim() : '',
     characters: readCharacters(),
@@ -990,7 +994,16 @@ async function renderReader(id) {
   const prefs = readerPrefs();
   // Kids books open at their age-appropriate type size.
   if (content.isKids && content.readerFontPx) prefs.fontSize = content.readerFontPx;
-  let cur = Math.min(Math.max(readerPos(id), 0), Math.max(chapters.length - 1, 0));
+
+  // Front matter first: the cover is its own opening page, then a title/preface
+  // page, then the chapters. The reader navigates this combined `pages` list.
+  const pages = [];
+  if (content.cover) pages.push({ kind: 'cover', label: 'Cover' });
+  pages.push({ kind: 'preface', label: 'Title page' });
+  chapters.forEach((c, i) => pages.push({ kind: 'chapter', label: c.title, number: c.number, chIndex: i, html: c.html }));
+  const curChapterIndex = () => (pages[cur] && pages[cur].kind === 'chapter' ? pages[cur].chIndex : -1);
+
+  let cur = Math.min(Math.max(readerPos(id), 0), Math.max(pages.length - 1, 0));
 
   // --- root + bar ---
   const root = h('div', { class: 'view reader-view epub-reader' });
@@ -1026,6 +1039,8 @@ async function renderReader(id) {
       toast('Add your ElevenLabs key and pick a voice in Settings → Audiobook.', 'bad');
       return go('settings');
     }
+    const ci = curChapterIndex();
+    if (ci < 0) { toast('Open a chapter first, then press Listen.', 'bad'); return; }
     if (audioBusy) return;
     audioBusy = true;
     audioBar.classList.remove('hidden');
@@ -1033,11 +1048,11 @@ async function renderReader(id) {
     setSpin(true);
     audioLabel.textContent = 'Preparing narration…';
     const off = api.onAudioProgress((p) => {
-      if (p.id !== id || p.index !== cur) return;
+      if (p.id !== id || p.index !== ci) return;
       audioLabel.textContent = p.total ? `Narrating… ${p.done}/${p.total} part${p.total === 1 ? '' : 's'}` : 'Narrating…';
     });
     try {
-      const res = await api.synthChapter(id, cur);
+      const res = await api.synthChapter(id, ci);
       if (audioEl._url) { URL.revokeObjectURL(audioEl._url); audioEl._url = null; }
       audioEl._url = URL.createObjectURL(dataUriToBlob(res.dataUri));
       audioEl.src = audioEl._url;
@@ -1053,8 +1068,10 @@ async function renderReader(id) {
     } finally { off && off(); audioBusy = false; }
   }
   async function exportChapterAudio() {
+    const ci = curChapterIndex();
+    if (ci < 0) { toast('Open a chapter first.', 'bad'); return; }
     try {
-      const r = await api.exportAudio(id, cur);
+      const r = await api.exportAudio(id, ci);
       if (r && !r.canceled) { toast('Saved chapter MP3.', 'ok'); await api.openPath(r.path); }
     } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
   }
@@ -1099,69 +1116,77 @@ async function renderReader(id) {
   function buildToc() {
     tocDrawer.innerHTML = '';
     tocDrawer.append(h('div', { class: 'toc-head' }, 'Contents'));
-    chapters.forEach((c, i) => {
+    pages.forEach((pg, i) => {
+      const num = pg.kind === 'chapter' ? String(pg.number) : (pg.kind === 'cover' ? '✦' : '•');
       tocDrawer.append(h('button', {
         class: `toc-item ${i === cur ? 'active' : ''}`, 'data-i': i,
-        onClick: () => { goChapter(i); if (window.innerWidth < 760) tocDrawer.classList.remove('open'); },
-      }, h('span', { class: 'toc-n' }, String(c.number)), c.title));
+        onClick: () => { goPage(i); if (window.innerWidth < 760) tocDrawer.classList.remove('open'); },
+      }, h('span', { class: 'toc-n' }, num), pg.label));
     });
   }
 
   // --- rendering ---
   function coverEl() {
-    if (!content.cover) return null;
-    return h('div', { class: 'reader-cover' }, h('img', { src: content.cover, alt: 'Cover' }));
+    return h('div', { class: 'reader-cover full-page' }, h('img', { src: content.cover, alt: 'Cover' }));
+  }
+  function prefaceEl() {
+    return h('section', { class: 'epub-chapter front-matter' },
+      h('div', { class: 'titlepage' },
+        h('div', { class: 'fm-title' }, content.title),
+        content.subtitle ? h('div', { class: 'fm-subtitle' }, content.subtitle) : null,
+        h('div', { class: 'fm-author' }, `by ${content.author || 'Anonymous'}`),
+        content.premise ? h('div', { class: 'fm-preface' }, h('div', { class: 'fm-preface-label' }, 'Preface'), h('p', {}, content.premise)) : null));
+  }
+  function pageEl(pg, i) {
+    if (pg.kind === 'cover') { const c = coverEl(); c.setAttribute('data-i', i); return c; }
+    if (pg.kind === 'preface') { const p = prefaceEl(); p.setAttribute('data-i', i); return p; }
+    const sec = h('section', { class: 'epub-chapter', 'data-i': i });
+    sec.innerHTML = pg.html;
+    return sec;
   }
   function renderBody() {
     contentEl.innerHTML = '';
-    if (!chapters.length) { contentEl.append(h('p', { style: 'text-align:center;color:#999' }, 'No chapters yet.')); return; }
+    if (!pages.length) { contentEl.append(h('p', { style: 'text-align:center;color:#999' }, 'No content yet.')); return; }
     if (prefs.mode === 'scroll') {
-      const cv = coverEl(); if (cv) contentEl.append(cv);
-      chapters.forEach((c, i) => {
-        const sec = h('section', { class: 'epub-chapter', 'data-i': i });
-        sec.innerHTML = c.html;
-        contentEl.append(sec);
-      });
+      pages.forEach((pg, i) => contentEl.append(pageEl(pg, i)));
       nav.style.display = 'none';
     } else {
-      if (cur === 0) { const cv = coverEl(); if (cv) contentEl.append(cv); }
-      const c = chapters[cur];
-      const sec = h('section', { class: 'epub-chapter', 'data-i': cur });
-      sec.innerHTML = c.html;
-      contentEl.append(sec);
+      contentEl.append(pageEl(pages[cur], cur));
       nav.style.display = 'flex';
     }
     updateProgress();
     buildToc();
     contentEl.scrollTop = 0;
-    const mainEl = main;
-    if (mainEl) mainEl.scrollTop = 0;
+    if (main) main.scrollTop = 0;
   }
 
   function updateProgress() {
     document.querySelectorAll('.toc-item').forEach((b) => b.classList.toggle('active', Number(b.getAttribute('data-i')) === cur));
     if (prefs.mode === 'chapter') {
-      pageInfo.textContent = `Chapter ${cur + 1} of ${chapters.length}`;
-      const pct = chapters.length ? ((cur + 1) / chapters.length) * 100 : 0;
+      const pg = pages[cur];
+      pageInfo.textContent = pg && pg.kind === 'chapter'
+        ? `Chapter ${pg.chIndex + 1} of ${chapters.length}`
+        : (pg ? pg.label : '');
+      const pct = pages.length ? ((cur + 1) / pages.length) * 100 : 0;
       progressFill.style.width = pct + '%';
       const prev = document.getElementById('r-prev'); const next = document.getElementById('r-next');
       if (prev) prev.disabled = cur <= 0;
-      if (next) next.disabled = cur >= chapters.length - 1;
+      if (next) next.disabled = cur >= pages.length - 1;
     }
   }
 
-  function goChapter(i) {
-    cur = Math.min(Math.max(i, 0), chapters.length - 1);
+  function goPage(i) {
+    cur = Math.min(Math.max(i, 0), pages.length - 1);
     saveReaderPos(id, cur);
     if (prefs.mode === 'scroll') {
-      const sec = contentEl.querySelector(`.epub-chapter[data-i="${cur}"]`);
+      const sec = contentEl.querySelector(`[data-i="${cur}"]`);
       if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
       updateProgress();
     } else {
       renderBody();
     }
   }
-  function step(d) { goChapter(cur + d); }
+  function step(d) { goPage(cur + d); }
 
   // --- controls ---
   function bumpFont(d) {
@@ -1197,7 +1222,7 @@ async function renderReader(id) {
     const max = main.scrollHeight - main.clientHeight;
     progressFill.style.width = (max > 0 ? (main.scrollTop / max) * 100 : 0) + '%';
     let active = cur;
-    contentEl.querySelectorAll('.epub-chapter').forEach((sec) => {
+    contentEl.querySelectorAll('[data-i]').forEach((sec) => {
       if (sec.getBoundingClientRect().top < 160) active = Number(sec.getAttribute('data-i'));
     });
     if (active !== cur) { cur = active; saveReaderPos(id, cur); updateProgress(); }

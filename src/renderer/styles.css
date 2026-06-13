@@ -510,3 +510,20 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 }
 .clone-script.recording { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(224,80,111,.18); }
 .clone-box .reader-select { width: 100%; }
+
+/* ---- reader front matter (full-page cover + title/preface page) ---- */
+.reader-cover.full-page {
+  max-width: 100%; margin: 0; padding: 1rem 0;
+  min-height: calc(100vh - 140px); display: flex; align-items: center; justify-content: center;
+}
+.reader-cover.full-page img {
+  max-height: calc(100vh - 160px); max-width: 100%; width: auto;
+  border-radius: 10px; box-shadow: 0 18px 50px rgba(0, 0, 0, .3);
+}
+.front-matter .titlepage { text-align: center; padding: 2.5rem 1rem; }
+.front-matter .fm-title { font-family: 'New York', Georgia, serif; font-size: 2.2em; font-weight: 700; line-height: 1.2; }
+.front-matter .fm-subtitle { font-size: 1.2em; opacity: .8; margin-top: .6rem; font-style: italic; }
+.front-matter .fm-author { margin-top: 1.4rem; opacity: .7; }
+.front-matter .fm-preface { margin: 3rem auto 0; max-width: 34rem; text-align: left; }
+.front-matter .fm-preface-label { text-transform: uppercase; letter-spacing: .1em; font-size: .8em; opacity: .6; margin-bottom: .6rem; }
+.front-matter .fm-preface p { text-indent: 0; }

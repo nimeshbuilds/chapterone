@@ -72,6 +72,24 @@ const AGE_BANDS = {
 const DEFAULT_BAND = '6-8';
 const AGE_BAND_KEYS = Object.keys(AGE_BANDS);
 
+// Optional length the user can pick on top of the age band — scales how many
+// pages/chapters the book has while keeping per-unit length age-appropriate.
+const LENGTH_SCALES = { short: 0.6, standard: 1, long: 1.7 };
+const KIDS_LENGTHS = [
+  { key: 'short', label: 'Short' },
+  { key: 'standard', label: 'Standard' },
+  { key: 'long', label: 'Long' },
+];
+
+/** Effective number of pages/chapters for a band + chosen length. */
+function unitsFor(specOrKey, kidsLength) {
+  const b = bandOf(specOrKey);
+  if (!b) return 0;
+  const scale = LENGTH_SCALES[kidsLength] || 1;
+  const floor = b.unit === 'chapter' ? 4 : 6;
+  return Math.max(floor, Math.round(b.units * scale));
+}
+
 /** Resolve a spec, a raw band key, or an existing band object to a band def. */
 function bandOf(specOrKey) {
   if (!specOrKey) return null;
@@ -95,12 +113,13 @@ function imagesForUnitIndex(specOrKey, i) {
   return b.imagesPerUnit || 1; // every-page / frequent
 }
 
-/** Planned number of illustrations across a whole kids book of this band. */
-function plannedImageCount(specOrKey) {
+/** Planned number of illustrations across a whole kids book (band + length). */
+function plannedImageCount(specOrKey, kidsLength) {
   const b = bandOf(specOrKey);
   if (!b) return 0;
+  const units = unitsFor(b, kidsLength);
   let n = 0;
-  for (let i = 0; i < b.units; i++) n += imagesForUnitIndex(b, i);
+  for (let i = 0; i < units; i++) n += imagesForUnitIndex(b, i);
   return n;
 }
 
@@ -131,6 +150,6 @@ function readerVarsForBand(specOrKey) {
 }
 
 module.exports = {
-  AGE_BANDS, AGE_BAND_KEYS, DEFAULT_BAND,
-  bandOf, isKidsSpec, imagesForUnitIndex, plannedImageCount, cssForBand, readerVarsForBand,
+  AGE_BANDS, AGE_BAND_KEYS, DEFAULT_BAND, KIDS_LENGTHS, LENGTH_SCALES,
+  bandOf, isKidsSpec, unitsFor, imagesForUnitIndex, plannedImageCount, cssForBand, readerVarsForBand,
 };

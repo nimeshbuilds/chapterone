@@ -57,6 +57,43 @@ codesign -dv --verbose=4 "/Applications/ChapterOne.app"  # → Authority=Develop
 xcrun stapler validate "release/ChapterOne-0.1.0-universal.dmg"  # → "The validate action worked!"
 ```
 
+## CI / GitHub Actions (recommended)
+
+`.github/workflows/release.yml` builds, signs, notarizes, and publishes a
+release automatically whenever you push a version tag (`v*`). Set it up once:
+
+### 1. Export your Developer ID cert as base64
+
+In **Keychain Access**, find **"Developer ID Application: …"** (login keychain),
+right-click → **Export** → save as `cert.p12` and set an export password. Then:
+
+```bash
+base64 -i cert.p12 | pbcopy        # the base64 string is now on your clipboard
+```
+
+### 2. Add repo secrets
+
+GitHub → your repo → **Settings → Secrets and variables → Actions → New repository secret**. Add these **5**:
+
+| Secret name | Value |
+| --- | --- |
+| `CSC_LINK` | the base64 string from step 1 (paste) |
+| `CSC_KEY_PASSWORD` | the `.p12` export password you chose |
+| `APPLE_ID` | your Apple ID email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | the app-specific password from appleid.apple.com |
+| `APPLE_TEAM_ID` | your 10-char Team ID |
+
+### 3. Cut a release
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+GitHub Actions builds the universal DMG on a macOS runner, signs + notarizes it,
+and publishes a release with the DMG + zip attached — no local build, no secrets
+in code. Delete the test cert.p12 from your Mac afterward; the secret is enough.
+
 ## Notes
 - Until you enroll, nothing changes — the build stays unsigned and testers use
   one-time `right-click → Open` (or `xattr -dr com.apple.quarantine

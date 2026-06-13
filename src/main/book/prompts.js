@@ -8,7 +8,7 @@
  * quality, not generic filler.
  */
 
-const { bandOf } = require('./ageBands');
+const { bandOf, unitsFor } = require('./ageBands');
 
 /** Non-negotiable typography rules so the prose needs no cleanup tells. */
 const STYLE_RULES =
@@ -181,8 +181,9 @@ function influenceDirective(influences) {
 function outlinePrompt(spec, answers, influences) {
   const answerBlock = formatAnswers(answers);
   const band = bandOf(spec);
+  const kidUnits = band ? unitsFor(spec, spec.kidsLength) : 0;
   const chapterHint = band
-    ? `about ${band.units} ${band.unit}${band.units === 1 ? '' : 's'} (~${band.wordsPerUnit} words each) — call them chapters in the JSON`
+    ? `about ${kidUnits} ${band.unit}${kidUnits === 1 ? '' : 's'} (~${band.wordsPerUnit} words each) — call them chapters in the JSON`
     : chapterHintForSize(spec);
   const influenceBlock = influenceDirective(influences);
   const kidsBlock = kidsDirective(spec);

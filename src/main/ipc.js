@@ -133,7 +133,7 @@ function registerIpc(store) {
     const model = (store.getSettings().images || {}).model || DEFAULT_IMAGE_MODEL;
     const band = bandOf(spec);
     let count = 1; // cover
-    if (band) count += plannedImageCount(band);
+    if (band) count += plannedImageCount(band, spec.kidsLength);
     else {
       // Adult/general Nano: ~1 per chapter; estimate from requested size.
       const { sizeOf } = require('./book/prompts');
