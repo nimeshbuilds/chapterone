@@ -29,6 +29,12 @@ function isResumable(kind) {
   return ['subscription', 'auth', 'rate_limit', 'network', 'unknown'].includes(kind);
 }
 
+/** Should a provider failure trigger automatic fallback to the next engine?
+ * Everything except an explicit user cancellation is worth trying elsewhere. */
+function shouldFallback(kind) {
+  return kind !== 'cancelled';
+}
+
 /** Human-friendly explanation + suggested action. */
 function describe(kind) {
   switch (kind) {
@@ -47,4 +53,4 @@ function describe(kind) {
   }
 }
 
-module.exports = { classifyError, isResumable, describe };
+module.exports = { classifyError, isResumable, shouldFallback, describe };

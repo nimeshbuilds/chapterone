@@ -17,7 +17,21 @@ contextBridge.exposeInMainWorld('api', {
 
   // prerequisites
   checkPrerequisites: () => invoke('prereq:check'),
-  checkAuth: () => invoke('prereq:auth'),
+  checkAuth: (provider) => invoke('prereq:auth', provider),
+
+  // guided sign-in
+  startAuth: (provider) => invoke('auth:start', provider),
+  authInput: (sessionId, text) => invoke('auth:input', { sessionId, text }),
+  cancelAuth: (sessionId) => invoke('auth:cancel', sessionId),
+  onAuthEvents: (handlers) => {
+    const map = {
+      'auth:output': (_e, d) => handlers.onOutput && handlers.onOutput(d),
+      'auth:url': (_e, d) => handlers.onUrl && handlers.onUrl(d),
+      'auth:closed': (_e, d) => handlers.onClosed && handlers.onClosed(d),
+    };
+    for (const [ch, fn] of Object.entries(map)) ipcRenderer.on(ch, fn);
+    return () => { for (const ch of Object.keys(map)) ipcRenderer.removeAllListeners(ch); };
+  },
 
   // generation
   clarify: (spec) => invoke('book:clarify', spec),

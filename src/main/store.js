@@ -23,11 +23,14 @@ class Store {
 
   defaultSettings() {
     return {
-      provider: 'claude', // 'claude' | 'codex'
+      provider: 'claude', // primary: 'claude' | 'codex' | 'gemini'
+      chain: ['claude'], // ordered automated fallback chain
       claudeCommand: 'claude',
       claudeModel: '', // empty => CLI default
       codexCommand: 'codex',
       codexModel: '',
+      geminiCommand: 'gemini',
+      geminiModel: '',
       forceSubscription: true, // strip API-key env vars; use subscription login
       research: true, // ground content with web search by default
       illustrate: false, // source royalty-free images when requested

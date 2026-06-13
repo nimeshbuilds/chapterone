@@ -5,8 +5,9 @@ const path = require('path');
 const { ipcMain, dialog, shell, BrowserWindow } = require('electron');
 
 const { Store } = require('./store');
-const { createEngine, checkPrerequisites } = require('./cli');
-const { modelsFor } = require('./cli/models');
+const { createEngine, createChainEngine, checkPrerequisites } = require('./cli');
+const { modelsFor, providerList, loginFor, PROVIDERS } = require('./cli/models');
+const { AuthSessionManager } = require('./cli/authSession');
 const { BookGenerator } = require('./book/generator');
 const { resolveImagesForBook } = require('./book/images');
 const { generateEpub } = require('./export/epub');
@@ -19,6 +20,7 @@ const { safeFilename } = require('./util');
 function registerIpc(store) {
   /** Active generation jobs: jobId -> AbortController */
   const jobs = new Map();
+  const auth = new AuthSessionManager();
 
   const wrap = (fn) => async (event, ...args) => {
     try {
@@ -59,11 +61,49 @@ function registerIpc(store) {
   // ---- settings & meta ----
   ipcMain.handle('settings:get', wrap(async () => store.getSettings()));
   ipcMain.handle('settings:save', wrap(async (_e, partial) => store.saveSettings(partial)));
-  ipcMain.handle('meta:models', wrap(async () => ({ claude: modelsFor('claude'), codex: modelsFor('codex') })));
+  ipcMain.handle('meta:models', wrap(async () => ({
+    claude: modelsFor('claude'),
+    codex: modelsFor('codex'),
+    gemini: modelsFor('gemini'),
+    providers: providerList(),
+  })));
 
   // ---- prerequisites ----
   ipcMain.handle('prereq:check', wrap(async () => checkPrerequisites(store.getSettings())));
-  ipcMain.handle('prereq:auth', wrap(async () => createEngine(store.getSettings()).checkAuth()));
+  ipcMain.handle('prereq:auth', wrap(async (_e, provider) => {
+    const settings = store.getSettings();
+    const s = provider ? { ...settings, provider } : settings;
+    return createEngine(s).checkAuth();
+  }));
+
+  // ---- guided sign-in (interactive login) ----
+  ipcMain.handle('auth:start', wrap(async (event, provider) => {
+    const settings = store.getSettings();
+    const meta = PROVIDERS[provider] || PROVIDERS.claude;
+    const command =
+      (provider === 'codex' && settings.codexCommand) ||
+      (provider === 'gemini' && settings.geminiCommand) ||
+      settings.claudeCommand || meta.command;
+    const login = loginFor(provider);
+    const sender = event.sender;
+    const send = (channel, payload) => { if (!sender.isDestroyed()) sender.send(channel, payload); };
+
+    const sessionId = auth.start({
+      command,
+      args: login.args,
+      scrubEnv: [], // login must be allowed to write subscription credentials
+      onOutput: (text) => send('auth:output', { provider, text }),
+      onUrl: (url) => { shell.openExternal(url); send('auth:url', { provider, url }); },
+      onClose: async (code) => {
+        let authed = false;
+        try { authed = (await createEngine({ ...settings, provider }).checkAuth()).ok; } catch (_) { /* ignore */ }
+        send('auth:closed', { provider, code, authed });
+      },
+    });
+    return { sessionId, command, args: login.args, hint: login.hint };
+  }));
+  ipcMain.handle('auth:input', wrap(async (_e, { sessionId, text }) => ({ sent: auth.input(sessionId, text) })));
+  ipcMain.handle('auth:cancel', wrap(async (_e, sessionId) => ({ cancelled: auth.cancel(sessionId) })));
 
   // ---- clarify ----
   ipcMain.handle('book:clarify', wrap(async (_e, spec) => {
@@ -74,12 +114,14 @@ function registerIpc(store) {
   // ---- generate ----
   ipcMain.handle('book:generate', wrap(async (event, { spec, answers, jobId }) => {
     const settings = store.getSettings();
-    const engine = createEngine(settings, { model: spec && spec.model });
-    const gen = new BookGenerator(engine);
     const controller = new AbortController();
     jobs.set(jobId, controller);
     const sender = event.sender;
     const onProgress = (e) => { if (!sender.isDestroyed()) sender.send('book:progress', { jobId, ...e }); };
+    const engine = createChainEngine(settings, {
+      onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
+    });
+    const gen = new BookGenerator(engine);
 
     try {
       const book = await gen.generate(spec, answers || {}, {
@@ -99,12 +141,14 @@ function registerIpc(store) {
   ipcMain.handle('book:resume', wrap(async (event, { id, jobId }) => {
     const settings = store.getSettings();
     const book = store.getBook(id);
-    const engine = createEngine(settings, { model: book.model || (book.spec && book.spec.model) });
-    const gen = new BookGenerator(engine);
     const controller = new AbortController();
     jobs.set(jobId, controller);
     const sender = event.sender;
     const onProgress = (e) => { if (!sender.isDestroyed()) sender.send('book:progress', { jobId, ...e }); };
+    const engine = createChainEngine(settings, {
+      onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
+    });
+    const gen = new BookGenerator(engine);
 
     try {
       const done = await gen.resume(book, {
@@ -179,6 +223,7 @@ function registerIpc(store) {
     dispose() {
       for (const c of jobs.values()) c.abort();
       jobs.clear();
+      auth.disposeAll();
     },
   };
 }

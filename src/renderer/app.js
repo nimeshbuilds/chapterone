@@ -75,19 +75,22 @@ async function refreshPrereq() {
   const banner = $('#prereq-banner');
   const provider = (state.settings && state.settings.provider) || 'claude';
   const active = state.prereq ? state.prereq[provider] : null;
-  const name = provider === 'codex' ? 'Codex' : 'Claude';
+  const name = providerLabel(provider);
+  const chain = currentChain();
+  const chainNote = chain.length > 1 ? ` +${chain.length - 1} fallback` : '';
 
   if (active && active.found) {
     pill.className = 'pill ok';
-    pill.textContent = `● ${name} · subscription`;
+    pill.textContent = `● ${name} · subscription${chainNote}`;
     banner.classList.add('hidden');
   } else {
     pill.className = 'pill bad';
     pill.textContent = `● ${name} not found`;
-    const cmd = provider === 'codex' ? 'codex' : 'claude';
+    const cmd = (state.settings && state.settings[provider + 'Command']) || provider;
     banner.innerHTML = '';
     banner.append(
-      h('span', {}, `⚠️ The ${cmd} CLI was not found. Install it and sign in with your subscription, then re-check.`),
+      h('span', {}, `⚠️ The ${name} CLI (“${cmd}”) was not found, or you’re not signed in. Install it and sign in with your subscription.`),
+      h('button', { class: 'btn btn-gold btn-sm', onClick: () => openAuthModal(provider) }, '🔑 Sign in'),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check'),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings'));
     banner.classList.remove('hidden');
@@ -100,25 +103,29 @@ async function recheck() {
 }
 
 // ---------- shared engine controls ----------
+function providerLabel(id) {
+  const p = (state.models.providers || []).find((x) => x.id === id);
+  return p ? p.label : id;
+}
+function modelField(provider) { return provider + 'Model'; }
+
 function modelOptionsFor(provider) {
   const list = state.models[provider] || [];
-  const current = provider === 'codex' ? state.settings.codexModel : state.settings.claudeModel;
+  const field = modelField(provider);
+  const current = state.settings[field] || '';
   const known = list.map((m) => m.id);
   const sel = h('select', { id: 'eng-model' });
   for (const m of list) sel.append(h('option', { value: m.id, selected: m.id === current ? 'selected' : false }, m.label));
-  // custom value support
-  if (current && !known.includes(current)) {
-    sel.append(h('option', { value: current, selected: 'selected' }, `Custom: ${current}`));
-  }
+  if (current && !known.includes(current)) sel.append(h('option', { value: current, selected: 'selected' }, `Custom: ${current}`));
   sel.append(h('option', { value: '__custom__' }, 'Custom model…'));
   sel.addEventListener('change', async () => {
     if (sel.value === '__custom__') {
       const v = window.prompt('Enter a custom model id for this provider:', current || '');
       if (v == null) { sel.value = current || ''; return; }
-      await updateSettings(provider === 'codex' ? { codexModel: v.trim() } : { claudeModel: v.trim() });
+      await updateSettings({ [field]: v.trim() });
       renderEngineBarInPlace();
     } else {
-      await updateSettings(provider === 'codex' ? { codexModel: sel.value } : { claudeModel: sel.value });
+      await updateSettings({ [field]: sel.value });
     }
   });
   return sel;
@@ -131,19 +138,70 @@ function toggle(id, checked, label, onChange) {
   return h('label', { class: 'switch' }, input, h('span', { class: 'track' }, h('span', { class: 'thumb' })), h('span', { class: 'switch-label' }, label));
 }
 
+/** Compute the ordered fallback chain from settings (primary first). */
+function currentChain() {
+  const s = state.settings;
+  const ids = (state.models.providers || []).map((p) => p.id);
+  const primary = s.provider || 'claude';
+  const set = new Set(Array.isArray(s.chain) ? s.chain : [primary]);
+  set.add(primary);
+  const ordered = [primary, ...ids.filter((id) => id !== primary && set.has(id))];
+  return [...new Set(ordered)];
+}
+
+function chainToggles() {
+  const s = state.settings;
+  const primary = s.provider || 'claude';
+  const chain = currentChain();
+  const wrap = h('div', { class: 'chain-row' });
+  for (const p of (state.models.providers || [])) {
+    const inChain = chain.includes(p.id);
+    const isPrimary = p.id === primary;
+    const order = chain.indexOf(p.id);
+    const chip = h('button', {
+      class: `chain-chip ${inChain ? 'on' : ''} ${isPrimary ? 'primary' : ''}`,
+      title: isPrimary ? 'Primary engine (always first)' : 'Toggle as fallback',
+      onClick: async () => {
+        if (isPrimary) return; // can't remove primary
+        const next = new Set(currentChain());
+        if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+        // rebuild ordered list
+        const ids = (state.models.providers || []).map((x) => x.id);
+        const ordered = [primary, ...ids.filter((id) => id !== primary && next.has(id))];
+        await updateSettings({ chain: ordered });
+        renderEngineBarInPlace();
+      },
+    },
+      h('span', { class: 'chain-order' }, inChain ? `${order + 1}` : '+'),
+      ` ${p.label}`,
+      isPrimary ? h('span', { class: 'chain-tag' }, 'primary') : null);
+    wrap.append(chip);
+  }
+  return wrap;
+}
+
 function engineBar() {
   const s = state.settings;
   const provider = s.provider || 'claude';
+  const seg = h('div', { class: 'seg' });
+  for (const p of (state.models.providers || [])) {
+    seg.append(h('button', { class: provider === p.id ? 'active' : '', onClick: () => switchProvider(p.id) }, p.label));
+  }
   const bar = h('div', { class: 'engine-bar card', id: 'engine-bar' },
     h('div', { class: 'engine-row' },
       h('div', { class: 'engine-col' },
-        h('span', { class: 'mini-label' }, 'AI engine'),
-        h('div', { class: 'seg' },
-          h('button', { class: provider === 'claude' ? 'active' : '', onClick: () => switchProvider('claude') }, 'Claude Code'),
-          h('button', { class: provider === 'codex' ? 'active' : '', onClick: () => switchProvider('codex') }, 'Codex'))),
+        h('span', { class: 'mini-label' }, 'Primary engine'),
+        seg),
       h('div', { class: 'engine-col grow' },
-        h('span', { class: 'mini-label' }, `${provider === 'codex' ? 'Codex' : 'Claude'} model`),
-        modelOptionsFor(provider))),
+        h('span', { class: 'mini-label' }, `${providerLabel(provider)} model`),
+        modelOptionsFor(provider)),
+      h('div', { class: 'engine-col' },
+        h('span', { class: 'mini-label' }, 'Account'),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(provider) }, '🔑 Sign in'))),
+    h('div', { class: 'engine-row', style: 'margin-top:14px;flex-direction:column;align-items:stretch;gap:7px' },
+      h('span', { class: 'mini-label' }, 'Automatic fallback chain'),
+      chainToggles(),
+      h('span', { class: 'hint' }, 'If a provider’s quota runs out mid-book, writing continues automatically on the next engine in this chain. Click to add/remove fallbacks.')),
     h('div', { class: 'engine-row toggles' },
       toggle('t-research', s.research, '🔎 Research real facts & sources (web)', (v) => updateSettings({ research: v })),
       toggle('t-illustrate', s.illustrate, '🖼️ Add royalty-free images', (v) => updateSettings({ illustrate: v })),
@@ -155,9 +213,70 @@ function renderEngineBarInPlace() {
   if (old) old.replaceWith(engineBar());
 }
 async function switchProvider(p) {
-  await updateSettings({ provider: p });
+  // Primary becomes p, and is guaranteed first in the chain.
+  const chain = new Set(currentChain());
+  chain.add(p);
+  const ids = (state.models.providers || []).map((x) => x.id);
+  const ordered = [p, ...ids.filter((id) => id !== p && chain.has(id))];
+  await updateSettings({ provider: p, chain: ordered });
   await refreshPrereq();
   renderEngineBarInPlace();
+}
+
+// ---------- guided sign-in modal ----------
+function openAuthModal(provider) {
+  let sessionId = null;
+  let unsub = null;
+  let finished = false;
+
+  const log = h('pre', { class: 'auth-log' }, '');
+  const append = (t) => { log.textContent += t; log.scrollTop = log.scrollHeight; };
+  const input = h('input', { placeholder: 'Paste a verification code here (if asked), then Send', onkeydown: (e) => { if (e.key === 'Enter') sendInput(); } });
+  const urlLine = h('div', { class: 'hint' }, '');
+
+  const close = () => {
+    if (unsub) unsub();
+    if (sessionId && !finished) api.cancelAuth(sessionId).catch(() => {});
+    overlay.remove();
+  };
+  async function sendInput() {
+    if (!sessionId || !input.value.trim()) return;
+    await api.authInput(sessionId, input.value);
+    append(`> ${input.value}\n`);
+    input.value = '';
+  }
+
+  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
+    h('div', { class: 'modal' },
+      h('h2', { style: 'margin:0 0 6px' }, `Sign in to ${providerLabel(provider)}`),
+      h('p', { class: 'hint', id: 'auth-hint' }, 'Starting sign-in…'),
+      urlLine,
+      log,
+      h('div', { class: 'auth-input-row' }, input, h('button', { class: 'btn btn-ghost btn-sm', onClick: sendInput }, 'Send')),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn btn-gold btn-sm', onClick: async () => {
+          const res = await api.checkAuth(provider).catch((e) => ({ ok: false, detail: e.message }));
+          if (res.ok) { toast('✅ Signed in.', 'ok'); finished = true; close(); await refreshPrereq(); if (state.view === 'settings') renderSettings(); }
+          else toast(`Not signed in yet: ${res.detail || ''}`, 'bad');
+        } }, '✓ I’ve finished — re-check'),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: close }, 'Close'))));
+  document.body.append(overlay);
+
+  unsub = api.onAuthEvents({
+    onOutput: (d) => { if (d.provider === provider) append(d.text); },
+    onUrl: (d) => { if (d.provider === provider) urlLine.textContent = `Opened sign-in page in your browser: ${d.url}`; },
+    onClosed: async (d) => {
+      if (d.provider !== provider) return;
+      finished = true;
+      append(`\n[sign-in process ended, code ${d.code}]\n`);
+      if (d.authed) { toast('✅ Signed in.', 'ok'); close(); await refreshPrereq(); if (state.view === 'settings') renderSettings(); }
+      else append('If a browser step is still open, finish it and click “I’ve finished — re-check”.\n');
+    },
+  });
+
+  api.startAuth(provider)
+    .then((info) => { sessionId = info.sessionId; $('#auth-hint').textContent = info.hint || 'Follow the prompts to authorize your subscription.'; })
+    .catch((err) => append(`Could not start sign-in: ${err.message}\n`));
 }
 
 // ---------- LIBRARY ----------
@@ -360,6 +479,11 @@ function handleProgress(e) {
   if (e.phase === 'chapter:start') j.activeIndex = e.index;
   if (e.phase === 'chapter:done') { j.chapters[e.index] = { number: e.number, title: e.title, words: e.words }; j.activeIndex = e.index + 1; }
   if (e.phase === 'images' && e.query) j.activity = `Finding image: “${e.query}”`;
+  if (e.phase === 'engine:switch') {
+    if (e.type === 'falling-back') { j.activity = `⚠️ ${providerLabel(e.fromId)} hit a ${e.kind} limit — switching to ${providerLabel(e.toId)}…`; toast(j.activity, 'bad'); }
+    else if (e.type === 'switched') { j.activity = `Now writing with ${providerLabel(e.toId)}.`; j.engine = e.toId; }
+    else if (e.type === 'exhausted') { j.activity = `All providers in the chain failed (${e.kind}).`; }
+  }
   if (e.message) j.message = e.message;
   redrawProgress();
 }
@@ -480,20 +604,25 @@ function renderSettings() {
     const ok = info && info.found;
     return h('div', { class: 'kv' },
       h('span', { class: 'k' }, h('span', { class: `status-dot ${ok ? 'ok' : 'bad'}` }), label),
-      h('span', {}, ok ? (info.version || 'found') : 'not found'));
+      h('span', { style: 'display:flex;align-items:center;gap:10px' },
+        h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : 'not installed'),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(key) }, '🔑 Sign in')));
   };
 
   const engineCard = h('div', { class: 'card' },
-    h('p', { class: 'section-title' }, 'AI engine & model'),
-    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'Modulagent drives your locally installed CLI on your own subscription. With “Use subscription” on, API-key environment variables are stripped so billing always uses your plan login — never an API key. Nothing is sent to any third-party server.'),
+    h('p', { class: 'section-title' }, 'AI engines, models & fallback chain'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'Modulagent drives your locally installed CLI on your own subscription. With “Use subscription” on, API-key environment variables are stripped so billing always uses your plan login — never an API key. Research uses each CLI’s built-in web tools (Claude WebSearch/WebFetch, Codex --search, Gemini Google Search). Nothing is sent to any third-party server.'),
     engineBar(),
     h('div', { class: 'row', style: 'margin-top:16px' },
       h('label', { class: 'field' }, h('span', {}, 'Claude command'),
         h('input', { id: 's-claude-cmd', value: s.claudeCommand || 'claude' })),
       h('label', { class: 'field' }, h('span', {}, 'Codex command'),
-        h('input', { id: 's-codex-cmd', value: s.codexCommand || 'codex' }))),
+        h('input', { id: 's-codex-cmd', value: s.codexCommand || 'codex' })),
+      h('label', { class: 'field' }, h('span', {}, 'Gemini command'),
+        h('input', { id: 's-gemini-cmd', value: s.geminiCommand || 'gemini' }))),
     statusRow('claude', 'Claude Code CLI'),
     statusRow('codex', 'Codex CLI'),
+    statusRow('gemini', 'Gemini CLI'),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-ghost btn-sm', onClick: saveEngineCmds }, 'Save commands'),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check CLIs'),
@@ -534,6 +663,7 @@ async function saveEngineCmds() {
   await updateSettings({
     claudeCommand: $('#s-claude-cmd').value.trim() || 'claude',
     codexCommand: $('#s-codex-cmd').value.trim() || 'codex',
+    geminiCommand: $('#s-gemini-cmd').value.trim() || 'gemini',
   });
   await recheck();
   toast('Commands saved.', 'ok');
@@ -571,6 +701,12 @@ async function verifyKindle() {
 }
 
 // ---------- bootstrap ----------
+// Route any in-app http(s) link through the OS browser instead of navigating
+// the app window away.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="http"]');
+  if (a) { e.preventDefault(); window.open(a.href, '_blank'); }
+});
 document.querySelectorAll('.nav-item').forEach((b) =>
   b.addEventListener('click', () => go(b.dataset.view)));
 if (api.onMenu) {
