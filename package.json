@@ -1,9 +1,9 @@
 {
-  "name": "bookwriter",
+  "name": "modulagent-book-writer",
   "version": "0.1.0",
-  "description": "BookWriter Studio — generate professional, bestseller-quality books with the Claude Code or Codex CLI, read them in-app, export to Kindle (EPUB/PDF), and send to your Kindle.",
+  "description": "Modulagent's Book Writer — generate professional, bestseller-quality books with the Claude Code or Codex CLI on your own subscription, research-grounded with royalty-free images, read them in-app, export to Kindle (EPUB/PDF), and send to your Kindle.",
   "author": {
-    "name": "BookWriter Studio"
+    "name": "Modulagent"
   },
   "license": "MIT",
   "main": "src/main/main.js",
@@ -27,9 +27,9 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.bookwriter.studio",
-    "productName": "BookWriter Studio",
-    "copyright": "Copyright © 2026 BookWriter Studio",
+    "appId": "com.modulagent.bookwriter",
+    "productName": "Modulagent's Book Writer",
+    "copyright": "Copyright © 2026 Modulagent",
     "files": [
       "src/**/*",
       "assets/**/*",
@@ -67,7 +67,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "BookWriter Studio"
+      "shortcutName": "Modulagent's Book Writer"
     },
     "linux": {
       "target": ["AppImage"],

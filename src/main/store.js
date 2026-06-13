@@ -12,9 +12,11 @@ class Store {
     this.baseDir = baseDir;
     this.booksDir = path.join(baseDir, 'books');
     this.exportsDir = path.join(baseDir, 'exports');
+    this.imagesDir = path.join(baseDir, 'images');
     this.settingsPath = path.join(baseDir, 'settings.json');
     fs.mkdirSync(this.booksDir, { recursive: true });
     fs.mkdirSync(this.exportsDir, { recursive: true });
+    fs.mkdirSync(this.imagesDir, { recursive: true });
   }
 
   // ---- settings ----
@@ -26,6 +28,9 @@ class Store {
       claudeModel: '', // empty => CLI default
       codexCommand: 'codex',
       codexModel: '',
+      forceSubscription: true, // strip API-key env vars; use subscription login
+      research: true, // ground content with web search by default
+      illustrate: false, // source royalty-free images when requested
       kindle: {
         toAddress: '', // <name>@kindle.com
         fromAddress: '',
@@ -92,8 +97,9 @@ class Store {
           author: b.author,
           genre: b.genre,
           status: b.status,
-          words: b.words || (b.chapters || []).reduce((n, c) => n + (c.words || 0), 0),
-          chapters: (b.chapters || []).length,
+          pausedReason: b.pausedReason || null,
+          words: b.words || (b.chapters || []).filter(Boolean).reduce((n, c) => n + (c.words || 0), 0),
+          chapters: (b.chapters || []).filter(Boolean).length,
           plannedChapters: (b.outline || []).length,
           createdAt: b.createdAt,
           updatedAt: b.updatedAt,

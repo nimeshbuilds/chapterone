@@ -21,6 +21,7 @@ function run(command, args = [], opts = {}) {
   const {
     input,
     env,
+    scrubEnv = [],
     timeoutMs = 0,
     signal,
     onStdout,
@@ -34,11 +35,16 @@ function run(command, args = [], opts = {}) {
       return;
     }
 
+    // Build the child environment, then strip any keys that would force
+    // API-key billing so the CLI uses the user's subscription login instead.
+    const childEnv = { ...process.env, ...(env || {}) };
+    for (const key of scrubEnv) delete childEnv[key];
+
     let child;
     try {
       child = spawn(command, args, {
         cwd,
-        env: { ...process.env, ...(env || {}) },
+        env: childEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
       });

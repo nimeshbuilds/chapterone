@@ -10,6 +10,7 @@ const state = {
   view: 'library',
   settings: null,
   prereq: null,
+  models: { claude: [], codex: [] },
   draftSpec: null,
   clarify: null,
   job: null,
@@ -31,28 +32,28 @@ function h(tag, attrs = {}, ...kids) {
   }
   return e;
 }
-function mount(node) {
-  const root = $('#view-root');
-  root.innerHTML = '';
-  root.append(node);
-}
+function mount(node) { const r = $('#view-root'); r.innerHTML = ''; r.append(node); }
 let toastTimer = null;
 function toast(msg, type = '') {
   const t = $('#toast');
   t.textContent = msg;
   t.className = `toast ${type}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add('hidden'), 4200);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 4600);
 }
 function coverGradient(seed) {
   let hash = 0;
   for (let i = 0; i < (seed || 'book').length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
   const hue = hash % 360;
-  return `linear-gradient(150deg, hsl(${hue} 45% 32%), hsl(${(hue + 40) % 360} 55% 20%))`;
+  return `linear-gradient(150deg, hsl(${hue} 48% 34%), hsl(${(hue + 40) % 360} 58% 20%))`;
 }
 function setActiveNav(view) {
   document.querySelectorAll('.nav-item').forEach((b) =>
     b.classList.toggle('active', b.dataset.view === view));
+}
+async function updateSettings(partial) {
+  state.settings = await api.saveSettings(partial);
+  return state.settings;
 }
 
 // ---------- navigation ----------
@@ -69,37 +70,94 @@ async function go(view, arg) {
 
 // ---------- prerequisite banner ----------
 async function refreshPrereq() {
-  try {
-    state.prereq = await api.checkPrerequisites();
-  } catch (_) {
-    state.prereq = null;
-  }
+  try { state.prereq = await api.checkPrerequisites(); } catch (_) { state.prereq = null; }
   const pill = $('#provider-pill');
   const banner = $('#prereq-banner');
-  const p = state.prereq;
   const provider = (state.settings && state.settings.provider) || 'claude';
-  const active = p ? p[provider] : null;
+  const active = state.prereq ? state.prereq[provider] : null;
+  const name = provider === 'codex' ? 'Codex' : 'Claude';
 
   if (active && active.found) {
     pill.className = 'pill ok';
-    pill.textContent = `● ${provider === 'codex' ? 'Codex' : 'Claude'} ready`;
+    pill.textContent = `● ${name} · subscription`;
     banner.classList.add('hidden');
   } else {
     pill.className = 'pill bad';
-    pill.textContent = `● ${provider === 'codex' ? 'Codex' : 'Claude'} not found`;
+    pill.textContent = `● ${name} not found`;
     const cmd = provider === 'codex' ? 'codex' : 'claude';
     banner.innerHTML = '';
     banner.append(
-      h('span', {}, `⚠️ The ${cmd} CLI was not found. Install and sign in to it, then re-check.`),
+      h('span', {}, `⚠️ The ${cmd} CLI was not found. Install it and sign in with your subscription, then re-check.`),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check'),
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings')
-    );
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings'));
     banner.classList.remove('hidden');
   }
 }
 async function recheck() {
   await refreshPrereq();
   if (state.view === 'create') renderCreate();
+  if (state.view === 'settings') renderSettings();
+}
+
+// ---------- shared engine controls ----------
+function modelOptionsFor(provider) {
+  const list = state.models[provider] || [];
+  const current = provider === 'codex' ? state.settings.codexModel : state.settings.claudeModel;
+  const known = list.map((m) => m.id);
+  const sel = h('select', { id: 'eng-model' });
+  for (const m of list) sel.append(h('option', { value: m.id, selected: m.id === current ? 'selected' : false }, m.label));
+  // custom value support
+  if (current && !known.includes(current)) {
+    sel.append(h('option', { value: current, selected: 'selected' }, `Custom: ${current}`));
+  }
+  sel.append(h('option', { value: '__custom__' }, 'Custom model…'));
+  sel.addEventListener('change', async () => {
+    if (sel.value === '__custom__') {
+      const v = window.prompt('Enter a custom model id for this provider:', current || '');
+      if (v == null) { sel.value = current || ''; return; }
+      await updateSettings(provider === 'codex' ? { codexModel: v.trim() } : { claudeModel: v.trim() });
+      renderEngineBarInPlace();
+    } else {
+      await updateSettings(provider === 'codex' ? { codexModel: sel.value } : { claudeModel: sel.value });
+    }
+  });
+  return sel;
+}
+
+function toggle(id, checked, label, onChange) {
+  const input = h('input', { type: 'checkbox', id });
+  if (checked) input.checked = true;
+  input.addEventListener('change', () => onChange(input.checked));
+  return h('label', { class: 'switch' }, input, h('span', { class: 'track' }, h('span', { class: 'thumb' })), h('span', { class: 'switch-label' }, label));
+}
+
+function engineBar() {
+  const s = state.settings;
+  const provider = s.provider || 'claude';
+  const bar = h('div', { class: 'engine-bar card', id: 'engine-bar' },
+    h('div', { class: 'engine-row' },
+      h('div', { class: 'engine-col' },
+        h('span', { class: 'mini-label' }, 'AI engine'),
+        h('div', { class: 'seg' },
+          h('button', { class: provider === 'claude' ? 'active' : '', onClick: () => switchProvider('claude') }, 'Claude Code'),
+          h('button', { class: provider === 'codex' ? 'active' : '', onClick: () => switchProvider('codex') }, 'Codex'))),
+      h('div', { class: 'engine-col grow' },
+        h('span', { class: 'mini-label' }, `${provider === 'codex' ? 'Codex' : 'Claude'} model`),
+        modelOptionsFor(provider))),
+    h('div', { class: 'engine-row toggles' },
+      toggle('t-research', s.research, '🔎 Research real facts & sources (web)', (v) => updateSettings({ research: v })),
+      toggle('t-illustrate', s.illustrate, '🖼️ Add royalty-free images', (v) => updateSettings({ illustrate: v })),
+      toggle('t-sub', s.forceSubscription, '🔐 Use subscription, not API key', (v) => updateSettings({ forceSubscription: v }))));
+  return bar;
+}
+function renderEngineBarInPlace() {
+  const old = $('#engine-bar');
+  if (old) old.replaceWith(engineBar());
+}
+async function switchProvider(p) {
+  await updateSettings({ provider: p });
+  await refreshPrereq();
+  renderEngineBarInPlace();
 }
 
 // ---------- LIBRARY ----------
@@ -118,17 +176,23 @@ async function renderLibrary() {
   } else {
     const grid = h('div', { class: 'book-grid' });
     for (const b of books) {
+      const paused = b.status === 'paused';
+      const statusLabel = b.status === 'generating' ? 'Writing…' : (paused ? 'Paused' : (b.status || 'draft'));
       const card = h('div', { class: 'book-card', onClick: () => go('reader', b.id) },
         h('div', { class: 'book-cover', style: `background:${coverGradient(b.title)}` },
           h('h3', {}, b.title || 'Untitled'),
           h('div', { class: 'by' }, `by ${b.author || 'Anonymous'}`)),
         h('div', { class: 'book-meta' },
           h('div', { class: 'stat' },
-            h('span', { class: `badge ${b.status}` }, b.status === 'generating' ? 'Writing…' : (b.status || 'draft')),
+            h('span', { class: `badge ${b.status}` }, statusLabel),
             h('span', {}, b.genre || '')),
           h('div', { class: 'stat', style: 'margin-top:8px' },
             h('span', {}, `${b.chapters}/${b.plannedChapters || b.chapters} ch`),
-            h('span', {}, `${(b.words || 0).toLocaleString()} words`))));
+            h('span', {}, `${(b.words || 0).toLocaleString()} words`)),
+          paused ? h('button', {
+            class: 'btn btn-gold btn-sm', style: 'margin-top:12px;width:100%',
+            onClick: (e) => { e.stopPropagation(); startResume(b.id); },
+          }, '▶ Continue writing') : null));
       grid.append(card);
     }
     body = h('div', {},
@@ -140,6 +204,11 @@ async function renderLibrary() {
 }
 
 // ---------- CREATE ----------
+function selectEl(id, options, selected) {
+  const s = h('select', { id });
+  for (const o of options) s.append(h('option', { value: o, selected: o === selected ? 'selected' : false }, o));
+  return s;
+}
 function specForm(values = {}) {
   const v = values;
   return h('div', { class: 'card' },
@@ -162,12 +231,8 @@ function specForm(values = {}) {
       h('label', { class: 'field' }, h('span', {}, 'Anything else? (optional)'),
         h('input', { id: 'f-notes', placeholder: 'Must-haves, inspirations, no-gos…', value: v.notes || '' }))));
 }
-function selectEl(id, options, selected) {
-  const s = h('select', { id });
-  for (const o of options) s.append(h('option', { value: o, selected: o === selected ? 'selected' : false }, o));
-  return s;
-}
 function readSpec() {
+  const s = state.settings;
   return {
     request: $('#f-request').value.trim(),
     genre: $('#f-genre').value.trim(),
@@ -176,6 +241,9 @@ function readSpec() {
     tone: $('#f-tone').value.trim(),
     pov: $('#f-pov').value.trim(),
     notes: $('#f-notes').value.trim(),
+    model: s.provider === 'codex' ? s.codexModel : s.claudeModel,
+    research: !!s.research,
+    illustrate: !!s.illustrate,
   };
 }
 
@@ -184,15 +252,13 @@ function renderCreate() {
   const ready = state.prereq && state.prereq[provider] && state.prereq[provider].found;
   const head = h('div', { class: 'page-head' },
     h('h1', {}, 'Commission a new book'),
-    h('p', {}, 'Tell the bestselling author what you want. Vague is fine — they’ll ask smart questions before writing.'));
+    h('p', {}, 'Pick your engine and model, then tell the bestselling author what you want. Vague is fine — they’ll ask smart questions first.'));
 
   const actions = h('div', { class: 'btn-row' },
-    h('button', { class: 'btn btn-primary', id: 'btn-clarify', onClick: onClarify },
-      ready ? 'Continue →' : 'CLI not ready'),
+    h('button', { class: 'btn btn-primary', id: 'btn-clarify', onClick: onClarify }, ready ? 'Continue →' : 'CLI not ready'),
     h('button', { class: 'btn btn-ghost', onClick: () => skipToGenerate() }, 'Skip questions & write now'));
 
-  const node = h('div', { class: 'view' }, head, specForm(state.draftSpec || {}), actions);
-  mount(node);
+  mount(h('div', { class: 'view' }, head, engineBar(), specForm(state.draftSpec || {}), actions));
   if (!ready) $('#btn-clarify').setAttribute('disabled', 'true');
 }
 
@@ -205,11 +271,8 @@ async function onClarify() {
   btn.textContent = 'Thinking…';
   try {
     state.clarify = await api.clarify(spec);
-    if (state.clarify.needsClarification && state.clarify.questions.length) {
-      go('clarify');
-    } else {
-      startGeneration(spec, {});
-    }
+    if (state.clarify.needsClarification && state.clarify.questions.length) go('clarify');
+    else startGeneration(spec, {});
   } catch (err) {
     toast(`Could not reach the model: ${err.message}`, 'bad');
     btn.removeAttribute('disabled');
@@ -238,8 +301,8 @@ function renderClarify() {
       q.why ? h('div', { class: 'why' }, q.why) : null);
     if (Array.isArray(q.suggestions) && q.suggestions.length) {
       const chips = h('div', { class: 'chips' });
-      q.suggestions.forEach((s) =>
-        chips.append(h('button', { class: 'chip', onClick: () => { $('#' + inputId).value = s; } }, s)));
+      q.suggestions.forEach((sg) =>
+        chips.append(h('button', { class: 'chip', onClick: () => { $('#' + inputId).value = sg; } }, sg)));
       block.append(chips);
     }
     block.append(h('input', { id: inputId, 'data-q': q.id || q.question, placeholder: 'Your answer (optional)' }));
@@ -259,64 +322,62 @@ function renderClarify() {
   mount(h('div', { class: 'view' }, head, card, actions));
 }
 
-// ---------- GENERATION ----------
-function startGeneration(spec, answers) {
-  const jobId = `job-${Date.now()}`;
-  state.job = { jobId, spec, answers, phase: 'starting', chapters: [], outline: [], title: spec.request.slice(0, 40), bookId: null, error: null, done: false };
-  go('progress');
-
-  const off = api.onProgress((e) => {
-    if (e.jobId !== jobId) return;
-    handleProgress(e);
-  });
-  state.job.off = off;
-
-  api.generate(spec, answers, jobId)
-    .then((res) => {
-      state.job.bookId = res.id;
-      state.job.done = true;
-      if (state.view === 'progress') renderProgress();
-      toast('🎉 Your book is ready!', 'ok');
-    })
-    .catch((err) => {
-      state.job.error = err.message;
-      if (state.view === 'progress') renderProgress();
-      toast(`Generation stopped: ${err.message}`, 'bad');
-    })
-    .finally(() => { if (off) off(); });
+// ---------- GENERATION / RESUME ----------
+function newJob(spec) {
+  return { jobId: `job-${Date.now()}`, spec, phase: 'starting', chapters: [], outline: [], title: (spec && spec.request || 'Book').slice(0, 40), bookId: null, error: null, done: false, activity: '' };
 }
+function startGeneration(spec, answers) {
+  state.job = newJob(spec);
+  const j = state.job;
+  go('progress');
+  const off = api.onProgress((e) => { if (e.jobId === j.jobId) handleProgress(e); });
+  api.generate(spec, answers, j.jobId)
+    .then((res) => { j.bookId = res.id; j.done = true; redrawProgress(); toast('🎉 Your book is ready!', 'ok'); })
+    .catch((err) => { j.error = err.message; redrawProgress(); toast(`Writing paused: ${err.message}`, 'bad'); })
+    .finally(() => off && off());
+}
+function startResume(id) {
+  state.job = newJob({ request: 'Resuming…' });
+  const j = state.job;
+  j.bookId = id;
+  j.resuming = true;
+  go('progress');
+  const off = api.onProgress((e) => { if (e.jobId === j.jobId) handleProgress(e); });
+  api.resumeBook(id, j.jobId)
+    .then((res) => { j.bookId = res.id; j.done = true; redrawProgress(); toast('🎉 Book completed!', 'ok'); })
+    .catch((err) => { j.error = err.message; redrawProgress(); toast(`Writing paused again: ${err.message}`, 'bad'); })
+    .finally(() => off && off());
+}
+function redrawProgress() { if (state.view === 'progress') renderProgress(); }
 
 function handleProgress(e) {
   const j = state.job;
   if (!j) return;
   j.phase = e.phase;
-  if (e.phase === 'outline:done') {
-    j.title = e.title;
-    j.outline = (e.book && e.book.outline) || [];
-    j.bookId = e.book && e.book.id;
+  if (e.phase === 'outline:done' || e.phase === 'resume') {
+    if (e.book) { j.title = e.book.title || j.title; j.outline = e.book.outline || []; j.bookId = e.book.id; j.chapters = (e.book.chapters || []).map((c) => c && { number: c.number, title: c.title, words: c.words }); }
   }
   if (e.phase === 'chapter:start') j.activeIndex = e.index;
-  if (e.phase === 'chapter:done') {
-    j.chapters[e.index] = { number: e.number, title: e.title, words: e.words };
-    j.activeIndex = e.index + 1;
-  }
+  if (e.phase === 'chapter:done') { j.chapters[e.index] = { number: e.number, title: e.title, words: e.words }; j.activeIndex = e.index + 1; }
+  if (e.phase === 'images' && e.query) j.activity = `Finding image: “${e.query}”`;
   if (e.message) j.message = e.message;
-  if (state.view === 'progress') renderProgress();
+  redrawProgress();
 }
 
 function renderProgress() {
   const j = state.job;
   if (!j) return go('library');
-  const total = j.outline.length || (j.spec ? 0 : 0);
+  const total = j.outline.length;
   const doneCount = j.chapters.filter(Boolean).length;
-  const pct = total ? Math.round((doneCount / total) * 100) : (j.phase === 'outline:start' ? 6 : 12);
+  const pct = total ? Math.round((doneCount / total) * 100) : (j.phase === 'starting' ? 6 : 12);
+  const working = !j.done && !j.error;
 
   const head = h('div', { class: 'progress-head' },
-    j.done || j.error ? h('div', {}, j.error ? '⚠️' : '✅') : h('div', { class: 'spinner' }),
+    working ? h('div', { class: 'spinner' }) : h('div', { style: 'font-size:24px' }, j.error ? '⏸️' : '✅'),
     h('div', {},
-      h('h1', { style: 'margin:0;font-size:22px' }, j.done ? j.title : (j.error ? 'Generation interrupted' : 'Writing your book…')),
+      h('h1', { style: 'margin:0;font-size:22px' }, j.done ? j.title : (j.error ? 'Writing paused' : 'Writing your book…')),
       h('p', { style: 'margin:4px 0 0;color:var(--text-dim);font-size:14px' },
-        j.error ? j.error : (j.message || 'Working with the bestselling author…'))));
+        j.error ? j.error : (j.activity || j.message || 'Working with the bestselling author…'))));
 
   const bar = h('div', { class: 'progress-bar' }, h('div', { style: `width:${pct}%` }));
 
@@ -324,11 +385,11 @@ function renderProgress() {
   if (j.outline.length) {
     j.outline.forEach((c, i) => {
       const done = !!j.chapters[i];
-      const active = !done && i === j.activeIndex && !j.done && !j.error;
+      const active = !done && i === j.activeIndex && working;
       list.append(h('li', { class: done ? 'done' : (active ? 'active' : '') },
         h('span', { class: 'ci' }, done ? '✓' : (active ? '✍️' : '·')),
-        h('span', {}, `${c.title}`),
-        done ? h('span', { style: 'margin-left:auto;font-size:12px;color:var(--text-dim)' }, `${j.chapters[i].words} w`) : null));
+        h('span', {}, c.title),
+        done && j.chapters[i].words ? h('span', { style: 'margin-left:auto;font-size:12px;color:var(--text-dim)' }, `${j.chapters[i].words} w`) : null));
     });
   } else {
     list.append(h('li', { class: 'active' }, h('span', { class: 'ci' }, '✍️'), 'Designing the outline…'));
@@ -338,13 +399,12 @@ function renderProgress() {
   if (j.done && j.bookId) {
     actions.append(h('button', { class: 'btn btn-gold', onClick: () => go('reader', j.bookId) }, '📖 Read it now'));
   } else if (j.error) {
+    if (j.bookId) actions.append(h('button', { class: 'btn btn-gold', onClick: () => startResume(j.bookId) }, '▶ Continue from here'));
     actions.append(
-      h('button', { class: 'btn btn-ghost', onClick: () => go('create') }, '← Edit & retry'),
-      j.bookId ? h('button', { class: 'btn btn-ghost', onClick: () => go('reader', j.bookId) }, 'Open partial draft') : null);
+      j.bookId ? h('button', { class: 'btn btn-ghost', onClick: () => go('reader', j.bookId) }, 'Open partial draft') : null,
+      h('button', { class: 'btn btn-ghost', onClick: () => go('library') }, '← Library'));
   } else {
-    actions.append(h('button', { class: 'btn btn-danger', onClick: async () => {
-      await api.cancelGeneration(j.jobId); toast('Cancelling…');
-    } }, 'Cancel'));
+    actions.append(h('button', { class: 'btn btn-danger', onClick: async () => { await api.cancelGeneration(j.jobId); toast('Stopping…'); } }, 'Pause / Cancel'));
   }
 
   mount(h('div', { class: 'view' },
@@ -356,27 +416,28 @@ function renderProgress() {
 // ---------- READER ----------
 async function renderReader(id) {
   let book, html;
-  try {
-    book = await api.getBook(id);
-    html = await api.getBookHtml(id);
-  } catch (err) {
-    toast(`Could not open book: ${err.message}`, 'bad');
-    return go('library');
-  }
+  try { book = await api.getBook(id); html = await api.getBookHtml(id); }
+  catch (err) { toast(`Could not open book: ${err.message}`, 'bad'); return go('library'); }
 
+  const paused = book.status === 'paused';
   const bar = h('div', { class: 'reader-bar' },
     h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('library') }, '← Library'),
     h('div', { class: 'title' }, book.title),
     h('div', { class: 'spacer' }),
+    paused ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue') : null,
     h('button', { class: 'btn btn-ghost btn-sm', onClick: () => doExport(id, 'epub') }, 'EPUB'),
     h('button', { class: 'btn btn-ghost btn-sm', onClick: () => doExport(id, 'pdf') }, 'PDF'),
     h('button', { class: 'btn btn-ghost btn-sm', onClick: () => doExport(id, 'markdown') }, 'Markdown'),
     h('button', { class: 'btn btn-gold btn-sm', onClick: () => sendKindle(id) }, '📨 Send to Kindle'),
     h('button', { class: 'btn btn-danger btn-sm', onClick: () => deleteBook(id) }, 'Delete'));
 
+  const note = paused && book.pausedReason
+    ? h('div', { class: 'pause-note' }, `⏸️ ${book.pausedReason.detail || 'Paused.'} `,
+        h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue writing'))
+    : null;
+
   const frame = h('iframe', { class: 'reader-frame', sandbox: 'allow-same-origin' });
-  const node = h('div', { class: 'view reader-view' }, bar, frame);
-  mount(node);
+  mount(h('div', { class: 'view reader-view' }, bar, note, frame));
   frame.srcdoc = html;
 }
 
@@ -387,27 +448,18 @@ async function doExport(id, format) {
     if (res.canceled) return;
     toast(`Saved ${format.toUpperCase()}. Opening…`, 'ok');
     await api.openPath(res.path);
-  } catch (err) {
-    toast(`Export failed: ${err.message}`, 'bad');
-  }
+  } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
 }
-
 async function sendKindle(id) {
-  const s = state.settings;
-  const k = s && s.kindle;
+  const k = state.settings && state.settings.kindle;
   if (!k || !k.toAddress || !k.smtp || !k.smtp.host) {
     toast('Set up your Kindle email & SMTP in Settings first.', 'bad');
     return go('settings');
   }
   toast('Building and emailing your book to Kindle…');
-  try {
-    await api.sendToKindle(id);
-    toast('📨 Sent! It will appear on your Kindle shortly.', 'ok');
-  } catch (err) {
-    toast(`Send failed: ${err.message}`, 'bad');
-  }
+  try { await api.sendToKindle(id); toast('📨 Sent! It will appear on your Kindle shortly.', 'ok'); }
+  catch (err) { toast(`Send failed: ${err.message}`, 'bad'); }
 }
-
 async function deleteBook(id) {
   if (!window.confirm('Delete this book permanently?')) return;
   await api.deleteBook(id);
@@ -421,40 +473,30 @@ function renderSettings() {
   const p = state.prereq || {};
   const head = h('div', { class: 'page-head' },
     h('h1', {}, 'Settings'),
-    h('p', {}, 'Choose your AI engine and configure Kindle delivery.'));
-
-  // provider segment
-  const seg = h('div', { class: 'seg' },
-    h('button', { class: s.provider === 'claude' ? 'active' : '', onClick: () => { s.provider = 'claude'; saveAndRerender(); } }, 'Claude Code'),
-    h('button', { class: s.provider === 'codex' ? 'active' : '', onClick: () => { s.provider = 'codex'; saveAndRerender(); } }, 'Codex'));
+    h('p', {}, 'Choose your AI engine & model, grounding options, and Kindle delivery.'));
 
   const statusRow = (key, label) => {
     const info = p[key];
     const ok = info && info.found;
     return h('div', { class: 'kv' },
-      h('span', { class: 'k' },
-        h('span', { class: `status-dot ${ok ? 'ok' : 'bad'}` }), label),
+      h('span', { class: 'k' }, h('span', { class: `status-dot ${ok ? 'ok' : 'bad'}` }), label),
       h('span', {}, ok ? (info.version || 'found') : 'not found'));
   };
 
   const engineCard = h('div', { class: 'card' },
-    h('p', { class: 'section-title' }, 'AI engine'),
-    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'BookWriter drives your locally installed CLI and uses your own subscription. Nothing is sent to any third-party server.'),
-    h('div', { style: 'margin-bottom:16px' }, seg),
-    h('div', { class: 'row' },
+    h('p', { class: 'section-title' }, 'AI engine & model'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'Modulagent drives your locally installed CLI on your own subscription. With “Use subscription” on, API-key environment variables are stripped so billing always uses your plan login — never an API key. Nothing is sent to any third-party server.'),
+    engineBar(),
+    h('div', { class: 'row', style: 'margin-top:16px' },
       h('label', { class: 'field' }, h('span', {}, 'Claude command'),
         h('input', { id: 's-claude-cmd', value: s.claudeCommand || 'claude' })),
-      h('label', { class: 'field' }, h('span', {}, 'Claude model (blank = default)'),
-        h('input', { id: 's-claude-model', value: s.claudeModel || '', placeholder: 'e.g. claude-sonnet-4-6' }))),
-    h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'Codex command'),
-        h('input', { id: 's-codex-cmd', value: s.codexCommand || 'codex' })),
-      h('label', { class: 'field' }, h('span', {}, 'Codex model (blank = default)'),
-        h('input', { id: 's-codex-model', value: s.codexModel || '' }))),
+        h('input', { id: 's-codex-cmd', value: s.codexCommand || 'codex' }))),
     statusRow('claude', 'Claude Code CLI'),
     statusRow('codex', 'Codex CLI'),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck().then(renderSettings) }, 'Re-check CLIs'),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: saveEngineCmds }, 'Save commands'),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check CLIs'),
       h('button', { class: 'btn btn-ghost btn-sm', id: 'btn-auth', onClick: testAuth }, 'Test connection')));
 
   const k = s.kindle || {};
@@ -488,36 +530,25 @@ function renderSettings() {
   mount(h('div', { class: 'view' }, head, engineCard, kindleCard));
 }
 
-async function saveAndRerender() {
-  state.settings = await api.saveSettings({ provider: state.settings.provider });
-  await refreshPrereq();
-  renderSettings();
-}
-async function persistEngineFields() {
-  state.settings = await api.saveSettings({
-    provider: state.settings.provider,
+async function saveEngineCmds() {
+  await updateSettings({
     claudeCommand: $('#s-claude-cmd').value.trim() || 'claude',
-    claudeModel: $('#s-claude-model').value.trim(),
     codexCommand: $('#s-codex-cmd').value.trim() || 'codex',
-    codexModel: $('#s-codex-model').value.trim(),
   });
+  await recheck();
+  toast('Commands saved.', 'ok');
 }
 async function testAuth() {
-  await persistEngineFields();
   const btn = $('#btn-auth');
   btn.textContent = 'Testing…'; btn.setAttribute('disabled', 'true');
   try {
     const res = await api.checkAuth();
-    toast(res.ok ? '✅ Connected and authenticated.' : `Not authenticated: ${res.detail}`, res.ok ? 'ok' : 'bad');
-  } catch (err) {
-    toast(`Test failed: ${err.message}`, 'bad');
-  } finally {
-    btn.textContent = 'Test connection'; btn.removeAttribute('disabled');
-  }
+    toast(res.ok ? '✅ Connected on your subscription.' : `Not authenticated: ${res.detail}`, res.ok ? 'ok' : 'bad');
+  } catch (err) { toast(`Test failed: ${err.message}`, 'bad'); }
+  finally { btn.textContent = 'Test connection'; btn.removeAttribute('disabled'); }
 }
 async function saveKindle() {
-  await persistEngineFields();
-  state.settings = await api.saveSettings({
+  await updateSettings({
     kindle: {
       toAddress: $('#s-k-to').value.trim(),
       fromAddress: $('#s-k-from').value.trim(),
@@ -535,31 +566,20 @@ async function saveKindle() {
 }
 async function verifyKindle() {
   await saveKindle();
-  try {
-    await api.verifyKindle();
-    toast('✅ SMTP connection works.', 'ok');
-  } catch (err) {
-    toast(`SMTP check failed: ${err.message}`, 'bad');
-  }
+  try { await api.verifyKindle(); toast('✅ SMTP connection works.', 'ok'); }
+  catch (err) { toast(`SMTP check failed: ${err.message}`, 'bad'); }
 }
 
 // ---------- bootstrap ----------
 document.querySelectorAll('.nav-item').forEach((b) =>
   b.addEventListener('click', () => go(b.dataset.view)));
-
 if (api.onMenu) {
-  api.onMenu((action) => {
-    if (action === 'new-book') go('create');
-    if (action === 'settings') go('settings');
-  });
+  api.onMenu((action) => { if (action === 'new-book') go('create'); if (action === 'settings') go('settings'); });
 }
 
 (async function init() {
-  try {
-    state.settings = await api.getSettings();
-  } catch (_) {
-    state.settings = { provider: 'claude' };
-  }
+  try { state.settings = await api.getSettings(); } catch (_) { state.settings = { provider: 'claude' }; }
+  try { state.models = await api.getModels(); } catch (_) { /* defaults */ }
   await refreshPrereq();
   go('library');
 })();

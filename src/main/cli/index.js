@@ -6,44 +6,32 @@ const { CodexAdapter } = require('./codexAdapter');
 /**
  * Construct the configured engine adapter.
  * @param {object} settings
- * @returns {ClaudeAdapter|CodexAdapter}
+ * @param {object} [overrides]  e.g. { model } to override per-book.
  */
-function createEngine(settings = {}) {
+function createEngine(settings = {}, overrides = {}) {
   const provider = settings.provider || 'claude';
+  const forceSubscription = settings.forceSubscription !== false;
   if (provider === 'codex') {
     return new CodexAdapter({
       command: settings.codexCommand,
-      model: settings.codexModel,
+      model: overrides.model != null ? overrides.model : settings.codexModel,
       extraArgs: settings.codexExtraArgs,
+      forceSubscription,
     });
   }
   return new ClaudeAdapter({
     command: settings.claudeCommand,
-    model: settings.claudeModel,
+    model: overrides.model != null ? overrides.model : settings.claudeModel,
     extraArgs: settings.claudeExtraArgs,
+    forceSubscription,
   });
 }
 
-/**
- * Run prerequisite checks for both providers so the UI can show status.
- * @param {object} settings
- * @returns {Promise<object>}
- */
+/** Run prerequisite checks for both providers so the UI can show status. */
 async function checkPrerequisites(settings = {}) {
-  const claude = new ClaudeAdapter({
-    command: settings.claudeCommand,
-    model: settings.claudeModel,
-  });
-  const codex = new CodexAdapter({
-    command: settings.codexCommand,
-    model: settings.codexModel,
-  });
-
-  const [claudeDetect, codexDetect] = await Promise.all([
-    claude.detect(),
-    codex.detect(),
-  ]);
-
+  const claude = new ClaudeAdapter({ command: settings.claudeCommand });
+  const codex = new CodexAdapter({ command: settings.codexCommand });
+  const [claudeDetect, codexDetect] = await Promise.all([claude.detect(), codex.detect()]);
   return {
     node: { found: true, version: process.versions.node },
     claude: claudeDetect,

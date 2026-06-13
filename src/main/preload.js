@@ -10,9 +10,10 @@ async function invoke(channel, payload) {
 }
 
 contextBridge.exposeInMainWorld('api', {
-  // settings
+  // settings & meta
   getSettings: () => invoke('settings:get'),
   saveSettings: (partial) => invoke('settings:save', partial),
+  getModels: () => invoke('meta:models'),
 
   // prerequisites
   checkPrerequisites: () => invoke('prereq:check'),
@@ -21,6 +22,7 @@ contextBridge.exposeInMainWorld('api', {
   // generation
   clarify: (spec) => invoke('book:clarify', spec),
   generate: (spec, answers, jobId) => invoke('book:generate', { spec, answers, jobId }),
+  resumeBook: (id, jobId) => invoke('book:resume', { id, jobId }),
   cancelGeneration: (jobId) => invoke('book:cancel', jobId),
   onProgress: (cb) => {
     const listener = (_e, data) => cb(data);

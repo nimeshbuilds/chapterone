@@ -1,31 +1,45 @@
-# BookWriter Studio ✒️
+# Modulagent's Book Writer ✒️
 
 A cross-platform desktop app (macOS `.dmg` + Windows installer) that writes
 **professional, bestseller-quality books on demand**. You describe the book you
-wish existed; a "#1 bestselling author in that genre" plans it, writes it
-chapter by chapter, and hands you a finished manuscript you can **read in the
-app**, **export to Kindle (EPUB) / PDF / Markdown**, or **email straight to your
-Kindle**.
+wish existed; a "#1 bestselling author in that genre" plans it, researches it,
+writes it chapter by chapter, and hands you a finished manuscript you can
+**read in the app**, **export to Kindle (EPUB) / PDF / Markdown**, or **email
+straight to your Kindle**.
 
 It runs entirely on **your own AI subscription** by driving the CLI you already
 use — the **Claude Code CLI** or the **Codex CLI** — locally. No API keys, no
-third-party servers: your prompts and your books never leave your machine
-(except the email you explicitly send to your own Kindle).
+third-party servers.
 
 ---
 
 ## ✨ What it does
 
 - **Commission a book** — describe what you want to read. Vague is fine.
+- **Pick your engine & model** — switch between Claude Code and Codex and choose
+  the model (Sonnet/Opus/Haiku, GPT-5/Codex, or a custom id) right on the create
+  screen, before you write.
 - **Smart clarification** — if the brief is ambiguous, the author asks 2–5
   sharp questions (with suggested answers) before writing.
+- **Research-grounded** — with web search enabled, the author looks up real
+  facts, places, names, dates and current details so the book is authentic and
+  accurate — never fabricated.
+- **Royalty-free images** — optionally illustrates the book with openly-licensed
+  / public-domain images sourced from [Openverse](https://openverse.org), with a
+  full image-credits page (no copyright headaches).
 - **Bestseller pipeline** — concept & title → full chapter outline →
   chapter-by-chapter prose that stays coherent via a rolling continuity recap.
+- **Pause & resume** — progress is saved after every chapter. If your
+  subscription lapses, the network drops, or you hit a rate limit mid-book, the
+  book is saved exactly where it stopped. Reactivate and hit **▶ Continue** (or
+  resume any paused book from the library) to finish it.
 - **Read in-app** — a clean, book-like reader.
 - **Export** — EPUB (Kindle/KDP-ready), PDF, or Markdown.
 - **Send to Kindle** — emails the EPUB/PDF to your `@kindle.com` address so it
   appears on your device, and gives you a KDP-ready EPUB to publish for others.
-- **Configurable engine** — switch between Claude Code and Codex, pick models.
+- **Subscription, not API key** — by default the app strips `ANTHROPIC_API_KEY`
+  / `OPENAI_API_KEY` from the CLI's environment so it always authenticates with
+  your subscription login and never bills an API key.
 - **Prerequisite checks** — detects whether your chosen CLI is installed and
   authenticated, with a one-click connection test.
 
@@ -33,15 +47,15 @@ third-party servers: your prompts and your books never leave your machine
 
 ## 🔧 Prerequisites
 
-You need **one** of the following installed and signed in:
+You need **one** of the following installed and signed in **with your
+subscription** (Claude Pro/Max or ChatGPT/Codex):
 
 | Engine | Install | Sign in |
 | --- | --- | --- |
-| **Claude Code** (default) | `npm i -g @anthropic-ai/claude-code` | run `claude` once and log in |
-| **Codex** | install the OpenAI Codex CLI | run `codex` once and log in |
+| **Claude Code** (default) | `npm i -g @anthropic-ai/claude-code` | run `claude` and log in with your subscription |
+| **Codex** | install the OpenAI Codex CLI | run `codex` and log in with ChatGPT |
 
-Plus **Node.js 18+** if you run from source. The app uses your existing
-subscription via the CLI — it never asks for or stores API keys.
+Plus **Node.js 18+** if you run from source.
 
 ---
 
@@ -51,7 +65,7 @@ subscription via the CLI — it never asks for or stores API keys.
 npm install
 npm start        # launch the app
 npm run dev      # launch with DevTools
-npm test         # run the unit/integration test suite
+npm test         # run the unit/integration test suite (42 tests)
 ```
 
 ## 📦 Build installers
@@ -65,26 +79,39 @@ npm run dist:all    # both
 Output lands in `release/`. To brand the app, drop an icon at
 `build/icon.png` (1024×1024) — electron-builder generates the platform icons
 automatically. macOS distribution outside the App Store should be code-signed
-and notarized; see the electron-builder docs.
+and notarized.
+
+---
+
+## 🔎 Research & 🖼️ images
+
+Both are toggles on the create screen (and Settings):
+
+- **Research real facts & sources** — enables the CLI's web tools
+  (`WebSearch`/`WebFetch` for Claude, `--search` for Codex) so the author
+  verifies real-world detail. Only read-only web tools are allowed — the app
+  never grants file-editing or shell access to the model.
+- **Add royalty-free images** — the author may insert image markers, which the
+  app resolves against Openverse filtered to permissive licenses
+  (CC0 → Public Domain → CC-BY → CC-BY-SA), downloads, embeds, and credits.
+  If a query can't be resolved, the caption is simply kept as text — nothing
+  breaks.
 
 ---
 
 ## 📨 Send to Kindle setup
 
-Amazon delivers personal documents by email. In the app's **Settings → Send to
-Kindle**, provide:
+Amazon delivers personal documents by email. In **Settings → Send to Kindle**:
 
-1. **Your Kindle address** — find it at *Amazon → Manage Your Content & Devices
-   → Preferences → Personal Document Settings*. It looks like
-   `yourname@kindle.com`.
+1. **Your Kindle address** — from *Amazon → Manage Your Content & Devices →
+   Preferences → Personal Document Settings* (looks like `yourname@kindle.com`).
 2. **Approved sender** — add your sending email to Amazon's *Approved Personal
-   Document E-mail List* on that same page, or Amazon will reject the message.
-3. **SMTP credentials** — e.g. for Gmail use `smtp.gmail.com:587` with an
-   [App Password](https://support.google.com/accounts/answer/185833). These are
-   stored locally and used only to send from your own account.
+   Document E-mail List*, or Amazon will reject the message.
+3. **SMTP credentials** — e.g. Gmail `smtp.gmail.com:587` with an
+   [App Password](https://support.google.com/accounts/answer/185833). Stored
+   locally; used only to send from your own account.
 
 Click **Verify SMTP** to test, then **📨 Send to Kindle** from any book.
-EPUB is recommended (reflowable); PDF is also supported.
 
 ---
 
@@ -95,20 +122,23 @@ src/
   main/                     Electron main process (Node)
     main.js                 app lifecycle, window, menu
     preload.js              safe contextBridge API → renderer (window.api)
-    ipc.js                  all IPC handlers (settings, generate, export, kindle)
-    store.js                JSON persistence (settings + book library)
+    ipc.js                  IPC handlers (settings, generate, resume, export, kindle)
+    store.js                JSON persistence (settings + book library + images)
     cli/
-      spawn.js              child-process runner (stdin feed, abort, timeout)
-      claudeAdapter.js      drives `claude -p` headless
-      codexAdapter.js       drives `codex exec` headless
+      spawn.js              child-process runner (stdin, abort, timeout, env scrub)
+      claudeAdapter.js      drives `claude -p` (subscription auth + web tools)
+      codexAdapter.js       drives `codex exec` (subscription auth + --search)
+      models.js             per-provider model lists + API-key scrub config
       index.js              engine factory + prerequisite checks
     book/
       prompts.js            the "bestselling author" prompt library
-      generator.js          clarify -> outline -> chapters pipeline
+      generator.js          clarify → outline → chapters pipeline + resume()
+      errors.js             failure classification (subscription/auth/rate/net)
+      images.js             Openverse image sourcing + marker resolution
       json.js               robust JSON extraction from model output
     export/
-      html.js               shared book HTML + reader/print CSS
-      epub.js               hand-rolled EPUB3 writer (Kindle/KDP-ready)
+      html.js               shared book HTML + reader/print CSS + image credits
+      epub.js               hand-rolled EPUB3 writer (images + credits page)
       pdf.js                PDF via Electron's print engine
       markdown.js           full-manuscript Markdown
     kindle/
@@ -122,22 +152,23 @@ test/                       node:test suite for the pure-logic modules
 Each chapter is written in its own CLI call (so no single context has to hold
 the whole book). Before writing chapter *N*, the app sends a compact 3–4
 sentence **continuity recap** of chapter *N−1* plus the book's style guide,
-premise, and the planned beats. Progress is **saved after every chapter**, so a
-crash or cancel still leaves a readable partial draft.
+premise and planned beats. Progress is saved after every chapter, so a crash,
+cancel, or lapsed subscription always leaves a resumable draft.
 
 ### Privacy
-Everything runs locally through your CLI. The only outbound network action is
-the **Send to Kindle** email, which you trigger explicitly and which goes
-through *your* SMTP account to *your* Kindle address.
+Everything runs locally through your CLI on your subscription. Outbound network
+happens only for: research web search (performed by the CLI), royalty-free image
+lookups (Openverse), and the Send-to-Kindle email you trigger explicitly.
 
 ---
 
 ## 🧪 Tests
 
-`npm test` runs the Node test suite covering JSON extraction, the prompt
-library, the generation pipeline (with a scripted fake engine), EPUB/HTML/
-Markdown export, and the settings/library store. The Electron-only modules
-(`main`, `ipc`, `pdf`) are exercised by a headless boot smoke test.
+`npm test` runs the Node test suite (42 tests) covering JSON extraction, the
+prompt library, the generation **and resume** pipeline (scripted fake engine),
+error classification, image marker parsing/licensing, model config, the
+subprocess runner (including env scrubbing), and EPUB/HTML/Markdown export. The
+Electron-only modules are exercised by a headless boot smoke test.
 
 ## License
 

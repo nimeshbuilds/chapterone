@@ -1,10 +1,13 @@
 'use strict';
 
 const { run, probeVersion } = require('./spawn');
+const { SUBSCRIPTION_SCRUB } = require('./models');
 
 /**
  * Adapter for Anthropic's Claude Code CLI running in headless/print mode.
- * Uses the user's existing Claude subscription/login — we never handle API keys.
+ * Uses the user's existing Claude subscription/login — we never handle API keys
+ * and we actively strip ANTHROPIC_API_KEY from the child env so the CLI falls
+ * back to the interactive subscription login.
  *
  * Headless usage: `claude -p` reads the prompt from stdin and prints the
  * assistant's final text response to stdout.
@@ -16,17 +19,17 @@ class ClaudeAdapter {
     this.command = config.command || 'claude';
     this.model = config.model || ''; // empty => CLI default
     this.extraArgs = config.extraArgs || [];
+    this.forceSubscription = config.forceSubscription !== false;
   }
 
-  /** @returns {Promise<{found:boolean, version:string|null, error:string|null}>} */
+  scrub() {
+    return this.forceSubscription ? SUBSCRIPTION_SCRUB.claude : [];
+  }
+
   async detect() {
     return probeVersion(this.command, ['--version']);
   }
 
-  /**
-   * Lightweight authentication / connectivity check by asking the model to
-   * echo a token. If the CLI is unauthenticated it errors out instead.
-   */
   async checkAuth() {
     try {
       const text = await this.complete('Reply with exactly the word: READY', {
@@ -34,17 +37,25 @@ class ClaudeAdapter {
         timeoutMs: 60000,
       });
       const ok = /READY/i.test(text);
-      return { ok, detail: ok ? 'Authenticated' : `Unexpected response: ${text.slice(0, 120)}` };
+      return { ok, detail: ok ? 'Authenticated (subscription)' : `Unexpected response: ${text.slice(0, 120)}` };
     } catch (err) {
       return { ok: false, detail: err.message };
     }
   }
 
-  buildArgs() {
+  buildArgs(opts = {}) {
     const args = ['-p', '--output-format', 'text'];
     if (this.model) args.push('--model', this.model);
-    // Keep the working session sandboxed: no tools needed for prose generation.
-    args.push('--permission-mode', 'plan');
+
+    if (opts.research) {
+      // Allow only the read-only web tools — never file edits or shell.
+      args.push('--allowedTools', 'WebSearch,WebFetch');
+    } else {
+      // Pure text generation: plan mode disables all tool/file actions.
+      args.push('--permission-mode', 'plan');
+    }
+
+    if (opts.system) args.push('--append-system-prompt', opts.system);
     if (this.extraArgs.length) args.push(...this.extraArgs);
     return args;
   }
@@ -52,19 +63,17 @@ class ClaudeAdapter {
   /**
    * @param {string} prompt
    * @param {object} [opts]
-   * @param {string} [opts.system]      Prepended as a role/system framing.
+   * @param {string} [opts.system]
+   * @param {boolean} [opts.research]   Enable WebSearch/WebFetch grounding.
    * @param {number} [opts.timeoutMs]
    * @param {AbortSignal} [opts.signal]
-   * @param {(s:string)=>void} [opts.onStdout]
-   * @returns {Promise<string>} The model's text output.
+   * @returns {Promise<string>}
    */
   async complete(prompt, opts = {}) {
-    const args = this.buildArgs();
-    if (opts.system) {
-      args.push('--append-system-prompt', opts.system);
-    }
+    const args = this.buildArgs(opts);
     const { code, stdout, stderr } = await run(this.command, args, {
       input: prompt,
+      scrubEnv: this.scrub(),
       timeoutMs: opts.timeoutMs || 0,
       signal: opts.signal,
       onStdout: opts.onStdout,

@@ -84,6 +84,50 @@ test('generate produces a complete book with chapters', async () => {
   assert.ok(saved.length >= 3);
 });
 
+test('resume continues a paused book from where it stopped', async () => {
+  const engine = new FakeEngine();
+  const gen = new BookGenerator(engine);
+  // A book paused after writing only the first of two chapters.
+  const book = {
+    id: 'r1', status: 'paused',
+    spec: { request: 'x', length: 'short' },
+    title: 'Test Title', genre: 'Thriller', audience: 'Adults', premise: 'p', themes: [],
+    styleGuide: 'tense',
+    outline: [
+      { number: 1, title: 'Open', summary: 's1', beats: ['b'] },
+      { number: 2, title: 'Close', summary: 's2', beats: ['b'] },
+    ],
+    chapters: [{ number: 1, title: 'Open', content: '# Open\n\nAlready written.', words: 3 }],
+    images: [],
+  };
+  const done = await gen.resume(book, {});
+  assert.strictEqual(done.status, 'complete');
+  assert.strictEqual(done.chapters.length, 2);
+  assert.ok(done.chapters[1].content.startsWith('# Close'));
+});
+
+test('a failed chapter marks the book paused with a reason', async () => {
+  const engine = new FakeEngine();
+  // Force the chapter call to fail.
+  engine.complete = async (prompt) => {
+    if (/market-ready book/.test(prompt)) {
+      return JSON.stringify({ title: 'T', author: 'A', premise: 'p', styleGuide: 's', chapters: [{ number: 1, title: 'One', summary: 's', beats: [] }] });
+    }
+    if (/WRITE CHAPTER/.test(prompt)) throw new Error('insufficient credit balance');
+    return '{}';
+  };
+  const gen = new BookGenerator(engine);
+  let lastBook = null;
+  await assert.rejects(
+    gen.generate({ request: 'x' }, {}, { onChapter: (b) => { lastBook = b; } }),
+    /credit/
+  );
+  assert.ok(lastBook);
+  assert.strictEqual(lastBook.status, 'paused');
+  assert.strictEqual(lastBook.pausedReason.kind, 'subscription');
+  assert.strictEqual(lastBook.pausedReason.resumable, true);
+});
+
 test('generate can be aborted', async () => {
   const engine = new FakeEngine();
   const gen = new BookGenerator(engine);

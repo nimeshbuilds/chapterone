@@ -9,22 +9,18 @@ const {
   targetWordsForLength,
 } = require('./prompts');
 const { extractJson } = require('./json');
+const { classifyError, isResumable, describe } = require('./errors');
 
 /**
  * Orchestrates the multi-step book generation pipeline against a CLI engine.
+ * Supports web-grounded research, and pause/resume when a subscription lapses.
  */
 class BookGenerator {
-  /**
-   * @param {object} engine  An adapter with .complete(prompt, opts)
-   */
   constructor(engine) {
     this.engine = engine;
   }
 
-  /**
-   * Triage step: figure out whether we need clarification.
-   * @returns {Promise<{needsClarification:boolean, questions:Array, assumptions:Array, summary:string}>}
-   */
+  /** Triage step: figure out whether we need clarification. */
   async clarify(spec, opts = {}) {
     const text = await this.engine.complete(clarifyPrompt(spec), {
       system: 'You output only valid JSON. No markdown, no commentary.',
@@ -40,23 +36,13 @@ class BookGenerator {
         summary: json.summary || '',
       };
     } catch (_) {
-      // If parsing fails, default to proceeding without questions.
       return { needsClarification: false, questions: [], assumptions: [], summary: '' };
     }
   }
 
   /**
-   * Full generation. Emits progress through `onProgress(event)`.
-   * `onChapter(book)` is called after each chapter so callers can persist
-   * partial progress (crash-safe, resumable, live preview).
-   *
-   * @param {object} spec
-   * @param {object} answers          Reader answers to clarifying questions.
-   * @param {object} hooks
-   * @param {(e:object)=>void} [hooks.onProgress]
-   * @param {(book:object)=>void|Promise<void>} [hooks.onChapter]
-   * @param {AbortSignal} [hooks.signal]
-   * @returns {Promise<object>} the completed book
+   * Full generation. Emits progress through hooks.onProgress(event) and calls
+   * hooks.onChapter(book) after each chapter so callers can persist progress.
    */
   async generate(spec, answers = {}, hooks = {}) {
     const { onProgress = () => {}, onChapter, signal } = hooks;
@@ -90,37 +76,76 @@ class BookGenerator {
         beats: c.beats || [],
       })),
       chapters: [],
+      images: [],
     };
 
-    emit('outline:done', {
-      title: book.title,
-      chapters: book.outline.length,
-      book,
-    });
+    emit('outline:done', { title: book.title, chapters: book.outline.length, book });
     if (onChapter) await onChapter(book);
 
-    const targetWords = targetWordsForLength(spec.length);
-    let prevRecap = '';
+    return this._writeChapters(book, 0, '', hooks);
+  }
 
-    for (let i = 0; i < book.outline.length; i++) {
-      if (signal && signal.aborted) throw new Error('Generation cancelled');
+  /**
+   * Continue an interrupted/paused book from where it stopped.
+   */
+  async resume(book, hooks = {}) {
+    const startIndex = (book.chapters || []).length;
+    book.status = 'generating';
+    book.pausedReason = null;
+    let prevRecap = '';
+    if (startIndex > 0) {
+      const last = book.chapters[startIndex - 1];
+      try {
+        prevRecap = await this.engine.complete(recapPrompt(last.title, last.content), {
+          timeoutMs: 120000,
+          signal: hooks.signal,
+        });
+      } catch (_) {
+        prevRecap = (book.outline[startIndex - 1] || {}).summary || '';
+      }
+    }
+    if (hooks.onProgress) {
+      hooks.onProgress({ phase: 'resume', startIndex, total: book.outline.length, book });
+    }
+    return this._writeChapters(book, startIndex, prevRecap, hooks);
+  }
+
+  /** Shared chapter-writing loop used by both generate() and resume(). */
+  async _writeChapters(book, startIndex, prevRecap, hooks = {}) {
+    const { onProgress = () => {}, onChapter, signal } = hooks;
+    const emit = (phase, payload = {}) => onProgress({ phase, ...payload });
+    const spec = book.spec || {};
+    const targetWords = targetWordsForLength(spec.length);
+    const flags = { research: !!spec.research, illustrate: !!spec.illustrate };
+
+    for (let i = startIndex; i < book.outline.length; i++) {
+      if (signal && signal.aborted) {
+        this._markPaused(book, 'Generation cancelled');
+        if (onChapter) await onChapter(book);
+        throw new Error('Generation cancelled');
+      }
       const planned = book.outline[i];
       emit('chapter:start', {
-        index: i,
-        total: book.outline.length,
-        number: planned.number,
-        title: planned.title,
-        message: `Writing Chapter ${planned.number}: ${planned.title}`,
+        index: i, total: book.outline.length, number: planned.number, title: planned.title,
+        message: `${flags.research ? 'Researching & writing' : 'Writing'} Chapter ${planned.number}: ${planned.title}`,
       });
 
-      const prose = await this.engine.complete(
-        chapterPrompt(book, planned, prevRecap, targetWords),
-        {
-          system: `You are writing publishable prose for a bestselling book. Obey the style guide. Output only the chapter in Markdown.`,
-          timeoutMs: 600000,
-          signal,
-        }
-      );
+      let prose;
+      try {
+        prose = await this.engine.complete(
+          chapterPrompt(book, planned, prevRecap, targetWords, flags),
+          {
+            system: 'You are writing publishable prose for a bestselling book. Obey the style guide. Output only the chapter in Markdown.',
+            research: flags.research,
+            timeoutMs: 900000,
+            signal,
+          }
+        );
+      } catch (err) {
+        this._markPaused(book, err.message);
+        if (onChapter) await onChapter(book);
+        throw err;
+      }
 
       const chapter = {
         number: planned.number,
@@ -128,44 +153,47 @@ class BookGenerator {
         content: cleanChapter(prose, planned.title),
         words: wordCount(prose),
       };
-      book.chapters.push(chapter);
+      book.chapters[i] = chapter;
       book.updatedAt = new Date().toISOString();
 
       emit('chapter:done', {
-        index: i,
-        total: book.outline.length,
-        number: planned.number,
-        title: planned.title,
-        words: chapter.words,
-        book,
+        index: i, total: book.outline.length, number: planned.number,
+        title: planned.title, words: chapter.words, book,
       });
       if (onChapter) await onChapter(book);
 
-      // Build a compact recap for continuity, except after the final chapter.
       if (i < book.outline.length - 1) {
         try {
-          prevRecap = await this.engine.complete(
-            recapPrompt(planned.title, chapter.content),
-            { timeoutMs: 120000, signal }
-          );
+          prevRecap = await this.engine.complete(recapPrompt(planned.title, chapter.content), {
+            timeoutMs: 120000, signal,
+          });
         } catch (_) {
-          prevRecap = planned.summary; // fall back to the planned summary
+          prevRecap = planned.summary;
         }
       }
     }
 
     book.status = 'complete';
+    book.pausedReason = null;
     book.updatedAt = new Date().toISOString();
-    book.words = book.chapters.reduce((n, c) => n + (c.words || 0), 0);
+    book.words = book.chapters.reduce((n, c) => n + ((c && c.words) || 0), 0);
     emit('complete', { book });
     if (onChapter) await onChapter(book);
     return book;
   }
 
+  _markPaused(book, message) {
+    const kind = classifyError(message);
+    book.status = 'paused';
+    book.pausedReason = { kind, message, resumable: isResumable(kind), detail: describe(kind), at: new Date().toISOString() };
+    book.updatedAt = new Date().toISOString();
+  }
+
   async buildOutline(spec, answers, signal) {
     const text = await this.engine.complete(outlinePrompt(spec, answers), {
       system: 'You output only valid JSON describing a complete book outline. No commentary.',
-      timeoutMs: 240000,
+      research: !!spec.research,
+      timeoutMs: 300000,
       signal,
     });
     const json = extractJson(text);
@@ -180,10 +208,8 @@ class BookGenerator {
 
 function cleanChapter(text, title) {
   let t = (text || '').trim();
-  // Remove wrapping code fences if the model added them.
   const fence = t.match(/^```(?:markdown|md)?\s*([\s\S]*?)```$/i);
   if (fence) t = fence[1].trim();
-  // Ensure a heading exists.
   if (!/^#\s/m.test(t.split('\n')[0] || '')) {
     t = `# ${title}\n\n${t}`;
   }

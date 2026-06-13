@@ -69,6 +69,7 @@ function outlinePrompt(spec, answers) {
     `- Notes: ${spec.notes || '(none)'}`,
     answerBlock,
     ``,
+    spec.research ? `RESEARCH: You have web search available. Verify real names, facts, places, dates and current details so the concept and outline are authentic and accurate. Never fabricate sources.` : '',
     `Requirements:`,
     `- The outline must be cohesive: every chapter advances the story or argument and avoids repetition.`,
     `- For fiction: include an arc with setup, escalating complications, midpoint shift, crisis, climax, and resolution. Give each chapter a goal, conflict, and turn.`,
@@ -95,8 +96,9 @@ function outlinePrompt(spec, answers) {
 
 /**
  * Step 3 — Write one full chapter. Returns Markdown prose (not JSON).
+ * @param {object} [flags] { research:boolean, illustrate:boolean }
  */
-function chapterPrompt(book, chapter, prevSummary, targetWords) {
+function chapterPrompt(book, chapter, prevSummary, targetWords, flags = {}) {
   return [
     bestsellerPersona(book.genre),
     ``,
@@ -110,6 +112,7 @@ function chapterPrompt(book, chapter, prevSummary, targetWords) {
     prevSummary
       ? `WHAT HAPPENED JUST BEFORE (continue seamlessly, do not contradict): ${prevSummary}`
       : `This is the opening — earn the reader's attention from the first line.`,
+    flags.research ? '\n' + researchInstruction() : '',
     ``,
     `WRITE CHAPTER ${chapter.number}: "${chapter.title}"`,
     `Cover these beats, in a natural flow: ${(chapter.beats || []).join('; ') || chapter.summary}`,
@@ -121,8 +124,30 @@ function chapterPrompt(book, chapter, prevSummary, targetWords) {
     `- Stay in the established voice, tense, and POV. Keep names and facts consistent with the premise.`,
     `- For non-fiction: use concrete examples, stories, and actionable insight — never generic platitudes.`,
     `- End on a line that pulls the reader into the next chapter.`,
+    flags.illustrate ? imageInstruction() : '',
     ``,
     `Output format: Markdown. Start with "# ${chapter.title}" as the chapter heading, then the prose. Do NOT include the word "Chapter N" unless it reads naturally. Do NOT add author commentary, disclaimers, or word counts.`,
+  ].filter(Boolean).join('\n');
+}
+
+/** Instruction block enabling web-grounded accuracy. */
+function researchInstruction() {
+  return [
+    `RESEARCH: You have web search available. Before and while writing, look up the real facts, places, names, terminology, history, data, and current details relevant to this chapter.`,
+    `- Ground everything in accurate, verifiable information. NEVER invent statistics, quotes, studies, or citations.`,
+    `- For non-fiction, weave in credible, specific facts and attribute them naturally in prose (e.g. "according to ...").`,
+    `- For fiction, use research so settings, professions, technology and cultural detail feel authentic.`,
+  ].join('\n');
+}
+
+/** Instruction block letting the model request royalty-free illustrations. */
+function imageInstruction() {
+  return [
+    `ILLUSTRATIONS: Where a single image would genuinely help the reader, you may insert up to TWO image markers, each on its own line, in EXACTLY this format:`,
+    `![A descriptive caption](image-search: 3-7 concrete visual search terms)`,
+    `- Only request images that exist as openly-licensed/public-domain stock photos (real places, nature, objects, concepts).`,
+    `- Do NOT request copyrighted characters, brand logos, or identifiable private individuals.`,
+    `- Use sparingly; most chapters need none.`,
   ].join('\n');
 }
 
@@ -177,6 +202,8 @@ module.exports = {
   outlinePrompt,
   chapterPrompt,
   recapPrompt,
+  researchInstruction,
+  imageInstruction,
   targetWordsForLength,
   lengthToChapterHint,
 };
