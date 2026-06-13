@@ -47,7 +47,7 @@ test('chapter prompt adds research and image instructions when flagged', () => {
   const rich = chapterPrompt(book, ch, '', 2000, { research: true, illustrate: true });
   assert.match(rich, /web search available/i);
   assert.match(rich, /image-search:/);
-  assert.match(rich, /openly-licensed|public-domain/i);
+  assert.match(rich, /high-resolution|stock photo|premium quality/i);
 });
 
 test('word targets scale with length', () => {

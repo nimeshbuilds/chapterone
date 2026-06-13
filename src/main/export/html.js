@@ -14,19 +14,19 @@ function escapeHtml(s) {
 }
 
 /**
- * Replace internal `bwimg:ID` image sources. `resolve(id)` returns a usable
- * src (data URL or relative path) or null to drop the image.
+ * Replace internal `bwimg:ID` image references with a polished, captioned
+ * <figure>. `resolve(id)` returns a usable src (data URL or relative path) or
+ * null to drop the image entirely.
  */
 function applyImageSources(html, resolve) {
-  if (!resolve) {
-    // No resolver: strip unresolved internal images so nothing breaks.
-    return html.replace(/<img[^>]*src="bwimg:[^"]*"[^>]*>/gi, '');
-  }
-  return html.replace(/(<img[^>]*\bsrc=")(bwimg:[^"]+)("[^>]*>)/gi, (full, pre, ref, post) => {
-    const id = ref.slice('bwimg:'.length);
-    const src = resolve(id);
-    if (!src) return '';
-    return `${pre}${src}${post}`;
+  return html.replace(/<img\b[^>]*\bsrc="bwimg:([^"]+)"[^>]*>/gi, (full, id) => {
+    const src = resolve ? resolve(id) : null;
+    if (!src) return ''; // unresolved → drop so nothing looks broken
+    const altMatch = full.match(/\balt="([^"]*)"/i);
+    const alt = altMatch ? altMatch[1] : '';
+    return `<figure class="figure"><img src="${src}" alt="${alt}" loading="lazy" />${
+      alt ? `<figcaption>${alt}</figcaption>` : ''
+    }</figure>`;
   });
 }
 
@@ -53,8 +53,11 @@ const BOOK_CSS = `
   p + p { text-indent: 1.4em; margin-top: -0.2rem; }
   blockquote { border-left: 3px solid #c9a14a; margin: 1.4rem 0; padding: .2rem 1.2rem; color: #4a4a4a; font-style: italic; }
   em { font-style: italic; }
-  img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 1.6rem auto; }
-  figcaption, .img-credit { font-size: .8rem; color: #6a6a6a; text-align: center; margin: -1rem 0 1.6rem; font-style: italic; }
+  img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 0 auto; }
+  figure.figure { margin: 2rem 0; text-align: center; page-break-inside: avoid; break-inside: avoid; }
+  figure.figure img { box-shadow: 0 6px 22px rgba(0,0,0,.16); }
+  figcaption { font-size: .82rem; color: #6a6a6a; text-align: center; margin: .7rem auto 0; font-style: italic; max-width: 90%; }
+  .img-credit { font-size: .8rem; color: #6a6a6a; text-align: center; font-style: italic; }
   hr { border: none; text-align: center; margin: 2rem 0; }
   hr::before { content: '* * *'; letter-spacing: .6em; color: #b08a3e; }
   .titlepage { text-align: center; padding: 6rem 1.5rem; }

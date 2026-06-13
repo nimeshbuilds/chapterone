@@ -143,11 +143,14 @@ function researchInstruction() {
 /** Instruction block letting the model request royalty-free illustrations. */
 function imageInstruction() {
   return [
-    `ILLUSTRATIONS: Where a single image would genuinely help the reader, you may insert up to TWO image markers, each on its own line, in EXACTLY this format:`,
-    `![A descriptive caption](image-search: 3-7 concrete visual search terms)`,
-    `- Only request images that exist as openly-licensed/public-domain stock photos (real places, nature, objects, concepts).`,
-    `- Do NOT request copyrighted characters, brand logos, or identifiable private individuals.`,
-    `- Use sparingly; most chapters need none.`,
+    `ILLUSTRATIONS (premium quality only): Where a single, striking image would genuinely elevate the reader's experience, you may insert at most ONE or TWO image markers, each on its own line, in EXACTLY this format:`,
+    `![A polished, specific caption](image-search: 3-7 concrete visual search terms)`,
+    `- Quality bar: this is a book people PAY for. Only suggest an image when a beautiful, professional, high-resolution stock photo almost certainly exists for it.`,
+    `- Use CONCRETE, PHOTOGRAPHABLE subjects: real places, landscapes, architecture, nature, objects, food, textures, period detail. Avoid abstract ideas, charts, or anything that yields generic clip-art.`,
+    `- Make the search terms precise and visual so the result is tightly relevant to the surrounding text.`,
+    `- Write captions that read like a professionally published book's captions.`,
+    `- Do NOT request copyrighted characters, brand logos, memes, or identifiable private individuals.`,
+    `- Be sparing — a few perfect images beat many mediocre ones. Many chapters need none.`,
   ].join('\n');
 }
 
