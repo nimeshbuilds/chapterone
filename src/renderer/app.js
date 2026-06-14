@@ -104,25 +104,31 @@ function dataUriToBlob(dataUri) {
 // Browsers hide device labels (and most of the device list) until the page has
 // media permission. If the mic is already granted, do one silent getUserMedia so
 // the full, named list is exposed — but never prompt just to read speaker names.
+// Browsers hide device labels — and collapse the whole list to one anonymous
+// device per kind — until the page has microphone permission. This unlocks the
+// full named list by obtaining the mic. With `prompt:false` it only unlocks when
+// already granted (silent); with `prompt:true` it asks once (the OS caches it).
 let _deviceLabelsUnlocked = false;
-async function ensureDeviceLabels() {
-  if (_deviceLabelsUnlocked) return;
+async function ensureDeviceLabels({ prompt = false } = {}) {
+  if (_deviceLabelsUnlocked) return true;
   try {
     const devs = await navigator.mediaDevices.enumerateDevices();
-    if (devs.some((d) => d.label)) { _deviceLabelsUnlocked = true; return; } // already exposed
-    // Labels still hidden — only unlock if the mic is already granted; never
-    // prompt just to read speaker names.
-    let granted = false;
-    try { granted = (await navigator.permissions.query({ name: 'microphone' })).state === 'granted'; } catch (_) { /* unsupported */ }
-    if (!granted) return;
+    if (devs.some((d) => d.label)) { _deviceLabelsUnlocked = true; return true; } // already exposed
+    let state = 'prompt';
+    try { state = (await navigator.permissions.query({ name: 'microphone' })).state; } catch (_) { /* unsupported */ }
+    if (state === 'denied') return false;
+    if (state !== 'granted' && !prompt) return false; // don't prompt just to read names
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    s.getTracks().forEach((t) => t.stop()); // labels stay exposed for the session after this
+    s.getTracks().forEach((t) => t.stop()); // labels stay exposed for the rest of the session
     _deviceLabelsUnlocked = true;
-  } catch (_) { /* ignore */ }
+    return true;
+  } catch (_) { return false; }
 }
 /** A device <select> for speakers or mics. Populated once labels are available and
  *  refreshed only when devices actually change — never during the open gesture, which
- *  would wipe the native menu mid-open. Call sel._refresh() to repopulate on demand. */
+ *  would wipe the native menu mid-open. The first time it's opened while names are
+ *  still masked, it requests mic access (one prompt) so the full named list appears.
+ *  Call sel._refresh() to repopulate on demand. */
 function deviceSelect(kind, current, onChange, firstLabel) {
   const sel = h('select', { class: 'reader-select' }, h('option', { value: '' }, firstLabel));
   const fill = async () => {
@@ -134,10 +140,24 @@ function deviceSelect(kind, current, onChange, firstLabel) {
       d.label || `${kind === 'audioinput' ? 'Microphone' : 'Speaker'} ${i + 1}`)));
     sel.value = (keep && Array.from(sel.options).some((o) => o.value === keep)) ? keep : '';
   };
-  // Unmask names first (no prompt unless the mic is already granted), then populate.
+  // Unmask silently if the mic is already granted, then populate.
   ensureDeviceLabels().finally(fill);
   // Re-list only when hardware is added/removed — safe, never during a click.
   try { navigator.mediaDevices.addEventListener('devicechange', fill); } catch (_) { /* ignore */ }
+  // First open while masked → ask for the mic (once) so real device names load.
+  let askedOnce = false;
+  sel.addEventListener('mousedown', (e) => {
+    if (_deviceLabelsUnlocked || askedOnce) return; // names already available — let the menu open
+    e.preventDefault();                              // don't open an empty/anonymous menu
+    askedOnce = true;
+    sel.blur();
+    ensureDeviceLabels({ prompt: true }).then(async (ok) => {
+      await fill();
+      if (!ok) { toast('Allow microphone access to list your audio devices by name.', ''); return; }
+      try { sel.showPicker(); } // re-open the now-populated menu automatically
+      catch (_) { toast('🎧 Audio devices ready — open the menu again to choose.', 'ok'); }
+    });
+  });
   sel.addEventListener('change', () => onChange(sel.value));
   sel._refresh = fill;
   return sel;
