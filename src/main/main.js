@@ -43,6 +43,10 @@ function createWindow() {
     },
   });
 
+  if (process.env.CHAPTERONE_DEBUG) {
+    mainWindow.webContents.on('console-message', (_e, _lvl, message) => console.log('[renderer]', message));
+  }
+
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -106,6 +110,7 @@ app.whenReady().then(() => {
   // subsequent request answer synchronously from getMediaAccessStatus without
   // prompting. The check handler returns the REAL OS status so Chromium doesn't
   // loop between "I think it's granted" and "the OS disagrees".
+  const dbg = (...a) => { if (process.env.CHAPTERONE_DEBUG) console.log('[perm]', ...a); };
   const isMic = (p) => p === 'media' || p === 'audioCapture' || p === 'microphone';
   const micStatus = () => {
     if (process.platform !== 'darwin') return 'granted';
@@ -113,10 +118,14 @@ app.whenReady().then(() => {
   };
   let micAskInFlight = null; // collapse concurrent asks into one OS prompt
 
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
-    isMic(permission) ? micStatus() === 'granted' : false);
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    const ok = isMic(permission) ? micStatus() === 'granted' : false;
+    dbg('check', permission, 'osMic=', micStatus(), '->', ok);
+    return ok;
+  });
 
   session.defaultSession.setPermissionRequestHandler(async (_wc, permission, cb) => {
+    dbg('request', permission, 'osMic=', micStatus());
     if (!isMic(permission)) return cb(false);
     const status = micStatus();
     if (status === 'granted') return cb(true);
@@ -125,8 +134,9 @@ app.whenReady().then(() => {
       if (!micAskInFlight) micAskInFlight = systemPreferences.askForMediaAccess('microphone');
       const ok = await micAskInFlight;
       micAskInFlight = null;
+      dbg('askForMediaAccess ->', ok, 'osMicNow=', micStatus());
       cb(!!ok);
-    } catch (_) { micAskInFlight = null; cb(true); }
+    } catch (e) { micAskInFlight = null; dbg('ask error', e && e.message); cb(true); }
   });
 
   store = new Store(app.getPath('userData'));
