@@ -1061,7 +1061,7 @@ async function renderReader(id) {
   const bookVoiceDefault = (content.isKids && audioCfg.voiceIdKids) ? audioCfg.voiceIdKids : audioCfg.voiceId;
   let selectedVoice = bookVoiceDefault || '';
 
-  const audioEl = h('audio', { controls: 'controls', style: 'flex:1;min-width:0;height:34px;display:none' });
+  const audioEl = h('audio', { controls: 'controls', class: 'reader-audio', style: 'display:none' });
   const audioSpin = h('span', { class: 'spinner', style: 'width:16px;height:16px;border-width:2px;display:none' });
   const audioLabel = h('span', { class: 'audio-label', id: 'audio-label' }, audioReady ? 'Pick a voice, then Listen' : '🎧');
   const voiceSel = h('select', { class: 'reader-select', title: 'Narration voice', style: 'max-width:150px' }, h('option', { value: selectedVoice || '' }, 'Loading voices…'));
@@ -1070,12 +1070,24 @@ async function renderReader(id) {
   speakerSel.title = 'Output speaker';
   const listenBtn = h('button', { class: 'btn btn-gold btn-sm', title: 'Narrate this chapter with the selected voice', onClick: () => playChapterAudio(false) }, '🎧 Listen');
   const regenBtn = h('button', { class: 'btn btn-ghost btn-sm', title: 'Regenerate this chapter with the selected voice', onClick: () => playChapterAudio(true) }, '🔁');
-  const audioBar = h('div', { class: 'audio-bar' + (audioReady ? '' : ' hidden') },
+  // The secondary controls live in one group so they can collapse together while
+  // the chapter is playing — that gives the scrubber the full width of the bar.
+  const audioOptions = h('div', { class: 'audio-options' },
     h('span', { class: 'mini-label', style: 'white-space:nowrap' }, 'Narration'),
-    voiceSel, listenBtn, regenBtn, audioSpin, audioLabel, audioEl, speakerSel,
+    voiceSel, listenBtn, regenBtn, speakerSel,
     h('button', { class: 'btn btn-ghost btn-sm', title: 'Save this chapter as MP3', onClick: () => exportChapterAudio() }, '⤓ MP3'),
-    h('button', { class: 'btn btn-ghost btn-sm', title: 'Narrate the whole book into one MP3', onClick: () => generateFullAudiobook() }, '📖 Whole book'),
-    h('button', { class: 'icon-btn', title: 'Hide player', onClick: () => { audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
+    h('button', { class: 'btn btn-ghost btn-sm', title: 'Narrate the whole book into one MP3', onClick: () => generateFullAudiobook() }, '📖 Whole book'));
+  const optsBtn = h('button', { class: 'icon-btn opts-btn', title: 'Show narration options', onClick: (e) => { e.stopPropagation(); audioBar.classList.toggle('compact'); } }, '⋯ Options');
+  const audioBar = h('div', { class: 'audio-bar' + (audioReady ? '' : ' hidden') },
+    optsBtn, audioOptions, audioSpin, audioLabel, audioEl,
+    h('button', { class: 'icon-btn', title: 'Hide player', onClick: (e) => { e.stopPropagation(); audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
+  // Auto-expand the scrubber while playing (collapse the options); a click on the
+  // bar (anywhere that isn't a control) — or the "⋯ Options" button — brings them back.
+  audioEl.addEventListener('play', () => audioBar.classList.add('compact'));
+  audioBar.addEventListener('click', (e) => {
+    if (e.target.closest('audio, button, select, input')) return;
+    audioBar.classList.remove('compact');
+  });
   let audioBusy = false;
   const setSpin = (on) => { audioSpin.style.display = on ? 'inline-block' : 'none'; };
 
@@ -1143,6 +1155,7 @@ async function renderReader(id) {
   function resetAudioForNewChapter() {
     try { audioEl.pause(); } catch (_) { /* ignore */ }
     audioEl.style.display = 'none'; setSpin(false);
+    audioBar.classList.remove('compact'); // show the options again for the new chapter
     if (audioBar.classList.contains('hidden')) return;
     const pg = pages[cur];
     audioLabel.textContent = pg && pg.kind === 'chapter' ? `Press 🎧 Listen for Chapter ${pg.chIndex + 1}` : 'Open a chapter to listen';
