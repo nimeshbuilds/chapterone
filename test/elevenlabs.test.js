@@ -42,3 +42,23 @@ test('cloneVoice validates inputs and builds multipart with samples', async () =
   assert.match(s, /--BOUND--/);
   assert.match(s, /AUDIO/);
 });
+
+test('decodeDataUri tolerates MediaRecorder mime parameters', () => {
+  const b64 = Buffer.from('AUDIO').toString('base64');
+  // The real bug: MediaRecorder emits "audio/webm;codecs=opus" — the old regex
+  // broke on ";codecs=opus" and produced "A voice sample could not be read".
+  const webm = el.decodeDataUri(`data:audio/webm;codecs=opus;base64,${b64}`);
+  assert.equal(webm.mime, 'audio/webm'); // codecs param stripped for Content-Type
+  assert.equal(webm.ext, 'webm');
+  assert.equal(webm.buffer.toString('utf8'), 'AUDIO');
+
+  // Uploaded files (m4a/wav/mp3) and plain data URIs still work.
+  assert.equal(el.decodeDataUri(`data:audio/mp4;base64,${b64}`).ext, 'm4a');
+  assert.equal(el.decodeDataUri(`data:audio/wav;base64,${b64}`).ext, 'wav');
+  assert.equal(el.decodeDataUri(`data:audio/mpeg;base64,${b64}`).ext, 'mp3');
+  assert.equal(el.decodeDataUri(`data:;base64,${b64}`).mime, 'audio/webm'); // empty mime → default
+
+  // Empty / malformed recordings fail with a clear message, not a crash.
+  assert.throws(() => el.decodeDataUri('data:audio/webm;base64,'), /could not be read/);
+  assert.throws(() => el.decodeDataUri('not-a-data-uri'), /could not be read/);
+});

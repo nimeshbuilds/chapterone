@@ -29,11 +29,17 @@ contextBridge.exposeInMainWorld('api', {
   verifyAudio: () => invoke('audio:verify'),
   synthChapter: (id, index, voiceId, force) => invoke('audio:synth', { id, index, voiceId, force }),
   exportAudio: (id, index, voiceId) => invoke('audio:export', { id, index, voiceId }),
+  generateAudiobook: (id, voiceId) => invoke('audio:full', { id, voiceId }),
   cloneVoice: (name, samples) => invoke('audio:clone', { name, samples }),
   onAudioProgress: (cb) => {
     const listener = (_e, d) => cb(d);
     ipcRenderer.on('audio:progress', listener);
     return () => ipcRenderer.removeListener('audio:progress', listener);
+  },
+  onFullAudioProgress: (cb) => {
+    const listener = (_e, d) => cb(d);
+    ipcRenderer.on('audio:full-progress', listener);
+    return () => ipcRenderer.removeListener('audio:full-progress', listener);
   },
 
   // one-click CLI install

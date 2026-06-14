@@ -799,6 +799,21 @@ function confirmNanoCost(spec) {
   });
 }
 
+/** Generic confirm modal. Resolves true on confirm, false on cancel/dismiss. */
+function confirmDialog(title, message, okLabel) {
+  return new Promise((resolve) => {
+    const body = h('p', { class: 'hint', style: 'margin-bottom:14px;white-space:pre-wrap' }, message || '');
+    const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } } },
+      h('div', { class: 'modal', style: 'max-width:480px' },
+        h('h2', { style: 'margin:0 0 6px' }, title),
+        body,
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn btn-primary btn-sm', onClick: () => { overlay.remove(); resolve(true); } }, okLabel || 'Continue'),
+          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { overlay.remove(); resolve(false); } }, 'Cancel'))));
+    document.body.append(overlay);
+  });
+}
+
 /** Entry point for all generation: gates Nano Banana on key + cost confirmation. */
 async function beginGeneration(spec, answers) {
   // Remember the author name so future books default to it.
@@ -1055,6 +1070,7 @@ async function renderReader(id) {
     h('span', { class: 'mini-label', style: 'white-space:nowrap' }, 'Narration'),
     voiceSel, listenBtn, regenBtn, audioSpin, audioLabel, audioEl, speakerSel,
     h('button', { class: 'btn btn-ghost btn-sm', title: 'Save this chapter as MP3', onClick: () => exportChapterAudio() }, '⤓ MP3'),
+    h('button', { class: 'btn btn-ghost btn-sm', title: 'Narrate the whole book into one MP3', onClick: () => generateFullAudiobook() }, '📖 Whole book'),
     h('button', { class: 'icon-btn', title: 'Hide player', onClick: () => { audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
   let audioBusy = false;
   const setSpin = (on) => { audioSpin.style.display = on ? 'inline-block' : 'none'; };
@@ -1127,47 +1143,47 @@ async function renderReader(id) {
     const pg = pages[cur];
     audioLabel.textContent = pg && pg.kind === 'chapter' ? `Press 🎧 Listen for Chapter ${pg.chIndex + 1}` : 'Open a chapter to listen';
   }
-  async function playChapterAudio() {
+  // Narrate the ENTIRE book into one MP3 file. Warns about cost/time first,
+  // reuses already-narrated chapters for free, and saves wherever the user picks.
+  async function generateFullAudiobook() {
     const a = state.settings && state.settings.audio;
-    if (!a || !a.elevenApiKey || !(a.voiceId || a.voiceIdKids)) {
-      toast('Add your ElevenLabs key and pick a voice in Settings → Audiobook.', 'bad');
-      return go('settings');
-    }
-    const ci = curChapterIndex();
-    if (ci < 0) { toast('Open a chapter first, then press Listen.', 'bad'); return; }
+    if (!a || !a.elevenApiKey) { toast('Add your ElevenLabs key and pick a voice in Settings → Audiobook.', 'bad'); return go('settings'); }
+    const voice = selectedVoice || (content.isKids && a.voiceIdKids ? a.voiceIdKids : a.voiceId);
+    if (!voice) { toast('Pick a narration voice first.', 'bad'); return; }
+    if (!chapters.length) { toast('This book has no chapters yet.', 'bad'); return; }
     if (audioBusy) return;
+    const voiceName = (voiceSel.selectedOptions[0] && voiceSel.selectedOptions[0].textContent.replace(/^★ /, '')) || 'the selected voice';
+    const chars = chapters.reduce((n, c) => n + Math.round((c.words || 0) * 6), 0);
+    const ok = await confirmDialog(
+      '📖 Generate the whole audiobook?',
+      `This narrates all ${chapters.length} chapter${chapters.length === 1 ? '' : 's'} in ${voiceName} and stitches them into a single MP3.\n\n` +
+      `• It uses roughly ${chars.toLocaleString()} characters of your ElevenLabs quota (chapters you've already narrated with this voice are reused for free).\n` +
+      `• It can take a few minutes for a long book, and it can't be paused once started.\n\n` +
+      `You'll choose where to save the file next.`,
+      'Generate audiobook');
+    if (!ok) return;
     audioBusy = true;
     audioBar.classList.remove('hidden');
     audioEl.style.display = 'none';
     setSpin(true);
-    audioLabel.textContent = 'Preparing narration…';
-    const off = api.onAudioProgress((p) => {
-      if (p.id !== id || p.index !== ci) return;
-      audioLabel.textContent = p.total ? `Narrating… ${p.done}/${p.total} part${p.total === 1 ? '' : 's'}` : 'Narrating…';
+    audioLabel.textContent = 'Building audiobook…';
+    const off = api.onFullAudioProgress((p) => {
+      if (p.id !== id) return;
+      if (p.done >= p.total) { audioLabel.textContent = 'Finishing audiobook…'; return; }
+      const part = p.chunk && p.chunk.total ? ` (${p.chunk.done}/${p.chunk.total})` : '';
+      audioLabel.textContent = `Audiobook: chapter ${p.done + 1}/${p.total}${part}…`;
     });
     try {
-      const res = await api.synthChapter(id, ci);
-      if (audioEl._url) { URL.revokeObjectURL(audioEl._url); audioEl._url = null; }
-      audioEl._url = URL.createObjectURL(dataUriToBlob(res.dataUri));
-      audioEl.src = audioEl._url;
-      audioEl.style.display = '';
+      const res = await api.generateAudiobook(id, voice);
       setSpin(false);
-      audioLabel.textContent = `🎧 ${res.title}`;
-      await applySink(audioEl);
-      audioEl.play().catch(() => {});
-      toast(res.cached ? '▶ Loaded from cache (no charge). Press play if it doesn’t start.' : '✅ Narrated & saved — re-listens are free.', 'ok');
+      if (res && res.canceled) { audioLabel.textContent = '🎧 Cancelled'; return; }
+      audioLabel.textContent = `📖 Audiobook saved (${res.chapters} chapters)`;
+      toast('✅ Whole audiobook saved.', 'ok');
+      await api.openPath(res.path);
     } catch (err) {
-      setSpin(false); audioBar.classList.add('hidden');
-      toast(`Narration failed: ${err.message}`, 'bad');
+      setSpin(false);
+      toast(`Audiobook failed: ${err.message}`, 'bad');
     } finally { off && off(); audioBusy = false; }
-  }
-  async function exportChapterAudio() {
-    const ci = curChapterIndex();
-    if (ci < 0) { toast('Open a chapter first.', 'bad'); return; }
-    try {
-      const r = await api.exportAudio(id, ci);
-      if (r && !r.canceled) { toast('Saved chapter MP3.', 'ok'); await api.openPath(r.path); }
-    } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
   }
 
   const bar = h('div', { class: 'reader-bar' },

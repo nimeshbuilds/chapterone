@@ -213,4 +213,25 @@ async function cloneVoice(opts = {}) {
   return { voice_id: json.voice_id, name };
 }
 
-module.exports = { MODELS, DEFAULT_MODEL, RECOMMENDED, listVoices, annotateRecommended, chunkText, tts, verifyKey, cloneVoice, buildMultipart };
+/**
+ * Decode a base64 data URI (as produced by FileReader/MediaRecorder) into a
+ * raw buffer + normalized mime + file extension. MediaRecorder emits mime types
+ * like "audio/webm;codecs=opus", so we must tolerate media-type parameters and
+ * strip them before using the value as a Content-Type.
+ * @param {string} dataUri e.g. "data:audio/webm;codecs=opus;base64,AAAA..."
+ * @returns {{buffer: Buffer, mime: string, ext: string}}
+ */
+function decodeDataUri(dataUri) {
+  const m = /^data:([^,]*);base64,(.*)$/s.exec(dataUri || '');
+  if (!m || !m[2]) throw new Error('A voice sample could not be read (empty or unsupported recording).');
+  const mime = (m[1] || 'audio/webm').split(';')[0].trim() || 'audio/webm';
+  const ext = /wav/.test(mime) ? 'wav'
+    : /(mp4|m4a|aac)/.test(mime) ? 'm4a'
+    : /webm/.test(mime) ? 'webm'
+    : /ogg|opus/.test(mime) ? 'ogg'
+    : /mpeg|mp3/.test(mime) ? 'mp3'
+    : 'webm';
+  return { buffer: Buffer.from(m[2], 'base64'), mime, ext };
+}
+
+module.exports = { MODELS, DEFAULT_MODEL, RECOMMENDED, listVoices, annotateRecommended, chunkText, tts, verifyKey, cloneVoice, buildMultipart, decodeDataUri };

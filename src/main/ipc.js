@@ -195,11 +195,10 @@ function registerIpc(store) {
   ipcMain.handle('audio:clone', wrap(async (_e, { name, samples }) => {
     const a = store.getSettings().audio || {};
     const decoded = (samples || []).map((s, i) => {
-      const m = /^data:([^;]+);base64,(.*)$/.exec(s.dataUri || '');
-      if (!m) throw new Error('A voice sample could not be read.');
-      const mime = m[1];
-      const ext = mime.includes('wav') ? 'wav' : (mime.includes('mp4') || mime.includes('m4a')) ? 'm4a' : mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : 'mp3';
-      return { buffer: Buffer.from(m[2], 'base64'), mime, filename: s.filename || `sample-${i + 1}.${ext}` };
+      // MediaRecorder produces "data:audio/webm;codecs=opus;base64,…"; decodeDataUri
+      // tolerates the media-type parameters that the old inline regex broke on.
+      const { buffer, mime, ext } = elevenlabs.decodeDataUri(s.dataUri);
+      return { buffer, mime, filename: s.filename || `sample-${i + 1}.${ext}` };
     });
     const voice = await elevenlabs.cloneVoice({ apiKey: a.elevenApiKey, name, samples: decoded });
     store.saveSettings({ audio: { voiceId: voice.voice_id } }); // use the cloned voice by default
@@ -216,6 +215,37 @@ function registerIpc(store) {
     if (result.canceled) return { canceled: true };
     fs.copyFileSync(file, result.filePath);
     return { path: result.filePath };
+  }));
+
+  // Narrate the WHOLE book into one MP3 (every chapter, in order). Cache-aware:
+  // chapters already narrated with this voice are reused for free.
+  ipcMain.handle('audio:full', wrap(async (event, { id, voiceId }) => {
+    const book = store.getBook(id);
+    const chapters = (book.chapters || []).filter(Boolean);
+    if (!chapters.length) throw new Error('This book has no chapters yet.');
+    const sender = event.sender;
+    const tell = (p) => { if (!sender.isDestroyed()) sender.send('audio:full-progress', { id, ...p }); };
+
+    // Ask where to save first, so we don't make the user wait then cancel.
+    const win = BrowserWindow.getFocusedWindow();
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save audiobook', defaultPath: `${safeFilename(book.title, 'audiobook')}.mp3`,
+      filters: [{ name: 'MP3', extensions: ['mp3'] }],
+    });
+    if (result.canceled) return { canceled: true };
+
+    const parts = [];
+    for (let i = 0; i < chapters.length; i++) {
+      tell({ done: i, total: chapters.length, title: chapters[i].title });
+      const { file } = await synthChapterToFile(id, i, {
+        voiceId,
+        onProgress: (p) => tell({ done: i, total: chapters.length, chunk: p }),
+      });
+      parts.push(fs.readFileSync(file));
+    }
+    fs.writeFileSync(result.filePath, Buffer.concat(parts));
+    tell({ done: chapters.length, total: chapters.length });
+    return { path: result.filePath, chapters: chapters.length };
   }));
 
   // ---- prerequisites ----

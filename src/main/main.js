@@ -98,9 +98,10 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = 'system';
 
   // Allow microphone access (for ElevenLabs voice cloning / recording).
+  // Only the request handler — adding a check handler made Chromium treat the
+  // permission as already granted and re-trigger the macOS prompt in a loop.
   const isMic = (p) => p === 'media' || p === 'audioCapture' || p === 'microphone';
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(isMic(permission)));
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => isMic(permission));
 
   store = new Store(app.getPath('userData'));
   store.reconcileInterrupted(); // recover books left mid-write by a previous crash/close
