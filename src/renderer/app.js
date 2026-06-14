@@ -144,18 +144,20 @@ function deviceSelect(kind, current, onChange, firstLabel) {
   ensureDeviceLabels().finally(fill);
   // Re-list only when hardware is added/removed — safe, never during a click.
   try { navigator.mediaDevices.addEventListener('devicechange', fill); } catch (_) { /* ignore */ }
-  // First open while masked → ask for the mic (once) so real device names load.
-  let askedOnce = false;
+  // First open while masked → ask for the mic so real device names load. Retries
+  // on each click (a dismissed prompt shouldn't permanently block the picker).
+  let askInFlight = false;
   sel.addEventListener('mousedown', (e) => {
-    if (_deviceLabelsUnlocked || askedOnce) return; // names already available — let the menu open
-    e.preventDefault();                              // don't open an empty/anonymous menu
-    askedOnce = true;
+    if (_deviceLabelsUnlocked) return;  // full named list already available — open normally
+    e.preventDefault();                 // don't open an empty/anonymous menu
+    if (askInFlight) return;
+    askInFlight = true;
     sel.blur();
     ensureDeviceLabels({ prompt: true }).then(async (ok) => {
+      askInFlight = false;
       await fill();
-      if (!ok) { toast('Allow microphone access to list your audio devices by name.', ''); return; }
-      try { sel.showPicker(); } // re-open the now-populated menu automatically
-      catch (_) { toast('🎧 Audio devices ready — open the menu again to choose.', 'ok'); }
+      if (ok) { try { sel.showPicker(); } catch (_) { toast('🎧 Audio devices ready — open the menu again to choose.', 'ok'); } return; }
+      toast('Microphone access is needed to list your audio devices. If you blocked it, turn on ChapterOne under System Settings → Privacy & Security → Microphone, then reopen this menu.', '');
     });
   });
   sel.addEventListener('change', () => onChange(sel.value));
