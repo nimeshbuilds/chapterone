@@ -120,24 +120,23 @@ async function ensureDeviceLabels() {
     _deviceLabelsUnlocked = true;
   } catch (_) { /* ignore */ }
 }
-/** A device <select> for speakers or mics. Re-enumerates on open + on device change
- *  so the full named list appears even if permission/labels arrived after first render. */
+/** A device <select> for speakers or mics. Populated once labels are available and
+ *  refreshed only when devices actually change — never during the open gesture, which
+ *  would wipe the native menu mid-open. Call sel._refresh() to repopulate on demand. */
 function deviceSelect(kind, current, onChange, firstLabel) {
   const sel = h('select', { class: 'reader-select' }, h('option', { value: '' }, firstLabel));
   const fill = async () => {
-    const keep = sel.value;
+    const keep = sel.value || current || '';
     const devs = await listDevices(kind);
     sel.innerHTML = '';
     sel.append(h('option', { value: '' }, firstLabel));
-    devs.forEach((d, i) => sel.append(h('option', {
-      value: d.deviceId,
-      selected: d.deviceId === (keep || current) ? 'selected' : false,
-    }, d.label || `${kind === 'audioinput' ? 'Microphone' : 'Speaker'} ${i + 1}`)));
-    if (keep) sel.value = keep;
+    devs.forEach((d, i) => sel.append(h('option', { value: d.deviceId },
+      d.label || `${kind === 'audioinput' ? 'Microphone' : 'Speaker'} ${i + 1}`)));
+    sel.value = (keep && Array.from(sel.options).some((o) => o.value === keep)) ? keep : '';
   };
-  fill();
-  sel.addEventListener('focus', fill);      // refresh just before the native menu opens
-  sel.addEventListener('pointerdown', () => { ensureDeviceLabels().then(fill); });
+  // Unmask names first (no prompt unless the mic is already granted), then populate.
+  ensureDeviceLabels().finally(fill);
+  // Re-list only when hardware is added/removed — safe, never during a click.
   try { navigator.mediaDevices.addEventListener('devicechange', fill); } catch (_) { /* ignore */ }
   sel.addEventListener('change', () => onChange(sel.value));
   sel._refresh = fill;
