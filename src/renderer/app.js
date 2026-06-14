@@ -101,13 +101,46 @@ function dataUriToBlob(dataUri) {
   for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
   return new Blob([arr], { type: mime });
 }
-/** A device <select> for speakers or mics; fills labels (needs prior permission for labels). */
+// Browsers hide device labels (and most of the device list) until the page has
+// media permission. If the mic is already granted, do one silent getUserMedia so
+// the full, named list is exposed — but never prompt just to read speaker names.
+let _deviceLabelsUnlocked = false;
+async function ensureDeviceLabels() {
+  if (_deviceLabelsUnlocked) return;
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    if (devs.some((d) => d.label)) { _deviceLabelsUnlocked = true; return; } // already exposed
+    // Labels still hidden — only unlock if the mic is already granted; never
+    // prompt just to read speaker names.
+    let granted = false;
+    try { granted = (await navigator.permissions.query({ name: 'microphone' })).state === 'granted'; } catch (_) { /* unsupported */ }
+    if (!granted) return;
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach((t) => t.stop()); // labels stay exposed for the session after this
+    _deviceLabelsUnlocked = true;
+  } catch (_) { /* ignore */ }
+}
+/** A device <select> for speakers or mics. Re-enumerates on open + on device change
+ *  so the full named list appears even if permission/labels arrived after first render. */
 function deviceSelect(kind, current, onChange, firstLabel) {
   const sel = h('select', { class: 'reader-select' }, h('option', { value: '' }, firstLabel));
-  listDevices(kind).then((devs) => {
-    devs.forEach((d, i) => sel.append(h('option', { value: d.deviceId, selected: d.deviceId === current ? 'selected' : false }, d.label || `${kind === 'audioinput' ? 'Microphone' : 'Speaker'} ${i + 1}`)));
-  });
+  const fill = async () => {
+    const keep = sel.value;
+    const devs = await listDevices(kind);
+    sel.innerHTML = '';
+    sel.append(h('option', { value: '' }, firstLabel));
+    devs.forEach((d, i) => sel.append(h('option', {
+      value: d.deviceId,
+      selected: d.deviceId === (keep || current) ? 'selected' : false,
+    }, d.label || `${kind === 'audioinput' ? 'Microphone' : 'Speaker'} ${i + 1}`)));
+    if (keep) sel.value = keep;
+  };
+  fill();
+  sel.addEventListener('focus', fill);      // refresh just before the native menu opens
+  sel.addEventListener('pointerdown', () => { ensureDeviceLabels().then(fill); });
+  try { navigator.mediaDevices.addEventListener('devicechange', fill); } catch (_) { /* ignore */ }
   sel.addEventListener('change', () => onChange(sel.value));
+  sel._refresh = fill;
   return sel;
 }
 
@@ -1068,6 +1101,8 @@ async function renderReader(id) {
   voiceSel.addEventListener('change', () => { selectedVoice = voiceSel.value; });
   const speakerSel = deviceSelect('audiooutput', audioPrefs.speaker, async (v) => { audioPrefs.speaker = v; await applySink(audioEl); }, '🔊 Default speaker');
   speakerSel.title = 'Output speaker';
+  // Unmask the full, named speaker list up front when the mic is already granted.
+  ensureDeviceLabels().then(() => speakerSel._refresh && speakerSel._refresh());
   const listenBtn = h('button', { class: 'btn btn-gold btn-sm', title: 'Narrate this chapter with the selected voice', onClick: () => playChapterAudio(false) }, '🎧 Listen');
   const regenBtn = h('button', { class: 'btn btn-ghost btn-sm', title: 'Regenerate this chapter with the selected voice', onClick: () => playChapterAudio(true) }, '🔁');
   // The secondary controls live in one group so they can collapse together while
