@@ -75,14 +75,18 @@ async function listDevices(kind) {
 // Reuse a single mic stream so re-recording doesn't re-trigger the macOS mic
 // permission prompt. Released when leaving Settings (see go()).
 let activeMicStream = null;
+let micStreamPromise = null; // in-flight getUserMedia, so double-clicks don't double-prompt
 function stopMicStream() {
   if (activeMicStream) { try { activeMicStream.getTracks().forEach((t) => t.stop()); } catch (_) {} activeMicStream = null; }
 }
 async function getMicStream(deviceId) {
   if (activeMicStream && activeMicStream.getTracks().some((t) => t.readyState === 'live')) return activeMicStream;
+  if (micStreamPromise) return micStreamPromise; // already asking — reuse the same request
   stopMicStream();
-  activeMicStream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
-  return activeMicStream;
+  micStreamPromise = navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true })
+    .then((s) => { activeMicStream = s; return s; })
+    .finally(() => { micStreamPromise = null; });
+  return micStreamPromise;
 }
 async function applySink(audioEl) {
   const id = audioPrefs.speaker;

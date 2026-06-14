@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('path');
-const { app, BrowserWindow, Menu, shell, nativeTheme, session } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeTheme, session, systemPreferences } = require('electron');
 const { applyUserPath } = require('./cli/envPath');
 const { Store } = require('./store');
 const { registerIpc } = require('./ipc');
@@ -97,11 +97,37 @@ app.whenReady().then(() => {
   // Follow the system appearance for the in-app light/dark theme.
   nativeTheme.themeSource = 'system';
 
-  // Allow microphone access (for ElevenLabs voice cloning / recording).
-  // Only the request handler — adding a check handler made Chromium treat the
-  // permission as already granted and re-trigger the macOS prompt in a loop.
+  // Microphone access (ElevenLabs voice cloning / recording).
+  //
+  // The macOS mic prompt was firing over and over because Chromium kept asking
+  // the OS on every getUserMedia call. The fix is to route the decision through
+  // macOS's OWN permission API (systemPreferences): ask exactly once via
+  // askForMediaAccess (the OS caches the answer for the session), and on every
+  // subsequent request answer synchronously from getMediaAccessStatus without
+  // prompting. The check handler returns the REAL OS status so Chromium doesn't
+  // loop between "I think it's granted" and "the OS disagrees".
   const isMic = (p) => p === 'media' || p === 'audioCapture' || p === 'microphone';
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(isMic(permission)));
+  const micStatus = () => {
+    if (process.platform !== 'darwin') return 'granted';
+    try { return systemPreferences.getMediaAccessStatus('microphone'); } catch (_) { return 'granted'; }
+  };
+  let micAskInFlight = null; // collapse concurrent asks into one OS prompt
+
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
+    isMic(permission) ? micStatus() === 'granted' : false);
+
+  session.defaultSession.setPermissionRequestHandler(async (_wc, permission, cb) => {
+    if (!isMic(permission)) return cb(false);
+    const status = micStatus();
+    if (status === 'granted') return cb(true);
+    if (status === 'denied' || status === 'restricted') return cb(false); // user said no — never nag
+    try {
+      if (!micAskInFlight) micAskInFlight = systemPreferences.askForMediaAccess('microphone');
+      const ok = await micAskInFlight;
+      micAskInFlight = null;
+      cb(!!ok);
+    } catch (_) { micAskInFlight = null; cb(true); }
+  });
 
   store = new Store(app.getPath('userData'));
   store.reconcileInterrupted(); // recover books left mid-write by a previous crash/close
