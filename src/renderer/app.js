@@ -114,12 +114,15 @@ async function ensureDeviceLabels({ prompt = false } = {}) {
   try {
     const devs = await navigator.mediaDevices.enumerateDevices();
     if (devs.some((d) => d.label)) { _deviceLabelsUnlocked = true; return true; } // already exposed
-    let state = 'prompt';
-    try { state = (await navigator.permissions.query({ name: 'microphone' })).state; } catch (_) { /* unsupported */ }
-    if (state === 'denied') return false;
-    if (state !== 'granted' && !prompt) return false; // don't prompt just to read names
+    if (!prompt) return false; // silent path: never prompt just to read names on render
+    // The user explicitly opened a picker → capture the mic once. This routes
+    // through the main process, which shows the OS prompt when undecided, returns
+    // instantly if already granted, and rejects only if the user denied at the OS
+    // level. We deliberately do NOT consult navigator.permissions.query here — in
+    // Electron it reports "denied" for the not-yet-granted state and would wrongly
+    // skip the prompt.
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    s.getTracks().forEach((t) => t.stop()); // labels stay exposed for the rest of the session
+    s.getTracks().forEach((t) => t.stop()); // labels stay exposed for the session afterward
     _deviceLabelsUnlocked = true;
     return true;
   } catch (_) { return false; }

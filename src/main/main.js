@@ -112,6 +112,10 @@ app.whenReady().then(() => {
   // loop between "I think it's granted" and "the OS disagrees".
   const dbg = (...a) => { if (process.env.CHAPTERONE_DEBUG) console.log('[perm]', ...a); };
   const isMic = (p) => p === 'media' || p === 'audioCapture' || p === 'microphone';
+  // Choosing an audio OUTPUT device (setSinkId / the speaker picker) is its own
+  // Chromium permission, distinct from the microphone. It needs no OS prompt, so
+  // grant it outright — otherwise the speaker picker can't route audio.
+  const isSpeaker = (p) => p === 'speaker-selection';
   const micStatus = () => {
     if (process.platform !== 'darwin') return 'granted';
     try { return systemPreferences.getMediaAccessStatus('microphone'); } catch (_) { return 'granted'; }
@@ -119,13 +123,14 @@ app.whenReady().then(() => {
   let micAskInFlight = null; // collapse concurrent asks into one OS prompt
 
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    const ok = isMic(permission) ? micStatus() === 'granted' : false;
+    const ok = isSpeaker(permission) ? true : (isMic(permission) ? micStatus() === 'granted' : false);
     dbg('check', permission, 'osMic=', micStatus(), '->', ok);
     return ok;
   });
 
   session.defaultSession.setPermissionRequestHandler(async (_wc, permission, cb) => {
     dbg('request', permission, 'osMic=', micStatus());
+    if (isSpeaker(permission)) return cb(true);
     if (!isMic(permission)) return cb(false);
     const status = micStatus();
     if (status === 'granted') return cb(true);
