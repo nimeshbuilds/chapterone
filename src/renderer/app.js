@@ -1624,7 +1624,57 @@ function renderSettings() {
       h('button', { class: 'btn btn-ghost btn-sm', onClick: verifyAudio }, 'Test key')),
     h('div', { style: 'border-top:1px solid var(--hairline);margin:16px 0 0;padding-top:14px' }, cloneVoiceUI()));
 
-  mount(h('div', { class: 'view' }, head, engineCard, imageCard, audioCard, kindleCard));
+  // Danger zone — wipe every local artifact the app created. Sits at the very
+  // bottom and is gated behind a type-to-confirm modal.
+  const dangerCard = h('div', { class: 'card danger-card' },
+    h('p', { class: 'section-title', style: 'color:var(--danger)' }, 'Danger zone'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' },
+      'Permanently erase everything ChapterOne has stored on this Mac: every book and chapter, all generated covers and illustrations, all narrated audio, every export, and your saved settings and API keys. This cannot be undone.'),
+    h('div', { class: 'btn-row' },
+      h('button', { class: 'btn btn-danger-solid btn-sm', onClick: () => clearAllDataModal() }, '🗑  Clear all my data')));
+
+  mount(h('div', { class: 'view' }, head, engineCard, imageCard, audioCard, kindleCard, dangerCard));
+}
+
+/** Type-to-confirm modal that erases every local artifact the app created. */
+function clearAllDataModal() {
+  const PHRASE = 'delete all my data';
+  const input = h('input', { placeholder: `Type "${PHRASE}" here`, autocomplete: 'off', spellcheck: 'false', style: 'width:100%' });
+  const confirmBtn = h('button', { class: 'btn btn-danger-solid btn-sm', disabled: 'true', onClick: doClear }, '🗑  Permanently delete everything');
+  input.addEventListener('input', () => {
+    if (input.value.trim().toLowerCase() === PHRASE) confirmBtn.removeAttribute('disabled');
+    else confirmBtn.setAttribute('disabled', 'true');
+  });
+  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+    h('div', { class: 'modal', style: 'max-width:500px' },
+      h('h2', { style: 'margin:0 0 8px;color:var(--danger)' }, '⚠️  Erase ALL ChapterOne data?'),
+      h('p', { class: 'hint', style: 'margin-bottom:10px' },
+        'This permanently deletes EVERY book, chapter, cover, illustration, audiobook file, export, and your saved settings and API keys on this Mac. There is no undo and no backup — anything not exported elsewhere is gone for good.'),
+      h('p', { class: 'hint', style: 'margin-bottom:14px;color:var(--text-dim)' },
+        'Not affected: your CLI sign-ins, and any voices you already cloned on ElevenLabs (those live on their servers).'),
+      h('label', { class: 'field' }, h('span', {}, `To confirm, type:  ${PHRASE}`), input),
+      h('div', { class: 'btn-row', style: 'margin-top:16px' },
+        confirmBtn,
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Cancel'))));
+  document.body.append(overlay);
+  setTimeout(() => input.focus(), 30);
+
+  async function doClear() {
+    confirmBtn.setAttribute('disabled', 'true');
+    confirmBtn.textContent = 'Deleting…';
+    try {
+      await api.clearAllData();
+      overlay.remove();
+      state.settings = await api.getSettings(); // back to fresh defaults
+      state.authStatus = null;
+      toast('✅ All ChapterOne data cleared — books, images, audio, exports, and settings.', 'ok');
+      go('library');
+    } catch (err) {
+      confirmBtn.removeAttribute('disabled');
+      confirmBtn.textContent = '🗑  Permanently delete everything';
+      toast(`Could not clear data: ${err.message}`, 'bad');
+    }
+  }
 }
 
 async function saveImages() {

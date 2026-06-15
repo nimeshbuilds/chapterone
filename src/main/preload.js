@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   // settings & meta
   getSettings: () => invoke('settings:get'),
   saveSettings: (partial) => invoke('settings:save', partial),
+  clearAllData: () => invoke('data:clear'),
   getModels: () => invoke('meta:models'),
 
   // prerequisites

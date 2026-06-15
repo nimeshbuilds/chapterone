@@ -185,6 +185,10 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 .btn-gold:hover { filter: brightness(1.05); }
 .btn-ghost { background: var(--panel); }
 .btn-danger { background: var(--panel); border-color: rgba(224,80,111,.45); color: var(--danger); }
+.btn-danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+.btn-danger-solid:hover { filter: brightness(1.07); }
+.btn-danger-solid:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.danger-card { border-color: rgba(224,80,111,.4); }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 .btn-sm { padding: 7px 13px; font-size: 13px; border-radius: 9px; }
 

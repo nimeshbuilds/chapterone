@@ -113,6 +113,8 @@ function registerIpc(store) {
   // ---- settings & meta ----
   ipcMain.handle('settings:get', wrap(async () => store.getSettings()));
   ipcMain.handle('settings:save', wrap(async (_e, partial) => store.saveSettings(partial)));
+  // Danger zone: erase every local artifact (books, images, audio, exports, keys).
+  ipcMain.handle('data:clear', wrap(async () => store.clearAllData()));
   ipcMain.handle('meta:models', wrap(async () => ({
     claude: modelsFor('claude'),
     codex: modelsFor('codex'),

@@ -44,6 +44,31 @@ test('book CRUD + list', () => {
   assert.strictEqual(s.listBooks().length, 0);
 });
 
+test('clearAllData wipes books, media, exports and settings but keeps the app usable', () => {
+  const s = tmpStore();
+  s.saveSettings({ audio: { elevenApiKey: 'secret' } });
+  s.saveBook({ id: 'b1', title: 'One', chapters: [] });
+  s.saveBook({ id: 'b2', title: 'Two', chapters: [] });
+  fs.writeFileSync(path.join(s.imagesDir, 'cover.png'), 'x');
+  fs.writeFileSync(path.join(s.audioDir, 'ch1.mp3'), 'x');
+  fs.writeFileSync(path.join(s.exportsDir, 'book.epub'), 'x');
+
+  const summary = s.clearAllData();
+  assert.equal(summary.books, 2);
+  assert.equal(summary.settings, true);
+
+  // Everything gone…
+  assert.equal(s.listBooks().length, 0);
+  assert.equal(fs.readdirSync(s.imagesDir).length, 0);
+  assert.equal(fs.readdirSync(s.audioDir).length, 0);
+  assert.equal(fs.readdirSync(s.exportsDir).length, 0);
+  // …settings back to defaults (api key cleared)…
+  assert.equal(s.getSettings().audio.elevenApiKey, '');
+  // …and the store still works (folders recreated, can save again).
+  s.saveBook({ id: 'b3', title: 'Fresh', chapters: [] });
+  assert.equal(s.listBooks().length, 1);
+});
+
 test('deepMerge does not mutate arrays into objects', () => {
   const out = deepMerge({ a: [1, 2], b: { c: 1 } }, { a: [3], b: { d: 2 } });
   assert.deepStrictEqual(out.a, [3]);

@@ -147,6 +147,32 @@ class Store {
     }
   }
 
+  /**
+   * Wipe EVERY local artifact this app created: all books, all generated images
+   * and AI art, all cached/exported audio, all exports, and settings.json (which
+   * holds the user's API keys and Kindle/SMTP config). The empty data folders are
+   * recreated so the app keeps working as if freshly installed. This does NOT
+   * touch anything outside this app's data dir — e.g. cloned voices that live on
+   * ElevenLabs' servers, CLI sign-ins, or files the user exported elsewhere.
+   * @returns {{books:number, images:number, audio:number, exports:number, settings:boolean}}
+   */
+  clearAllData() {
+    const countFiles = (dir) => { try { return fs.readdirSync(dir).length; } catch (_) { return 0; } };
+    const summary = {
+      books: countFiles(this.booksDir),
+      images: countFiles(this.imagesDir),
+      audio: countFiles(this.audioDir),
+      exports: countFiles(this.exportsDir),
+      settings: fs.existsSync(this.settingsPath),
+    };
+    for (const dir of [this.booksDir, this.imagesDir, this.audioDir, this.exportsDir]) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { /* ignore */ }
+    }
+    try { fs.rmSync(this.settingsPath, { force: true }); } catch (_) { /* ignore */ }
+    return summary;
+  }
+
   listBooks() {
     let files;
     try {
