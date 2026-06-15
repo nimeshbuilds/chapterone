@@ -219,16 +219,66 @@ function registerIpc(store) {
     return { path: result.filePath };
   }));
 
-  // Narrate the WHOLE book into one MP3 (every chapter, in order). Cache-aware:
-  // chapters already narrated with this voice are reused for free.
+  // Which chapters of a book are already narrated (cached) for a given voice, so
+  // the UI knows whether the whole-book audio is ready and where to resume.
+  const audiobookStatus = (id, voiceId) => {
+    const a = store.getSettings().audio || {};
+    const book = store.getBook(id);
+    const chapters = (book.chapters || []).filter(Boolean);
+    const vid = voiceId || (book.isKids && a.voiceIdKids ? a.voiceIdKids : a.voiceId);
+    const model = a.model || elevenlabs.DEFAULT_MODEL;
+    const dir = path.join(store.audioDir, id);
+    const list = chapters.map((ch, idx) => ({
+      index: idx, number: ch.number, title: ch.title,
+      cached: !!(vid && fs.existsSync(path.join(dir, `ch${ch.number}-${vid}-${model}.mp3`))),
+    }));
+    const have = list.filter((c) => c.cached).length;
+    return { total: chapters.length, have, complete: chapters.length > 0 && have === chapters.length, voiceId: vid, model, chapters: list };
+  };
+  ipcMain.handle('audio:status', wrap(async (_e, { id, voiceId }) => audiobookStatus(id, voiceId)));
+
+  // Narrate the WHOLE book — every chapter, in order — caching each one
+  // individually (so chapter-by-chapter listening still works and progress is
+  // never lost). Cache-aware: already-narrated chapters are skipped for free.
+  // Resumable: one chapter failing (e.g. a transient ElevenLabs error) is
+  // retried once, then recorded and skipped so the rest still get done.
+  ipcMain.handle('audio:generate-all', wrap(async (event, { id, voiceId }) => {
+    const book = store.getBook(id);
+    const chapters = (book.chapters || []).filter(Boolean);
+    if (!chapters.length) throw new Error('This book has no chapters yet.');
+    const sender = event.sender;
+    const tell = (p) => { if (!sender.isDestroyed()) sender.send('audio:full-progress', { id, total: chapters.length, ...p }); };
+
+    let narrated = 0, fromCache = 0;
+    const failed = [];
+    for (let i = 0; i < chapters.length; i++) {
+      tell({ phase: 'chapter', index: i, done: i, title: chapters[i].title });
+      let ok = false, lastErr = null;
+      for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+        try {
+          const r = await synthChapterToFile(id, i, {
+            voiceId,
+            onProgress: (c) => tell({ phase: 'chunk', index: i, done: i, title: chapters[i].title, chunk: c }),
+          });
+          if (r.cached) fromCache++; else narrated++;
+          ok = true;
+        } catch (e) { lastErr = e; }
+      }
+      if (!ok) failed.push({ number: chapters[i].number, title: chapters[i].title, error: (lastErr && lastErr.message) || 'unknown error' });
+    }
+    tell({ phase: 'complete', done: chapters.length });
+    return { total: chapters.length, narrated, fromCache, failed };
+  }));
+
+  // Optional: stitch the (already-cached) chapters into one MP3 file on disk —
+  // for sideloading to a phone/Kindle. Narrates any missing chapters first.
   ipcMain.handle('audio:full', wrap(async (event, { id, voiceId }) => {
     const book = store.getBook(id);
     const chapters = (book.chapters || []).filter(Boolean);
     if (!chapters.length) throw new Error('This book has no chapters yet.');
     const sender = event.sender;
-    const tell = (p) => { if (!sender.isDestroyed()) sender.send('audio:full-progress', { id, ...p }); };
+    const tell = (p) => { if (!sender.isDestroyed()) sender.send('audio:full-progress', { id, total: chapters.length, ...p }); };
 
-    // Ask where to save first, so we don't make the user wait then cancel.
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showSaveDialog(win, {
       title: 'Save audiobook', defaultPath: `${safeFilename(book.title, 'audiobook')}.mp3`,
@@ -238,15 +288,15 @@ function registerIpc(store) {
 
     const parts = [];
     for (let i = 0; i < chapters.length; i++) {
-      tell({ done: i, total: chapters.length, title: chapters[i].title });
+      tell({ phase: 'chapter', index: i, done: i, title: chapters[i].title });
       const { file } = await synthChapterToFile(id, i, {
         voiceId,
-        onProgress: (p) => tell({ done: i, total: chapters.length, chunk: p }),
+        onProgress: (c) => tell({ phase: 'chunk', index: i, done: i, chunk: c }),
       });
       parts.push(fs.readFileSync(file));
     }
     fs.writeFileSync(result.filePath, Buffer.concat(parts));
-    tell({ done: chapters.length, total: chapters.length });
+    tell({ phase: 'complete', done: chapters.length });
     return { path: result.filePath, chapters: chapters.length };
   }));
 

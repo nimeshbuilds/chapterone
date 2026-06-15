@@ -30,7 +30,9 @@ contextBridge.exposeInMainWorld('api', {
   verifyAudio: () => invoke('audio:verify'),
   synthChapter: (id, index, voiceId, force) => invoke('audio:synth', { id, index, voiceId, force }),
   exportAudio: (id, index, voiceId) => invoke('audio:export', { id, index, voiceId }),
-  generateAudiobook: (id, voiceId) => invoke('audio:full', { id, voiceId }),
+  generateAudiobook: (id, voiceId) => invoke('audio:generate-all', { id, voiceId }),
+  audiobookStatus: (id, voiceId) => invoke('audio:status', { id, voiceId }),
+  exportAudiobook: (id, voiceId) => invoke('audio:full', { id, voiceId }),
   cloneVoice: (name, samples) => invoke('audio:clone', { name, samples }),
   onAudioProgress: (cb) => {
     const listener = (_e, d) => cb(d);

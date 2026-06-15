@@ -1135,11 +1135,12 @@ async function renderReader(id) {
     h('span', { class: 'mini-label', style: 'white-space:nowrap' }, 'Narration'),
     voiceSel, listenBtn, regenBtn, speakerSel,
     h('button', { class: 'btn btn-ghost btn-sm', title: 'Save this chapter as MP3', onClick: () => exportChapterAudio() }, '⤓ MP3'),
-    h('button', { class: 'btn btn-ghost btn-sm', title: 'Narrate the whole book into one MP3', onClick: () => generateFullAudiobook() }, '📖 Whole book'));
+    h('button', { class: 'btn btn-ghost btn-sm', title: 'Narrate every chapter now (cached & resumable) so the whole book is ready', onClick: () => generateFullAudiobook() }, '📖 Generate book'),
+    h('button', { class: 'btn btn-gold btn-sm', title: 'Play the whole book start to finish — remembers where you stopped', onClick: () => playWholeBook(false) }, '▶ Whole book'));
   const optsBtn = h('button', { class: 'icon-btn opts-btn', title: 'Show narration options', onClick: (e) => { e.stopPropagation(); audioBar.classList.toggle('compact'); } }, '⋯ Options');
   const audioBar = h('div', { class: 'audio-bar' + (audioReady ? '' : ' hidden') },
     optsBtn, audioOptions, audioSpin, audioLabel, audioEl,
-    h('button', { class: 'icon-btn', title: 'Hide player', onClick: (e) => { e.stopPropagation(); audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
+    h('button', { class: 'icon-btn', title: 'Hide player', onClick: (e) => { e.stopPropagation(); wholeBook = false; audioEl.pause(); audioBar.classList.add('hidden'); } }, '✕'));
   // Auto-expand the scrubber while playing (collapse the options); a click on the
   // bar (anywhere that isn't a control) — or the "⋯ Options" button — brings them back.
   audioEl.addEventListener('play', () => audioBar.classList.add('compact'));
@@ -1148,7 +1149,27 @@ async function renderReader(id) {
     audioBar.classList.remove('compact');
   });
   let audioBusy = false;
+  let wholeBook = false;      // sequential "listen to the whole book" mode
+  let wbIndex = -1;           // chapter index currently playing in that mode
+  let suppressReset = false;  // true while we auto-advance, so nav doesn't kill audio
+  let lastPosSave = 0;
   const setSpin = (on) => { audioSpin.style.display = on ? 'inline-block' : 'none'; };
+  const pageIndexForChapter = (ci) => pages.findIndex((p) => p.kind === 'chapter' && p.chIndex === ci);
+  const abKey = 'bw.audiobook.pos.' + id;
+  const saveAbPos = (index, time) => { try { localStorage.setItem(abKey, JSON.stringify({ index, time: time || 0 })); } catch (_) { /* ignore */ } };
+  const loadAbPos = () => { try { return JSON.parse(localStorage.getItem(abKey) || 'null'); } catch (_) { return null; } };
+  const clearAbPos = () => { try { localStorage.removeItem(abKey); } catch (_) { /* ignore */ } };
+  // Whole-book mode: when a chapter finishes, advance to the next and keep the place.
+  audioEl.addEventListener('ended', () => {
+    if (!wholeBook) return;
+    saveAbPos(wbIndex + 1, 0);
+    playChapterSequential(wbIndex + 1, 0);
+  });
+  audioEl.addEventListener('timeupdate', () => {
+    if (!wholeBook || wbIndex < 0) return;
+    const now = Date.now();
+    if (now - lastPosSave > 4000) { lastPosSave = now; saveAbPos(wbIndex, audioEl.currentTime); }
+  });
 
   // Populate the voice picker from the user's account (includes cloned voices).
   function populateReaderVoices(voices) {
@@ -1176,6 +1197,7 @@ async function renderReader(id) {
     const ci = curChapterIndex();
     if (ci < 0) { toast('Open a chapter first, then press Listen.', 'bad'); return; }
     if (audioBusy) return;
+    wholeBook = false; // a single-chapter Listen exits whole-book playback
     audioBusy = true;
     audioBar.classList.remove('hidden');
     audioEl.style.display = 'none';
@@ -1212,6 +1234,8 @@ async function renderReader(id) {
   // When the chapter changes, stop the old audio and prompt for the new one so
   // narration is unmistakably per-chapter (no stale audio lingering).
   function resetAudioForNewChapter() {
+    if (suppressReset) return;          // auto-advance manages its own audio
+    if (wholeBook) wholeBook = false;   // manual navigation exits whole-book playback
     try { audioEl.pause(); } catch (_) { /* ignore */ }
     audioEl.style.display = 'none'; setSpin(false);
     audioBar.classList.remove('compact'); // show the options again for the new chapter
@@ -1219,47 +1243,103 @@ async function renderReader(id) {
     const pg = pages[cur];
     audioLabel.textContent = pg && pg.kind === 'chapter' ? `Press 🎧 Listen for Chapter ${pg.chIndex + 1}` : 'Open a chapter to listen';
   }
-  // Narrate the ENTIRE book into one MP3 file. Warns about cost/time first,
-  // reuses already-narrated chapters for free, and saves wherever the user picks.
+  function audioVoice() {
+    const a = state.settings && state.settings.audio;
+    return selectedVoice || (content.isKids && a && a.voiceIdKids ? a.voiceIdKids : (a && a.voiceId));
+  }
+  // Pre-narrate EVERY chapter now (each cached individually so chapter-by-chapter
+  // listening keeps working). Cache-aware + resumable: closing midway keeps what's
+  // done, and re-running picks up the rest. Any per-chapter ElevenLabs error is
+  // reported instead of silently failing the whole run.
   async function generateFullAudiobook() {
     const a = state.settings && state.settings.audio;
     if (!a || !a.elevenApiKey) { toast('Add your ElevenLabs key and pick a voice in Settings → Audiobook.', 'bad'); return go('settings'); }
-    const voice = selectedVoice || (content.isKids && a.voiceIdKids ? a.voiceIdKids : a.voiceId);
+    const voice = audioVoice();
     if (!voice) { toast('Pick a narration voice first.', 'bad'); return; }
     if (!chapters.length) { toast('This book has no chapters yet.', 'bad'); return; }
     if (audioBusy) return;
+    let toDo = chapters.length;
+    try { const st = await api.audiobookStatus(id, voice); toDo = st.total - st.have; } catch (_) { /* ignore */ }
+    if (toDo === 0) { toast('✅ Every chapter is already narrated — press ▶ Whole book to listen.', 'ok'); return; }
     const voiceName = (voiceSel.selectedOptions[0] && voiceSel.selectedOptions[0].textContent.replace(/^★ /, '')) || 'the selected voice';
     const chars = chapters.reduce((n, c) => n + Math.round((c.words || 0) * 6), 0);
     const ok = await confirmDialog(
       '📖 Generate the whole audiobook?',
-      `This narrates all ${chapters.length} chapter${chapters.length === 1 ? '' : 's'} in ${voiceName} and stitches them into a single MP3.\n\n` +
-      `• It uses roughly ${chars.toLocaleString()} characters of your ElevenLabs quota (chapters you've already narrated with this voice are reused for free).\n` +
-      `• It can take a few minutes for a long book, and it can't be paused once started.\n\n` +
-      `You'll choose where to save the file next.`,
+      `This narrates every chapter (${chapters.length} total) in ${voiceName}, saving each one so you can listen chapter by chapter or all the way through.\n\n` +
+      `• ${toDo} chapter${toDo === 1 ? '' : 's'} still need narrating — the rest are already done and reused for free.\n` +
+      `• Up to about ${chars.toLocaleString()} characters of your ElevenLabs quota for a full run.\n` +
+      `• You can close it anytime: finished chapters are saved, and running it again continues where it stopped.`,
       'Generate audiobook');
     if (!ok) return;
-    audioBusy = true;
-    audioBar.classList.remove('hidden');
-    audioEl.style.display = 'none';
-    setSpin(true);
-    audioLabel.textContent = 'Building audiobook…';
+    audioBusy = true; wholeBook = false;
+    audioBar.classList.remove('hidden'); audioEl.style.display = 'none'; setSpin(true);
+    audioLabel.textContent = 'Starting audiobook…';
     const off = api.onFullAudioProgress((p) => {
       if (p.id !== id) return;
-      if (p.done >= p.total) { audioLabel.textContent = 'Finishing audiobook…'; return; }
-      const part = p.chunk && p.chunk.total ? ` (${p.chunk.done}/${p.chunk.total})` : '';
-      audioLabel.textContent = `Audiobook: chapter ${p.done + 1}/${p.total}${part}…`;
+      if (p.phase === 'complete') { audioLabel.textContent = 'Finishing…'; return; }
+      const idx = (typeof p.index === 'number' ? p.index : p.done) + 1;
+      const part = p.chunk && p.chunk.total ? ` · part ${p.chunk.done}/${p.chunk.total}` : '';
+      audioLabel.textContent = `Narrating chapter ${idx}/${p.total}${part}…`;
     });
     try {
       const res = await api.generateAudiobook(id, voice);
       setSpin(false);
-      if (res && res.canceled) { audioLabel.textContent = '🎧 Cancelled'; return; }
-      audioLabel.textContent = `📖 Audiobook saved (${res.chapters} chapters)`;
-      toast('✅ Whole audiobook saved.', 'ok');
-      await api.openPath(res.path);
+      if (res.failed && res.failed.length) {
+        const f = res.failed[0];
+        audioLabel.textContent = `⚠️ ${res.failed.length} chapter(s) failed`;
+        toast(`Done ${res.narrated + res.fromCache}/${res.total}. ${res.failed.length} failed — e.g. ch ${f.number}: ${f.error}. Press 📖 again to retry the rest.`, 'bad');
+      } else {
+        audioLabel.textContent = `✅ Whole book ready (${res.total} chapters)`;
+        toast(`✅ Audiobook ready — all ${res.total} chapters narrated. Press ▶ Whole book to listen.`, 'ok');
+      }
     } catch (err) {
       setSpin(false);
       toast(`Audiobook failed: ${err.message}`, 'bad');
     } finally { off && off(); audioBusy = false; }
+  }
+  // Play the whole book start to finish, advancing chapter-by-chapter and
+  // remembering the place. Narrates any not-yet-cached chapter on the fly.
+  async function playWholeBook(fromStart) {
+    const a = state.settings && state.settings.audio;
+    if (!a || !a.elevenApiKey) { toast('Add your ElevenLabs key and pick a voice in Settings → Audiobook.', 'bad'); return go('settings'); }
+    if (!audioVoice()) { toast('Pick a narration voice first.', 'bad'); return; }
+    if (!chapters.length) { toast('This book has no chapters yet.', 'bad'); return; }
+    const saved = fromStart ? null : loadAbPos();
+    const startIndex = saved && saved.index >= 0 && saved.index < chapters.length ? saved.index : 0;
+    const startTime = saved && saved.index === startIndex ? (saved.time || 0) : 0;
+    if (saved && (startIndex > 0 || startTime > 2)) toast(`▶ Resuming from chapter ${startIndex + 1}.`, 'ok');
+    wholeBook = true;
+    audioBar.classList.remove('hidden');
+    await playChapterSequential(startIndex, startTime);
+  }
+  async function playChapterSequential(ci, startTime) {
+    if (!wholeBook) return;
+    if (ci >= chapters.length) { wholeBook = false; clearAbPos(); audioEl.style.display = 'none'; setSpin(false); audioLabel.textContent = '✅ Finished the audiobook'; toast('✅ Reached the end of the audiobook.', 'ok'); return; }
+    wbIndex = ci;
+    const pi = pageIndexForChapter(ci);
+    if (pi >= 0 && pi !== cur) { suppressReset = true; goPage(pi); suppressReset = false; }
+    audioEl.style.display = 'none'; setSpin(true);
+    audioLabel.textContent = `▶ Whole book — preparing chapter ${ci + 1}/${chapters.length}…`;
+    const off = api.onAudioProgress((p) => {
+      if (p.id !== id || p.index !== ci || !p.total) return;
+      audioLabel.textContent = `▶ Whole book — narrating ${ci + 1}/${chapters.length} (${p.done}/${p.total})…`;
+    });
+    try {
+      const res = await api.synthChapter(id, ci, audioVoice(), false);
+      off && off();
+      if (!wholeBook) return; // user stopped while synthesizing
+      if (audioEl._url) { URL.revokeObjectURL(audioEl._url); audioEl._url = null; }
+      audioEl._url = URL.createObjectURL(dataUriToBlob(res.dataUri));
+      audioEl.src = audioEl._url; audioEl.style.display = ''; setSpin(false);
+      audioLabel.textContent = `▶ Whole book ${ci + 1}/${chapters.length}: ${res.title}`;
+      await applySink(audioEl);
+      try { audioEl.currentTime = startTime || 0; } catch (_) { /* ignore */ }
+      saveAbPos(ci, startTime || 0);
+      audioEl.play().catch(() => {});
+    } catch (err) {
+      off && off(); setSpin(false); wholeBook = false;
+      toast(`Whole-book playback stopped at chapter ${ci + 1}: ${err.message}`, 'bad');
+    }
   }
 
   const bar = h('div', { class: 'reader-bar' },
