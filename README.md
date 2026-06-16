@@ -10,9 +10,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-universal-black?logo=apple)](https://github.com/npandeya/bookwriter/releases/latest)
 [![Built with Electron](https://img.shields.io/badge/built%20with-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Tests](https://img.shields.io/badge/tests-109%20passing-brightgreen)](#-tests)
+[![CI](https://img.shields.io/github/actions/workflow/status/npandeya/bookwriter/ci.yml?branch=main&label=tests&logo=github)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/npandeya/bookwriter/codeql.yml?branch=main&label=CodeQL&logo=github)](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml)
 
-[Download](#-download) · [Features](#-features) · [How it works](#-how-it-works) · [Build from source](#-build-from-source) · [Contributing](CONTRIBUTING.md)
+[Download](#-download) · [Features](#-features) · [How it works](#-how-it-works) · [Security](#-security) · [Build from source](#-build-from-source) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -109,6 +110,26 @@ Everything runs locally through your CLI on your subscription. Outbound network
 happens only for: research web search (performed by the CLI), opt-in image
 generation/lookups, opt-in audiobook narration, and the Send-to-Kindle email you
 trigger explicitly. See [`SECURITY.md`](SECURITY.md).
+
+## 🔒 Security
+
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/npandeya/bookwriter/codeql.yml?branch=main&label=CodeQL%20scan&logo=github)](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml)
+[![Dependencies audited](https://img.shields.io/github/actions/workflow/status/npandeya/bookwriter/ci.yml?branch=main&label=dependency%20audit&logo=github)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
+
+Security is enforced automatically on every push and pull request:
+
+- **CodeQL** — GitHub's static analysis (SAST) scans the JavaScript for
+  vulnerabilities and quality issues, plus a weekly scheduled run.
+- **Dependency audit** — CI runs `npm audit` and **fails the build** on any
+  high/critical vulnerability in shipped dependencies.
+- **Dependabot** — weekly automated dependency-update PRs and security alerts
+  for both app and build dependencies.
+
+The app itself is **local-first**: no backend, your subscription login (not API
+keys) does the work, the model gets only read-only web tools, all model-produced
+SVG is sanitized, and outbound network is limited to the calls you explicitly
+enable. Full details and how to report a vulnerability are in
+[`SECURITY.md`](SECURITY.md).
 
 ## 🚀 Build from source
 

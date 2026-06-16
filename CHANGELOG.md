@@ -4,6 +4,16 @@ All notable changes to ChapterOne are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/) and the spirit of
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Security
+
+- Upgrade **nodemailer** 6 → 9 to fix a high-severity CRLF header-injection
+  vulnerability ([GHSA-268h-hp4c-crq3](https://github.com/advisories/GHSA-268h-hp4c-crq3))
+  in Send-to-Kindle / email delivery.
+- Add **CodeQL** static analysis, a CI **dependency audit** (fails on
+  high/critical vulns in shipped deps), and **Dependabot** updates.
+
 ## [0.1.0] — 2026-06-15
 
 First public release.
