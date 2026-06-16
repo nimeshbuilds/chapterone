@@ -37,6 +37,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "icon": "electron scripts/make-icon.js",
     "test": "node --test",
     "pack": "electron-builder --dir --config electron-builder.config.js",
     "dist": "electron-builder --config electron-builder.config.js",

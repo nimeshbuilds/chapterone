@@ -6,12 +6,12 @@
 
 **A privacy-first desktop app that ghost-writes complete, professional-quality books — using your own Claude Code, Codex, or Gemini CLI subscription. No servers, no API keys, your machine.**
 
-[![Latest release](https://img.shields.io/github/v/release/npandeya/bookwriter?label=download&logo=apple&color=111)](https://github.com/npandeya/bookwriter/releases/latest)
+[![Download](https://img.shields.io/badge/download-macOS%20DMG-111?logo=apple&logoColor=white)](https://github.com/npandeya/bookwriter/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-universal-black?logo=apple)](https://github.com/npandeya/bookwriter/releases/latest)
 [![Built with Electron](https://img.shields.io/badge/built%20with-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![CI](https://img.shields.io/github/actions/workflow/status/npandeya/bookwriter/ci.yml?branch=main&label=tests%20%26%20audit&logo=github)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
-[![CodeQL](https://img.shields.io/badge/CodeQL-enabled-2088FF?logo=github)](.github/workflows/codeql.yml)
+[![Tests &amp; audit](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml)
 
 [Download](#-download) · [Features](#-features) · [How it works](#-how-it-works) · [Security](#-security) · [Build from source](#-build-from-source) · [Contributing](CONTRIBUTING.md)
 
@@ -113,9 +113,11 @@ trigger explicitly. See [`SECURITY.md`](SECURITY.md).
 
 ## 🔒 Security
 
-[![Dependency audit](https://img.shields.io/github/actions/workflow/status/npandeya/bookwriter/ci.yml?branch=main&label=dependency%20audit&logo=github)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
-[![CodeQL](https://img.shields.io/badge/CodeQL-SAST%20enabled-2088FF?logo=github)](.github/workflows/codeql.yml)
+[![Tests &amp; audit](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?logo=dependabot)](.github/dependabot.yml)
+
+> ℹ️ Live status badges populate once the repository is **public** (badge services can't read a private repo). They show as "no status" / not-found until then.
 
 Security is enforced automatically on every push and pull request:
 
