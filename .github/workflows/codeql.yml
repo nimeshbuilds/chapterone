@@ -25,5 +25,9 @@ jobs:
         with:
           languages: javascript-typescript
           queries: security-and-quality
+      # Publishing results to the Security tab needs a public repo (free) or
+      # GitHub Advanced Security. Until then, don't fail the build on the upload
+      # step — the analysis still runs on every push/PR.
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
+        continue-on-error: true
