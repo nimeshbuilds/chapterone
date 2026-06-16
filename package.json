@@ -6,6 +6,33 @@
     "name": "Modulagent"
   },
   "license": "MIT",
+  "homepage": "https://github.com/npandeya/bookwriter#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/npandeya/bookwriter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/npandeya/bookwriter/issues"
+  },
+  "keywords": [
+    "book-writer",
+    "ai-book-generator",
+    "ebook",
+    "epub",
+    "audiobook",
+    "kindle",
+    "electron",
+    "desktop-app",
+    "claude-code",
+    "codex",
+    "gemini",
+    "elevenlabs",
+    "text-to-speech",
+    "writing",
+    "publishing",
+    "kids-books",
+    "macos"
+  ],
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",

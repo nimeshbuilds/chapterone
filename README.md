@@ -1,215 +1,144 @@
-# Modulagent's Book Writer ✒️
+<div align="center">
 
-A cross-platform desktop app (macOS `.dmg` + Windows installer) that writes
-**professional, bestseller-quality books on demand**. You describe the book you
-wish existed; a "#1 bestselling author in that genre" plans it, researches it,
-writes it chapter by chapter, and hands you a finished manuscript you can
-**read in the app**, **export to Kindle (EPUB) / PDF / Markdown**, or **email
-straight to your Kindle**.
+# ChapterOne
 
-It runs entirely on **your own AI subscription** by driving the CLI you already
-use — the **Claude Code CLI** or the **Codex CLI** — locally. No API keys, no
-third-party servers.
+### Your Personal Book Writer
 
----
+**A privacy-first desktop app that ghost-writes complete, professional-quality books — using your own Claude Code, Codex, or Gemini CLI subscription. No servers, no API keys, your machine.**
 
-## ✨ What it does
+[![Latest release](https://img.shields.io/github/v/release/npandeya/bookwriter?label=download&logo=apple&color=111)](https://github.com/npandeya/bookwriter/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/macOS-universal-black?logo=apple)](https://github.com/npandeya/bookwriter/releases/latest)
+[![Built with Electron](https://img.shields.io/badge/built%20with-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Tests](https://img.shields.io/badge/tests-109%20passing-brightgreen)](#-tests)
 
-- **Commission a book** — describe what you want to read. Vague is fine.
-- **Pick your engine & model** — switch between Claude Code and Codex and choose
-  the model (Sonnet/Opus/Haiku, GPT-5/Codex, or a custom id) right on the create
-  screen, before you write.
-- **Smart clarification** — if the brief is ambiguous, the author asks 2–5
-  sharp questions (with suggested answers) before writing.
-- **Agentic, multi-pass writing** — a planner designs the outline, a
-  research-grounded writer drafts each chapter, and an **editor agent** then
-  revises it to bestseller quality, with rolling continuity notes keeping the
-  whole book coherent.
-- **Research-grounded** — with web search enabled, the author looks up real
-  facts, places, names, dates and current details so the book is authentic and
-  accurate — never fabricated. The searching is done by the selected CLI's own
-  web tools (Claude WebSearch/WebFetch, Codex `--search`, Gemini Google Search).
-- **Three engines + automatic fallback chain** — Claude Code, Codex, or Gemini,
-  each on your own subscription, **each with its own model**. Build an ordered
-  chain so that if one provider's quota runs out mid-book, writing continues
-  automatically on the next.
-- **Book size** — choose Small (35–60 pages), Medium (75–125) or Large
-  (150–250); the planner sizes the chapter count and length to land in range.
-- **AI-designed art** — pick *AI-designed art* and the selected engine designs a
-  bespoke **vector cover** and **one chapter illustration each**, matched to the
-  book's theme and copyright-free. (The coding CLIs can't emit raster images, but
-  they're excellent SVG designers — output is sanitized, then **rasterized to PNG**
-  so it displays everywhere, including Kindle thumbnails.) Or choose *Stock
-  photos* (Openverse) instead.
-- **Live progress dashboard** — watch it write in real time: a streaming draft
-  preview, running word count, elapsed timer, active engine, a chapter checklist,
-  and a timestamped activity feed.
-- **Guided sign-in** — not logged in? The app launches the CLI's sign-in,
-  opens the OAuth page in your browser, and accepts any pasted code — no terminal
-  needed.
-- **Royalty-free images** — optionally illustrates the book with openly-licensed
-  / public-domain images sourced from [Openverse](https://openverse.org), with a
-  full image-credits page (no copyright headaches).
-- **Bestseller pipeline** — concept & title → full chapter outline →
-  chapter-by-chapter prose that stays coherent via a rolling continuity recap.
-- **Pause & resume** — progress is saved after every chapter. If your
-  subscription lapses, the network drops, or you hit a rate limit mid-book, the
-  book is saved exactly where it stopped. Reactivate and hit **▶ Continue** (or
-  resume any paused book from the library) to finish it.
-- **Premium built-in EPUB reader** — read your books in a distraction-free,
-  book-grade reader with a contents drawer, Page or Scroll modes, adjustable
-  type size and typeface, Light/Sepia/Night themes, a reading-progress bar, and
-  remembered position. EPUB is the canonical format.
-- **Send to Kindle** — emails the **EPUB** to your `@kindle.com` address so it
-  appears on your device, and gives you a KDP-ready EPUB to publish for others.
-- **Export to PDF & email** — one button renders a PDF and emails it to any
-  address you choose, through your own SMTP account.
-- **Download EPUB** — save the Kindle/KDP-ready `.epub` file anywhere.
-- **Subscription, not API key** — by default the app strips `ANTHROPIC_API_KEY`
-  / `OPENAI_API_KEY` from the CLI's environment so it always authenticates with
-  your subscription login and never bills an API key.
-- **Prerequisite checks** — detects whether your chosen CLI is installed and
-  authenticated, with a one-click connection test.
+[Download](#-download) · [Features](#-features) · [How it works](#-how-it-works) · [Build from source](#-build-from-source) · [Contributing](CONTRIBUTING.md)
+
+</div>
 
 ---
 
-## 🔧 Prerequisites
+ChapterOne turns a one-line idea into a finished book. You describe what you wish
+existed; a "#1 bestselling author in that genre" plans it, researches it, writes
+and edits it chapter by chapter, optionally illustrates and narrates it, and
+hands you a manuscript you can **read in the app**, **listen to as an audiobook**,
+**export to EPUB/PDF**, or **send straight to your Kindle**.
 
-You need **one** of the following installed and signed in **with your
-subscription** (Claude Pro/Max or ChatGPT/Codex):
+It runs entirely on **your own AI subscription** by driving a CLI you already
+have — **Claude Code**, **Codex**, or **Gemini** — locally. There is **no
+backend and no text API key**: your subscription login does the work, and your
+book never leaves your machine except for the research, image, and delivery
+calls you explicitly enable.
+
+## ⬇️ Download
+
+**[→ Download the latest macOS release](https://github.com/npandeya/bookwriter/releases/latest)**
+
+- **macOS** — universal `.dmg` (Apple Silicon + Intel), **signed & notarized** (no Gatekeeper warning). Double-click → drag to Applications → open.
+- **Windows** — planned for a future release. For now, [build from source](#-build-from-source).
+
+You also need one AI CLI installed and signed in — see [Requirements](#-requirements).
+
+## ✨ Features
+
+- 📖 **Writes complete books** — fiction, non-fiction, or **kids' books**, from a vague idea. A planner outlines it, a research-grounded writer drafts each chapter, and an editor pass polishes it to bestseller quality.
+- 🧒 **Kids' mode** — age bands (1–2 … 17–18) automatically drive vocabulary, length, reading level, safety, font size, and illustration density. Add custom characters named after real people.
+- 🔀 **Three engines + automatic fallback** — Claude Code, Codex, or Gemini, each on your own subscription and each with its own model. Build an ordered chain so writing continues on the next engine if one hits a quota mid-book.
+- 🔎 **Research-grounded** — uses each CLI's own web tools (Claude WebSearch/WebFetch, Codex `--search`, Gemini Google Search) to ground real facts, names, and dates. Read-only web access only — never file or shell access.
+- 🎨 **AI illustrations** — bespoke vector covers and chapter art designed by the engine (sanitized SVG → rasterized PNG), or photorealistic illustrations via **Nano Banana** (your own Gemini image key), or royalty-free [Openverse](https://openverse.org) stock photos with a full credits page.
+- 🎧 **Audiobooks (ElevenLabs)** — narrate per chapter or the **whole book**, with saved playback position. Pick from top audiobook voices, or **clone your own voice** and have it read to you. On-demand, cached, and exportable to MP3.
+- 📚 **Premium built-in EPUB reader** — distraction-free, with a contents drawer, Page/Scroll modes, adjustable type, Light/Sepia/Night themes, a progress bar, and remembered position.
+- 📨 **Export & deliver** — reflowable EPUB and PDF export, plus **Send to Kindle** (Mail hand-off with no setup, or one-click SMTP).
+- ⏯️ **Resumable & loss-proof** — progress is saved after every chapter and every narrated chapter, so a crash, cancel, or lapsed subscription always leaves a resumable draft.
+- 🔒 **Subscription, not API key** — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` are stripped from the CLI's environment so it always authenticates with your plan login.
+- 🧹 **Your data, your control** — everything is stored locally; a **Clear all my data** control wipes every artifact (books, art, audio, exports, keys) with a type-to-confirm gate.
+
+## 🧩 Requirements
+
+You need **one** of the following installed and signed in **with your own
+subscription** (the app can install and sign you in for you):
 
 | Engine | Install | Sign in |
 | --- | --- | --- |
-| **Claude Code** (default) | `npm i -g @anthropic-ai/claude-code` | run `claude` and log in with your subscription |
+| **Claude Code** | `npm i -g @anthropic-ai/claude-code` | run `claude` and log in with your Claude subscription |
 | **Codex** | install the OpenAI Codex CLI | run `codex` and log in with ChatGPT |
+| **Gemini** | install the Gemini CLI | run `gemini` and log in with your Google account |
 
-Plus **Node.js 18+** if you run from source.
+Optional, opt-in keys (stored locally, never used for text): a **Gemini API key**
+for Nano Banana illustrations, and an **ElevenLabs API key** for audiobook
+narration. Plus **Node.js 18+** to run from source.
 
----
+## 🏗️ How it works
 
-## 🚀 Run from source
+ChapterOne treats book-writing as a small multi-agent pipeline, leaning on each
+CLI's agentic abilities (web search, long context, tool use):
 
-```bash
-npm install
-npm start        # launch the app
-npm run dev      # launch with DevTools
-npm test         # run the unit/integration test suite (42 tests)
-```
+1. **Triage** — decides whether the brief is clear or needs 2–5 clarifying questions.
+2. **Planner** — designs the title, premise, style guide, and a concrete chapter outline (optionally research-grounded).
+3. **Writer** — drafts each chapter in its own call, grounded by research and the style guide, carrying only the *previous* chapter's compact continuity recap — so no single context has to hold the whole book.
+4. **Editor** — a second pass critiques and rewrites the draft to bestseller quality (toggleable).
+5. **Illustrator** — designs the cover and chapter art, or sources openly-licensed images and builds a credits page.
+6. **Narrator** — optionally turns each chapter into audio with ElevenLabs, cached per chapter so chapter-by-chapter and whole-book listening both work.
+7. **Fallback chain** — every model call runs through your engine chain, so a quota/auth/network failure transparently switches engines. Progress is saved after every chapter.
 
-## 📦 Build installers
-
-```bash
-npm run dist:mac    # → release/*.dmg  (universal: arm64 + x64)
-npm run dist:win    # → release/*.exe  (NSIS installer)
-npm run dist:all    # both
-```
-
-Output lands in `release/`. To brand the app, drop an icon at
-`build/icon.png` (1024×1024) — electron-builder generates the platform icons
-automatically. macOS distribution outside the App Store should be code-signed
-and notarized.
-
----
-
-## 🔎 Research & 🖼️ images
-
-Both are toggles on the create screen (and Settings):
-
-- **Research real facts & sources** — enables the CLI's web tools
-  (`WebSearch`/`WebFetch` for Claude, `--search` for Codex) so the author
-  verifies real-world detail. Only read-only web tools are allowed — the app
-  never grants file-editing or shell access to the model.
-- **Add royalty-free images** — the author may insert image markers, which the
-  app resolves against Openverse filtered to permissive licenses
-  (CC0 → Public Domain → CC-BY → CC-BY-SA), downloads, embeds, and credits.
-  If a query can't be resolved, the caption is simply kept as text — nothing
-  breaks.
-
----
-
-## 📨 Send to Kindle setup
-
-Amazon delivers personal documents by email. In **Settings → Send to Kindle**:
-
-1. **Your Kindle address** — from *Amazon → Manage Your Content & Devices →
-   Preferences → Personal Document Settings* (looks like `yourname@kindle.com`).
-2. **Approved sender** — add your sending email to Amazon's *Approved Personal
-   Document E-mail List*, or Amazon will reject the message.
-3. **SMTP credentials** — e.g. Gmail `smtp.gmail.com:587` with an
-   [App Password](https://support.google.com/accounts/answer/185833). Stored
-   locally; used only to send from your own account.
-
-Click **Verify SMTP** to test, then **📨 Send to Kindle** from any book.
-
----
-
-## 🏗️ Architecture
+### Architecture
 
 ```
 src/
   main/                     Electron main process (Node)
-    main.js                 app lifecycle, window, menu
-    preload.js              safe contextBridge API → renderer (window.api)
-    ipc.js                  IPC handlers (settings, generate, resume, export, kindle)
-    store.js                JSON persistence (settings + book library + images)
-    cli/
-      spawn.js              child-process runner (stdin, abort, timeout, env scrub)
-      claudeAdapter.js      drives `claude -p` (subscription auth + web tools)
-      codexAdapter.js       drives `codex exec` (subscription auth + --search)
-      models.js             per-provider model lists + API-key scrub config
-      index.js              engine factory + prerequisite checks
-    book/
-      prompts.js            the "bestselling author" prompt library
-      generator.js          clarify → outline → chapters pipeline + resume()
-      errors.js             failure classification (subscription/auth/rate/net)
-      images.js             Openverse image sourcing + marker resolution
-      json.js               robust JSON extraction from model output
-    export/
-      html.js               shared book HTML + reader/print CSS + image credits
-      epub.js               hand-rolled EPUB3 writer (images + credits page)
-      pdf.js                PDF via Electron's print engine
-      markdown.js           full-manuscript Markdown
-    kindle/
-      sendToKindle.js       SMTP delivery + verification (nodemailer)
-  renderer/                 UI (vanilla JS, no build step)
-    index.html, styles.css, app.js
+    main.js                 app lifecycle, window, menu, permissions
+    preload.js              the only renderer↔main bridge (window.api)
+    ipc.js                  all IPC handlers (settings, generate, audio, export, kindle)
+    store.js                JSON persistence (settings + library + images/audio/exports)
+    cli/                    CLI adapters (claude/codex/gemini), chain engine, auth, spawn
+    book/                   prompts, generator pipeline, typography, images, AI art
+    export/                 EPUB3, PDF, Markdown, SVG→PNG rasterizer
+    kindle/                 Send-to-Kindle (Mail hand-off + SMTP)
+  renderer/                 UI — vanilla HTML/CSS/JS, no build step
 test/                       node:test suite for the pure-logic modules
 ```
 
-### The agentic writing pipeline
-Modulagent treats book-writing as a small multi-agent workflow, leaning on each
-CLI's agentic abilities (web search, long-context reasoning, tool use):
-
-1. **Triage** — decides if the brief is clear or needs clarifying questions.
-2. **Planner** — designs the title, premise, style guide and a concrete chapter
-   outline (optionally research-grounded).
-3. **Writer** — drafts each chapter in its own call, grounded by web research and
-   the book's style guide, and only the *previous chapter's* compact continuity
-   recap (so no single context must hold the whole book).
-4. **Editor** — a second pass critiques and rewrites the draft to bestseller
-   quality (toggleable).
-5. **Illustrator** — sources high-resolution, openly-licensed images for any
-   image markers and builds a credits page.
-6. **Fallback chain** — every model call runs through the provider chain, so a
-   quota/rate/auth/network failure transparently switches engines and keeps
-   going. Progress is saved after every chapter, so a crash, cancel, or lapsed
-   subscription always leaves a resumable draft.
+There is **no native dependency and no renderer build step** — the UI is plain
+HTML/CSS/JS, and persistence, EPUB, and the rest are hand-rolled to keep
+packaging trivial. See [`CLAUDE.md`](CLAUDE.md) for a deeper architecture guide
+and contributor gotchas.
 
 ### Privacy
-Everything runs locally through your CLI on your subscription. Outbound network
-happens only for: research web search (performed by the CLI), royalty-free image
-lookups (Openverse), and the Send-to-Kindle email you trigger explicitly.
 
----
+Everything runs locally through your CLI on your subscription. Outbound network
+happens only for: research web search (performed by the CLI), opt-in image
+generation/lookups, opt-in audiobook narration, and the Send-to-Kindle email you
+trigger explicitly. See [`SECURITY.md`](SECURITY.md).
+
+## 🚀 Build from source
+
+```bash
+npm install
+npm start            # launch the app
+npm run dev          # launch with DevTools
+npm test             # run the test suite
+npm run dist:mac     # build a universal .dmg → release/
+```
+
+To sign and notarize a macOS build for distribution, see [`SIGNING.md`](SIGNING.md).
 
 ## 🧪 Tests
 
-`npm test` runs the Node test suite (42 tests) covering JSON extraction, the
-prompt library, the generation **and resume** pipeline (scripted fake engine),
-error classification, image marker parsing/licensing, model config, the
-subprocess runner (including env scrubbing), and EPUB/HTML/Markdown export. The
-Electron-only modules are exercised by a headless boot smoke test.
+`npm test` runs the Node test suite (109 tests) covering the prompt library,
+JSON extraction, the generation **and resume** pipeline (scripted fake engine),
+error classification, image marker parsing/licensing, typography, the ElevenLabs
+and Nano Banana clients, the store (including the data-wipe), model config, and
+EPUB/HTML/Markdown export. Electron-only modules are exercised by a headless
+boot smoke test.
 
-## License
+## 🤝 Contributing
 
-MIT
+Contributions are welcome! Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+our [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Good first steps: open an issue to
+discuss an idea, run `npm test`, and keep changes dependency-light.
+
+## 📄 License
+
+[MIT](LICENSE) © Modulagent. ChapterOne drives third-party CLIs and APIs
+(Claude Code, Codex, Gemini, ElevenLabs, Openverse) under your own accounts and
+their respective terms.

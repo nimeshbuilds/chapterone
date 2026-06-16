@@ -1,6 +1,6 @@
 # CLAUDE.md — Working in this repo
 
-Guidance for any Claude session contributing to **Modulagent's Book Writer**.
+Guidance for any Claude session contributing to **ChapterOne** (the app; maker: Modulagent).
 Read this first; it captures the architecture, conventions, and the non-obvious
 gotchas that will save you time.
 
