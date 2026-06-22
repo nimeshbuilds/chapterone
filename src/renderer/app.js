@@ -330,16 +330,30 @@ function chainBuilder() {
   chain.forEach((pid, idx) => {
     const isPrimary = idx === 0;
     const swap = (a, i, j) => { const c = a.slice(); [c[i], c[j]] = [c[j], c[i]]; return c; };
+    const geminiTag = pid === 'gemini'
+      ? h('span', { class: 'chain-tag ' + (hasImageKey() ? 'apikey' : 'warn') }, hasImageKey() ? 'API key' : 'needs API key')
+      : null;
     const row = h('div', { class: `chain-step ${isPrimary ? 'primary' : ''}` },
       h('span', { class: 'chain-order' }, String(idx + 1)),
-      h('div', { class: 'chain-name' }, providerLabel(pid), isPrimary ? h('span', { class: 'chain-tag' }, 'primary') : null),
+      h('div', { class: 'chain-name' }, providerLabel(pid), isPrimary ? h('span', { class: 'chain-tag' }, 'primary') : null, geminiTag),
       modelOptionsFor(pid),
-      h('button', { class: 'icon-btn', title: 'Sign in', onClick: () => openAuthModal(pid) }, '🔑'),
+      h('button', { class: 'icon-btn', title: pid === 'gemini' ? 'Gemini API key' : 'Sign in', onClick: () => openAuthModal(pid) }, '🔑'),
       idx > 0 ? h('button', { class: 'icon-btn', title: 'Move up', onClick: () => setChain(swap(chain, idx - 1, idx)) }, '↑') : null,
       idx < chain.length - 1 ? h('button', { class: 'icon-btn', title: 'Move down', onClick: () => setChain(swap(chain, idx, idx + 1)) }, '↓') : null,
       only ? null : h('button', { class: 'icon-btn danger', title: 'Remove from chain', onClick: () => setChain(chain.filter((x) => x !== pid)) }, '✕'));
     wrap.append(row);
   });
+
+  // Gemini has no subscription login (Google retired it) — make that explicit.
+  if (chain.includes('gemini')) {
+    const set = hasImageKey();
+    wrap.append(set
+      ? h('div', { class: 'chain-note', style: 'margin-top:10px' },
+          '🔑 Gemini runs on your Gemini API key (per-token billing) — it does not use a subscription.')
+      : h('div', { class: 'chain-note warn', style: 'margin-top:10px' },
+          '⚠️ Gemini has no subscription login — it needs a Gemini API key. ',
+          h('button', { class: 'btn btn-gold btn-sm', style: 'margin-left:6px', onClick: () => openAuthModal('gemini') }, '🔑 Add Gemini API key')));
+  }
 
   const addable = ids.filter((id) => !chain.includes(id));
   if (addable.length) {
@@ -393,8 +407,14 @@ function engineBar() {
     const found = !!(state.prereq && state.prereq[p.id] && state.prereq[p.id].found);
     const a = authOf(p.id);
     const signedIn = !!(a && a.signedIn);
+    let title;
+    if (p.id === 'gemini') {
+      // Gemini has no subscription login — it's API-key only.
+      title = hasImageKey() ? `${p.label}: using your Gemini API key` : `${p.label}: needs a Gemini API key (no subscription)`;
+    } else {
+      title = signedIn ? `${p.label}: signed in` : (found ? `${p.label}: installed, not signed in` : `${p.label}: not installed`);
+    }
     const cls = [provider === p.id ? 'active' : '', signedIn ? 'found' : (found ? 'warn' : '')].filter(Boolean).join(' ');
-    const title = signedIn ? `${p.label}: signed in` : (found ? `${p.label}: installed, not signed in` : `${p.label}: not installed`);
     seg.append(h('button', { class: cls, title, onClick: () => switchProvider(p.id) }, h('span', { class: 'sdot' }), p.label));
   }
   const bar = h('div', { class: 'engine-bar card', id: 'engine-bar' },
