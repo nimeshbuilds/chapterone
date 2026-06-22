@@ -25,6 +25,11 @@ test('queryCandidates shrinks a too-specific query to recoverable fallbacks', ()
   assert.strictEqual(new Set(c).size, c.length);              // de-duped
   // punctuation is stripped, never produces empty candidates
   assert.ok(queryCandidates('"A glowing, blue cloud!"').every((q) => q.trim().length));
+  // tries both prefixes (drop trailing) and suffixes (drop leading junk words)
+  const c2 = queryCandidates('a small dark backyard garden shed');
+  assert.ok(c2.includes('a small dark backyard garden'));   // prefix
+  assert.ok(c2.includes('garden shed'));                     // suffix / trailing pair
+  assert.ok(c2.includes('backyard garden shed'));            // dropped leading words
 });
 
 test('parses image-search markers', () => {

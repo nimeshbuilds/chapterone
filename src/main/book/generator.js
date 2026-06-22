@@ -20,6 +20,7 @@ const {
 } = require('./prompts');
 const { bandOf, isKidsSpec, imagesForUnitIndex } = require('./ageBands');
 const { generateImage } = require('./nanoBanana');
+const { resolveChapterImages } = require('./images');
 const { tidyProse, tidyText } = require('./typography');
 const { extractJson } = require('./json');
 const { sanitizeSvg } = require('./aiArt');
@@ -79,23 +80,37 @@ class BookGenerator {
    * instruction (Gemini, for one, tends to skip it). Best-effort and non-fatal.
    */
   async _ensureStockImage(book, chapter, planned, i, emit, signal) {
-    if (/!\[[^\]]*\]\(\s*image-search:/i.test(chapter.content)) return; // model already added one
-    emit('art:start', {
-      index: i, number: planned.number, title: planned.title, method: 'stock',
-      message: `Choosing a photo subject for Chapter ${planned.number}…`,
-    });
-    try {
-      const raw = await this.engine.complete(stockQueryPrompt(book, planned, chapter.content), {
-        system: 'You suggest stock-photo search queries. Reply with ONLY the query (3 to 7 concrete, photographable words) or the single word NONE. No quotes, no markdown, no explanation.',
-        timeoutMs: 120000, signal,
+    // 1) Make sure the chapter has at least one image-search marker. If the writer
+    //    embedded one, keep it; otherwise derive a concrete query and inject one.
+    if (!/!\[[^\]]*\]\(\s*image-search:/i.test(chapter.content)) {
+      emit('art:start', {
+        index: i, number: planned.number, title: planned.title, method: 'stock',
+        message: `Choosing a photo subject for Chapter ${planned.number}…`,
       });
-      const query = String(raw || '').trim().split('\n')[0].replace(/^[\s"'`*#>_-]+|[\s"'`*]+$/g, '').slice(0, 80);
-      if (query && !/^none$/i.test(query)) {
-        // Insert the marker only; the real photo is fetched (and counted) later
-        // in resolveImagesForBook, which streams the live "images used" count.
-        chapter.content = insertImageMarker(chapter.content, planned.title, query);
+      try {
+        const raw = await this.engine.complete(stockQueryPrompt(book, planned, chapter.content), {
+          system: 'You suggest stock-photo search queries. Reply with ONLY the query (3 to 7 concrete, photographable words) or the single word NONE. No quotes, no markdown, no explanation.',
+          timeoutMs: 120000, signal,
+        });
+        const query = String(raw || '').trim().split('\n')[0].replace(/^[\s"'`*#>_-]+|[\s"'`*]+$/g, '').slice(0, 80);
+        if (query && !/^none$/i.test(query)) {
+          chapter.content = insertImageMarker(chapter.content, planned.title, query);
+        }
+      } catch (_) { /* a chapter without a photo is fine */ }
+    }
+    // 2) Resolve the photo NOW (inline), so a real image appears and the live
+    //    counter advances per chapter instead of all at once at the very end.
+    const imagesDir = this.imageConfig && this.imageConfig.imagesDir;
+    if (!imagesDir) return;
+    try {
+      const added = await resolveChapterImages(book, chapter, {
+        imagesDir, signal, onProgress: (e) => emit(e.phase, e),
+      });
+      if (added > 0) {
+        this._imagesUsed = (this._imagesUsed || 0) + added;
+        emit('image:added', { n: this._imagesUsed, total: book.outline.length, number: planned.number });
       }
-    } catch (_) { /* a chapter without a photo is fine */ }
+    } catch (_) { /* non-fatal: keep writing even if image sourcing fails */ }
   }
 
   /** Persist a generated image buffer under <imagesDir>/<bookId>/<name>.<ext>. */
@@ -310,6 +325,7 @@ class BookGenerator {
     const minWords = band ? Math.max(8, Math.round(band.wordsPerUnit * 0.5)) : 200;
     const imageMode = imageModeOf(spec);
     const flags = { research: !!spec.research, illustrate: imageMode === 'stock', polish: spec.polish !== false };
+    this._imagesUsed = (book.images || []).length; // resume continues the live count
 
     for (let i = startIndex; i < book.outline.length; i++) {
       if (signal && signal.aborted) {

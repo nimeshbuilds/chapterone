@@ -112,7 +112,10 @@ function mimeForExt(ext) {
 function httpGet(url, { json = false, maxBytes = 9_000_000, redirects = 4, timeoutMs = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
-    const req = lib.get(url, { headers: { 'User-Agent': 'ChapterOne/1.0', Accept: json ? 'application/json' : '*/*' } }, (res) => {
+    // Wikimedia (a major Openverse source) 429s generic/bot User-Agents; its
+    // policy wants "<client>/<version> (<contact>)". This compliant UA gets 200.
+    const ua = 'ChapterOne/1.0 (https://github.com/npandeya/bookwriter; book illustration sourcing)';
+    const req = lib.get(url, { headers: { 'User-Agent': ua, Accept: json ? 'application/json' : '*/*' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();
@@ -168,53 +171,70 @@ function queryCandidates(query) {
     .filter(Boolean);
   if (!words.length) return [String(query || '').trim()].filter(Boolean);
   const cands = [];
-  for (let n = words.length; n >= 1; n--) cands.push(words.slice(0, n).join(' '));
-  if (words.length >= 2) cands.push(words.slice(-2).join(' '));
-  const longest = words.slice().sort((a, b) => b.length - a.length)[0];
-  if (longest) cands.push(longest);
-  return [...new Set(cands)];
+  cands.push(words.join(' '));                                   // full phrase
+  for (let n = words.length - 1; n >= 1; n--) cands.push(words.slice(0, n).join(' ')); // drop trailing words
+  for (let n = 1; n < words.length; n++) cands.push(words.slice(n).join(' '));         // drop leading words (junk adjectives/articles)
+  if (words.length >= 2) cands.push(words.slice(-2).join(' '));  // trailing noun pair
+  // single most content-bearing words (longest first — proxy for the key noun)
+  for (const w of words.slice().sort((a, b) => b.length - a.length).slice(0, 2)) cands.push(w);
+  return [...new Set(cands)].filter(Boolean);
 }
 
-async function searchOpenverse(query, opts = {}) {
+function mapResult(r, query) {
+  return {
+    title: r.title || query,
+    creator: r.creator || 'Unknown',
+    url: r.url,
+    width: r.width || 0,
+    height: r.height || 0,
+    license: r.license,
+    licenseUrl: r.license_url || '',
+    source: r.source || 'openverse',
+    landing: r.foreign_landing_url || '',
+    attribution: r.attribution || `${r.title || query} by ${r.creator || 'Unknown'} (${(r.license || '').toUpperCase()})`,
+  };
+}
+
+/**
+ * Ranked list of openly-licensed candidate images for a query, best first. Tries
+ * the shrink-to-fit query candidates in turn and returns the first that yields
+ * any print-grade results. Returning a LIST (not just the best) lets the caller
+ * fall through to the next image when a host rejects the download (e.g. Wikimedia
+ * 429s a generic User-Agent), so a transient host failure never loses the photo.
+ */
+async function searchOpenverseRanked(query, { licenses = 'cc0,pdm,by,by-sa' } = {}) {
   for (const cand of queryCandidates(query)) {
     try {
-      const hit = await searchOpenverseOnce(cand, opts);
-      if (hit) return hit;
+      const url =
+        'https://api.openverse.org/v1/images/?' +
+        new URLSearchParams({
+          q: cand,
+          license: licenses,
+          size: 'large',
+          extension: 'jpg,png',
+          page_size: '20',
+          mature: 'false',
+        }).toString();
+      const data = await httpGet(url, { json: true });
+      const results = (data && data.results) || [];
+      const quality = results.filter(meetsQualityBar);
+      if (!quality.length) continue;
+      const terms = queryTerms(cand);
+      const ranked = quality
+        .filter((r) => r && r.url && r.license)
+        .map((r, i) => ({ r, s: scoreResult(r, terms, i, quality.length) }))
+        .sort((a, b) => b.s - a.s)
+        .map(({ r }) => mapResult(r, cand));
+      if (ranked.length) return ranked;
     } catch (_) { /* try the next, shorter candidate */ }
   }
-  return null;
+  return [];
 }
 
-async function searchOpenverseOnce(query, { licenses = 'cc0,pdm,by,by-sa' } = {}) {
-  const url =
-    'https://api.openverse.org/v1/images/?' +
-    new URLSearchParams({
-      q: query,
-      license: licenses,
-      size: 'large', // bias the provider toward big images
-      extension: 'jpg,png', // photographic formats, skip svg/gif clip-art
-      page_size: '20', // gather a deep candidate pool to choose from
-      mature: 'false',
-    }).toString();
-  const data = await httpGet(url, { json: true });
-  const results = (data && data.results) || [];
-  // Keep only print-grade images; if the floor leaves nothing, don't settle for
-  // a low-quality picture — skip it so the book never looks cheap.
-  const quality = results.filter(meetsQualityBar);
-  const best = pickBestResult(quality, query);
-  if (!best) return null;
-  return {
-    title: best.title || query,
-    creator: best.creator || 'Unknown',
-    url: best.url,
-    width: best.width || 0,
-    height: best.height || 0,
-    license: best.license,
-    licenseUrl: best.license_url || '',
-    source: best.source || 'openverse',
-    landing: best.foreign_landing_url || '',
-    attribution: best.attribution || `${best.title || query} by ${best.creator || 'Unknown'} (${(best.license || '').toUpperCase()})`,
-  };
+// Back-compat single-best helper.
+async function searchOpenverse(query, opts = {}) {
+  const ranked = await searchOpenverseRanked(query, opts);
+  return ranked[0] || null;
 }
 
 /**
@@ -225,29 +245,34 @@ async function searchOpenverseOnce(query, { licenses = 'cc0,pdm,by,by-sa' } = {}
  *
  * @returns {Promise<object>} the same book, mutated
  */
-async function resolveImagesForBook(book, { imagesDir, onProgress = () => {}, signal } = {}) {
+/**
+ * Resolve the image markers in ONE chapter: search Openverse, download, save
+ * under imagesDir/<bookId>/, rewrite each marker to a `bwimg:<id>` ref, and push
+ * attribution to `book.images`. Emits `image:search` per query. Returns the
+ * number of photos successfully added. Failures degrade gracefully (the marker
+ * becomes plain italic caption text). This is what the generator calls per
+ * chapter so a photo (and the live counter) lands as the book is written.
+ */
+async function resolveChapterImages(book, chapter, { imagesDir, onProgress = () => {}, signal } = {}) {
   const dir = path.join(imagesDir, book.id);
   fs.mkdirSync(dir, { recursive: true });
   book.images = book.images || [];
   const cache = new Map(book.images.map((im) => [im.query, im]));
   let counter = book.images.length;
+  let added = 0;
 
-  // Total markers across the book, so the UI can show "used / planned".
-  let total = 0;
-  for (const ch of book.chapters || []) total += parseImageMarkers(ch.content).length;
-  let used = 0;
-  onProgress({ phase: 'image:added', n: 0, total });
-
-  for (const chapter of book.chapters || []) {
-    const markers = parseImageMarkers(chapter.content);
-    for (const mk of markers) {
-      if (signal && signal.aborted) return book;
-      let img = cache.get(mk.query);
-      if (!img) {
-        onProgress({ phase: 'image:search', query: mk.query });
-        try {
-          const meta = await searchOpenverse(mk.query);
-          if (meta) {
+  for (const mk of parseImageMarkers(chapter.content)) {
+    if (signal && signal.aborted) break;
+    let img = cache.get(mk.query);
+    if (!img) {
+      onProgress({ phase: 'image:search', query: mk.query });
+      try {
+        const candidates = await searchOpenverseRanked(mk.query);
+        // Try the best images in turn; skip any that won't download (a 429/403
+        // or dead link) so one flaky host doesn't cost us the photo.
+        for (const meta of candidates.slice(0, 6)) {
+          if (signal && signal.aborted) break;
+          try {
             const dl = await httpGet(meta.url, { maxBytes: 18_000_000 });
             const ext = extFromContentType(dl.contentType, meta.url);
             const id = `img${++counter}`;
@@ -263,26 +288,49 @@ async function resolveImagesForBook(book, { imagesDir, onProgress = () => {}, si
             };
             book.images.push(img);
             cache.set(mk.query, img);
-          }
-        } catch (_) {
-          img = null; // network/provider failure → degrade gracefully
+            break;
+          } catch (_) { /* download failed → try the next candidate image */ }
         }
-      }
-      if (img) {
-        chapter.content = chapter.content.replace(
-          mk.full,
-          `![${mk.caption || img.caption || ''}](bwimg:${img.id})`
-        );
-        used += 1;
-        onProgress({ phase: 'image:added', n: used, total, query: mk.query });
-      } else {
-        // Drop the marker, keep the caption as plain emphasised text.
-        chapter.content = chapter.content.replace(
-          mk.full,
-          mk.caption ? `*${mk.caption}*` : ''
-        );
+      } catch (_) {
+        img = null; // search failure → degrade gracefully
       }
     }
+    if (img) {
+      chapter.content = chapter.content.replace(
+        mk.full,
+        `![${mk.caption || img.caption || ''}](bwimg:${img.id})`
+      );
+      added += 1;
+    } else {
+      // Drop the marker, keep the caption as plain emphasised text.
+      chapter.content = chapter.content.replace(
+        mk.full,
+        mk.caption ? `*${mk.caption}*` : ''
+      );
+    }
+  }
+  return added;
+}
+
+/**
+ * End-of-book safety net: resolve any image markers still unresolved across the
+ * whole book (e.g. a resumed book, or markers the writer embedded that weren't
+ * resolved inline). When everything was already resolved during writing there is
+ * nothing left, so this returns immediately WITHOUT emitting — it must never
+ * reset the live counter the generator already advanced.
+ */
+async function resolveImagesForBook(book, { imagesDir, onProgress = () => {}, signal } = {}) {
+  book.images = book.images || [];
+  let total = 0;
+  for (const ch of book.chapters || []) total += parseImageMarkers(ch.content).length;
+  if (total === 0) return book; // already resolved inline → no-op, don't touch the UI
+
+  let used = 0;
+  onProgress({ phase: 'image:added', n: 0, total });
+  for (const chapter of book.chapters || []) {
+    if (signal && signal.aborted) return book;
+    const added = await resolveChapterImages(book, chapter, { imagesDir, onProgress, signal });
+    if (added > 0) { used += added; onProgress({ phase: 'image:added', n: used, total }); }
   }
   return book;
 }
@@ -297,6 +345,8 @@ module.exports = {
   extFromContentType,
   mimeForExt,
   searchOpenverse,
+  searchOpenverseRanked,
+  resolveChapterImages,
   resolveImagesForBook,
   LICENSE_PRIORITY,
   MIN_WIDTH,
