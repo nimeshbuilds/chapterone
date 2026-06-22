@@ -291,14 +291,13 @@ function researchInstruction() {
 /** Instruction block letting the model request royalty-free illustrations. */
 function imageInstruction() {
   return [
-    `ILLUSTRATIONS (premium quality only): Where a single, striking image would genuinely elevate the reader's experience, you may insert at most ONE or TWO image markers, each on its own line, in EXACTLY this format:`,
+    `ILLUSTRATIONS: This book is illustrated with royalty-free photography. Include ONE well-chosen image in this chapter (occasionally a second only if the chapter clearly benefits), each on its own line, in EXACTLY this format:`,
     `![A polished, specific caption](image-search: 3-7 concrete visual search terms)`,
-    `- Quality bar: this is a book people PAY for. Only suggest an image when a beautiful, professional, high-resolution stock photo almost certainly exists for it.`,
-    `- Use CONCRETE, PHOTOGRAPHABLE subjects: real places, landscapes, architecture, nature, objects, food, textures, period detail. Avoid abstract ideas, charts, or anything that yields generic clip-art.`,
-    `- Make the search terms precise and visual so the result is tightly relevant to the surrounding text.`,
+    `- Use CONCRETE, PHOTOGRAPHABLE subjects: real places, landscapes, cityscapes, architecture, nature, animals, objects, food, textures, period detail. Avoid abstract ideas, charts, diagrams, or anything that yields generic clip-art.`,
+    `- Pick the most visually evocative moment or setting in the chapter, and make the search terms precise and visual so the result is tightly relevant to the surrounding text.`,
     `- Write captions that read like a professionally published book's captions.`,
     `- Do NOT request copyrighted characters, brand logos, memes, or identifiable private individuals.`,
-    `- Be sparing — a few perfect images beat many mediocre ones. Many chapters need none.`,
+    `- A high-resolution stock photo should plausibly exist for the subject. Only if a chapter is wholly abstract with no photographable subject at all is it acceptable to skip the image there.`,
   ].join('\n');
 }
 

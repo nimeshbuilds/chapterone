@@ -417,12 +417,15 @@ function renderEngineBarInPlace() {
   if (old) old.replaceWith(engineBar());
 }
 async function switchProvider(p) {
-  // Primary becomes p, and is guaranteed first in the chain.
-  const chain = new Set(currentChain());
-  chain.add(p);
-  const ids = (state.models.providers || []).map((x) => x.id);
-  const ordered = [p, ...ids.filter((id) => id !== p && chain.has(id))];
-  await updateSettings({ provider: p, chain: ordered });
+  // Make p the primary engine. Switching engines DROPS the previous primary, so
+  // you can stop using Claude (or any engine) entirely just by picking another —
+  // while keeping any *other* fallbacks you explicitly added. Add fallbacks back
+  // anytime from the chain builder.
+  const s = state.settings;
+  const oldPrimary = s.provider || 'claude';
+  const existing = Array.isArray(s.chain) ? s.chain : [];
+  const fallbacks = existing.filter((id) => id !== oldPrimary && id !== p);
+  await updateSettings({ provider: p, chain: [p, ...fallbacks] });
   await refreshPrereq();
   renderEngineBarInPlace();
 }
