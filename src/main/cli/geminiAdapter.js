@@ -1,89 +1,115 @@
 'use strict';
 
-const { run, probeVersion, enforceMinWords } = require('./spawn');
+const https = require('https');
+const { enforceMinWords } = require('./spawn');
 
-const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'; // newest GA Flash: powerful + cheap
+const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest'; // alias → newest Flash the key can access
+const HOST = 'generativelanguage.googleapis.com';
 
 /**
- * Adapter for Google's Gemini CLI running non-interactively.
+ * Adapter for Google's Gemini, talking to the **Gemini REST API directly** with
+ * a Gemini API key.
  *
- * Google retired the Gemini CLI's free "Code Assist for individuals" OAuth
- * login, so this engine authenticates with a **Gemini API key** (from
- * aistudio.google.com/apikey). We inject GEMINI_API_KEY into the child env and
- * never strip it. Billing is per-token, so the model defaults to a cheap Flash.
- *
- * Headless usage: `gemini -p "<prompt>"` runs once and prints the response.
+ * Why not the Gemini CLI? Google retired the CLI's free "Code Assist for
+ * individuals" OAuth login, and the CLI now refuses to run even with
+ * GEMINI_API_KEY set (it still forces the dead OAuth and throws
+ * IneligibleTierError). So we bypass the CLI entirely and call
+ * generativelanguage.googleapis.com ourselves — the same approach used for
+ * Nano Banana images. Billing is per-token, so the model defaults to a cheap
+ * Flash, and we use the "-latest" aliases so the model always resolves to the
+ * newest one the key is entitled to.
  */
 class GeminiAdapter {
   constructor(config = {}) {
     this.id = 'gemini';
-    this.label = 'Gemini CLI';
-    this.command = config.command || 'gemini';
+    this.label = 'Gemini API';
     this.model = config.model || DEFAULT_GEMINI_MODEL;
-    this.extraArgs = config.extraArgs || [];
     this.apiKey = (config.apiKey || '').trim();
   }
 
-  /** Inject the API key + force the Gemini API (not Vertex) for the child. */
-  env() {
-    return this.apiKey
-      ? { GEMINI_API_KEY: this.apiKey, GOOGLE_GENAI_USE_VERTEXAI: 'false' }
-      : {};
-  }
-
+  /** No CLI to install — "found" means an API key is present. */
   async detect() {
-    return probeVersion(this.command, ['--version']);
+    return this.apiKey ? { found: true, version: 'API key' } : { found: false };
   }
 
   async checkAuth() {
     if (!this.apiKey) {
-      return { ok: false, detail: 'Add a Gemini API key (aistudio.google.com/apikey) in Settings — Google retired the Gemini CLI individual login.' };
+      return { ok: false, detail: 'Add a Gemini API key (aistudio.google.com/apikey) in Settings.' };
     }
     try {
-      const text = await this.complete('Reply with exactly the word: READY', {
-        system: 'You are a connectivity probe. Output only what is requested.',
-        timeoutMs: 90000,
-      });
-      const ok = text.trim().length > 0; // a successful, non-empty completion = authenticated
-      return { ok, detail: ok ? 'Authenticated (Gemini API key)' : 'The CLI returned no output.' };
+      const text = await this.complete('Reply with exactly the word: READY', { timeoutMs: 60000 });
+      return { ok: text.trim().length > 0, detail: text.trim().length ? 'Connected (Gemini API key)' : 'The API returned no text.' };
     } catch (err) {
       return { ok: false, detail: err.message };
     }
   }
 
-  buildArgs(prompt, opts = {}) {
-    const args = [];
-    if (this.model) args.push('-m', this.model);
-    if (this.extraArgs.length) args.push(...this.extraArgs);
-    const full = opts.system ? `${opts.system}\n\n${prompt}` : prompt;
-    args.push('-p', full);
-    return args;
-  }
-
   async complete(prompt, opts = {}) {
-    const args = this.buildArgs(prompt, opts);
-    const { code, stdout, stderr } = await run(this.command, args, {
-      env: this.env(),
-      timeoutMs: opts.timeoutMs || 0,
-      signal: opts.signal,
-      onStdout: opts.onStdout,
-    });
-    if (code !== 0 && !stdout.trim()) {
-      throw new Error(`Gemini CLI exited with code ${code}: ${stderr.trim() || 'no output'}`);
-    }
-    const out = this.extractFinal(stdout).trim();
-    enforceMinWords(out, opts);
+    if (!this.apiKey) throw new Error('No Gemini API key set. Add one in Settings.');
+    const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }] };
+    if (opts.system) body.systemInstruction = { parts: [{ text: opts.system }] };
+
+    const out = (await this._stream(body, opts)).trim();
+    enforceMinWords(out, opts); // throws on too-short → lets the chain fall back
     return out;
   }
 
-  extractFinal(raw) {
-    if (!raw) return '';
-    // Drop common Gemini CLI status lines (e.g. cached-credential notices).
-    return raw
-      .split('\n')
-      .filter((l) => !/^(Loaded cached credentials|Data collection|MCP STDERR|\[dotenv)/i.test(l.trim()))
-      .join('\n');
+  /** POST streamGenerateContent (SSE) and accumulate the text, emitting deltas. */
+  _stream(body, opts = {}) {
+    const path = `/v1beta/models/${encodeURIComponent(this.model)}:streamGenerateContent?alt=sse`;
+    const payload = Buffer.from(JSON.stringify(body));
+    return new Promise((resolve, reject) => {
+      const req = https.request({
+        host: HOST, path, method: 'POST',
+        headers: { 'x-goog-api-key': this.apiKey, 'Content-Type': 'application/json', 'Content-Length': payload.length },
+      }, (res) => {
+        if (res.statusCode !== 200) {
+          let errBody = '';
+          res.on('data', (c) => { errBody += c; });
+          res.on('end', () => reject(new Error(describeError(res.statusCode, errBody, this.model))));
+          return;
+        }
+        let buf = '';
+        let full = '';
+        res.on('data', (chunk) => {
+          buf += chunk.toString('utf8');
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (!data || data === '[DONE]') continue;
+            try {
+              const j = JSON.parse(data);
+              const parts = ((((j.candidates || [])[0] || {}).content) || {}).parts || [];
+              const t = parts.map((p) => p.text || '').join('');
+              if (t) { full += t; if (opts.onStdout) opts.onStdout(t); }
+            } catch (_) { /* ignore keep-alive / partial lines */ }
+          }
+        });
+        res.on('end', () => resolve(full));
+      });
+      req.on('error', reject);
+      if (opts.timeoutMs) req.setTimeout(opts.timeoutMs, () => req.destroy(new Error('Gemini request timed out')));
+      if (opts.signal) {
+        if (opts.signal.aborted) req.destroy(new Error('Aborted'));
+        else opts.signal.addEventListener('abort', () => req.destroy(new Error('Aborted')), { once: true });
+      }
+      req.end(payload);
+    });
   }
 }
 
-module.exports = { GeminiAdapter };
+/** Turn an HTTP error from the Gemini API into a clear, actionable message. */
+function describeError(status, rawBody, model) {
+  let msg = '';
+  try { msg = (JSON.parse(rawBody).error || {}).message || ''; } catch (_) { msg = (rawBody || '').slice(0, 200); }
+  if (status === 400 && /API[_ ]?key not valid|API_KEY_INVALID/i.test(msg)) return 'Gemini API key is invalid — check it in Settings.';
+  if (status === 400 && /not found|not supported|is not found for API version/i.test(msg)) return `The model "${model}" isn't available on this Gemini API key — pick another Gemini model in Settings.`;
+  if (status === 401 || status === 403) return 'Gemini API key was rejected (401/403) — check the key in Settings.';
+  if (status === 429) return 'Gemini API rate limit / quota exceeded — wait a moment, or check your plan.';
+  return `Gemini API error (HTTP ${status})${msg ? ': ' + msg : ''}`;
+}
+
+module.exports = { GeminiAdapter, DEFAULT_GEMINI_MODEL, describeError };

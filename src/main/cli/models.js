@@ -26,14 +26,15 @@ const CODEX_MODELS = [
   { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini — fastest' },
 ];
 
-// Gemini runs via a Gemini API key (Google retired the CLI's individual login),
-// so billing is per-token. Default to the newest GA Flash (3.5 Flash) — powerful
-// and cheap. No "best on plan" option because there is no plan; pick a model.
+// Gemini runs via the Gemini REST API with an API key (per-token billing). The
+// "-latest" aliases always resolve to the newest model the key is entitled to,
+// so they keep working as Google ships new versions without us hardcoding IDs
+// the key may not have access to. Flash is the cheap default.
 const GEMINI_MODELS = [
-  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — newest, best value (recommended)' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — cheapest' },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — highest quality (preview)' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — prior gen (stable)' },
+  { id: 'gemini-flash-latest', label: 'Gemini Flash (latest) — best value (recommended)' },
+  { id: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite (latest) — cheapest' },
+  { id: 'gemini-pro-latest', label: 'Gemini Pro (latest) — highest quality (pricier)' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — pinned stable' },
 ];
 
 /** Env vars that force API-key billing; stripped so the CLI uses the

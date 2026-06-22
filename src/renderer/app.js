@@ -248,7 +248,7 @@ async function refreshPrereq() {
     }
     const meta = providerMeta(provider);
     banner.append(
-      meta.npmPackage ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => openInstallModal(provider) }, `⬇ Install ${name}`) : null,
+      (meta.npmPackage && !isGemini) ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => openInstallModal(provider) }, `⬇ Install ${name}`) : null,
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(provider) }, isGemini ? '🔑 Add Gemini API key' : `🔑 Sign in to ${name}`),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings'),
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Hide until next check', onClick: () => banner.classList.add('hidden') }, '✕'));
@@ -1648,10 +1648,10 @@ function renderSettings() {
       style: `font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;${a ? (a.signedIn ? 'color:var(--ok);background:rgba(31,170,107,.14)' : 'color:var(--accent-2);background:rgba(192,138,46,.16)') : 'color:var(--text-dim)'}`,
     }, chipText);
     const actions = [
-      h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : 'not installed'),
+      h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : (isG ? 'API key' : 'not installed')),
       authChip,
     ];
-    if (!ok) actions.push(h('button', {
+    if (!ok && !isG) actions.push(h('button', {
       class: 'btn btn-gold btn-sm',
       title: npmOk ? `Install ${label} via npm` : 'Requires npm (install Node.js first)',
       onClick: () => openInstallModal(key),
