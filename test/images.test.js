@@ -7,11 +7,25 @@ const {
   scoreResult,
   meetsQualityBar,
   queryTerms,
+  queryCandidates,
   extFromContentType,
   mimeForExt,
   MIN_WIDTH,
   MIN_HEIGHT,
 } = require('../src/main/book/images');
+
+test('queryCandidates shrinks a too-specific query to recoverable fallbacks', () => {
+  const c = queryCandidates('data center servers cold aisle');
+  assert.strictEqual(c[0], 'data center servers cold aisle'); // full phrase tried first
+  assert.ok(c.includes('data center servers'));               // progressively shorter prefixes
+  assert.ok(c.includes('data center'));
+  assert.ok(c.includes('data'));                              // single word floor
+  assert.ok(c.includes('cold aisle'));                        // trailing noun pair
+  assert.ok(c.includes('servers'));                           // longest word
+  assert.strictEqual(new Set(c).size, c.length);              // de-duped
+  // punctuation is stripped, never produces empty candidates
+  assert.ok(queryCandidates('"A glowing, blue cloud!"').every((q) => q.trim().length));
+});
 
 test('parses image-search markers', () => {
   const md = 'Intro.\n\n![A snowy village at dusk](image-search: scottish village snow dusk)\n\nMore text.';

@@ -152,7 +152,40 @@ function httpGet(url, { json = false, maxBytes = 9_000_000, redirects = 4, timeo
  * ranks the survivors by relevance + resolution + license. Returns null (so the
  * caller cleanly skips the image) when nothing meets the premium bar.
  */
-async function searchOpenverse(query, { licenses = 'cc0,pdm,by,by-sa' } = {}) {
+/**
+ * Openverse matches on the WHOLE query, so a long, specific phrase like
+ * "data center servers cold aisle" returns zero hits while "data center servers"
+ * returns dozens. Models (and our own query helper) tend to produce phrases that
+ * are too specific, which is why photos were silently dropped. Generate ordered
+ * fallback queries — the full phrase first, then progressively shorter prefixes,
+ * then the trailing noun pair, then the single longest word — and use the first
+ * that actually returns images.
+ */
+function queryCandidates(query) {
+  const words = String(query || '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return [String(query || '').trim()].filter(Boolean);
+  const cands = [];
+  for (let n = words.length; n >= 1; n--) cands.push(words.slice(0, n).join(' '));
+  if (words.length >= 2) cands.push(words.slice(-2).join(' '));
+  const longest = words.slice().sort((a, b) => b.length - a.length)[0];
+  if (longest) cands.push(longest);
+  return [...new Set(cands)];
+}
+
+async function searchOpenverse(query, opts = {}) {
+  for (const cand of queryCandidates(query)) {
+    try {
+      const hit = await searchOpenverseOnce(cand, opts);
+      if (hit) return hit;
+    } catch (_) { /* try the next, shorter candidate */ }
+  }
+  return null;
+}
+
+async function searchOpenverseOnce(query, { licenses = 'cc0,pdm,by,by-sa' } = {}) {
   const url =
     'https://api.openverse.org/v1/images/?' +
     new URLSearchParams({
@@ -252,6 +285,7 @@ module.exports = {
   scoreResult,
   meetsQualityBar,
   queryTerms,
+  queryCandidates,
   extFromContentType,
   mimeForExt,
   searchOpenverse,
