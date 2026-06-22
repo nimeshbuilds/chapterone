@@ -26,12 +26,14 @@ const CODEX_MODELS = [
   { id: 'gpt-5-codex', label: 'GPT-5 Codex — code-tuned' },
 ];
 
+// Gemini runs via a Gemini API key (Google retired the CLI's individual login),
+// so billing is per-token — Flash is the cheap default. No "best on plan" option
+// because there is no plan; pick an explicit model.
 const GEMINI_MODELS = [
-  { id: '', label: 'Default — best on your plan (recommended)' },
-  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro — highest quality' },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — newest (preview)' },
-  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash — fast' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — stable' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — cheapest (recommended)' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash — newest, fast (preview)' },
+  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro — highest quality (pricier)' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — stable (pricier)' },
 ];
 
 /** Env vars that force API-key billing; stripped so the CLI uses the

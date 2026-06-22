@@ -1,28 +1,34 @@
 'use strict';
 
 const { run, probeVersion, enforceMinWords } = require('./spawn');
-const { SUBSCRIPTION_SCRUB } = require('./models');
+
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'; // cheapest capable Flash
 
 /**
  * Adapter for Google's Gemini CLI running non-interactively.
- * Uses the user's Google/Gemini subscription login — we strip GEMINI_API_KEY /
- * GOOGLE_API_KEY from the child env so it authenticates with the subscription.
+ *
+ * Google retired the Gemini CLI's free "Code Assist for individuals" OAuth
+ * login, so this engine authenticates with a **Gemini API key** (from
+ * aistudio.google.com/apikey). We inject GEMINI_API_KEY into the child env and
+ * never strip it. Billing is per-token, so the model defaults to a cheap Flash.
  *
  * Headless usage: `gemini -p "<prompt>"` runs once and prints the response.
- * Gemini grounds answers with built-in Google Search when helpful.
  */
 class GeminiAdapter {
   constructor(config = {}) {
     this.id = 'gemini';
     this.label = 'Gemini CLI';
     this.command = config.command || 'gemini';
-    this.model = config.model || '';
+    this.model = config.model || DEFAULT_GEMINI_MODEL;
     this.extraArgs = config.extraArgs || [];
-    this.forceSubscription = config.forceSubscription !== false;
+    this.apiKey = (config.apiKey || '').trim();
   }
 
-  scrub() {
-    return this.forceSubscription ? SUBSCRIPTION_SCRUB.gemini : [];
+  /** Inject the API key + force the Gemini API (not Vertex) for the child. */
+  env() {
+    return this.apiKey
+      ? { GEMINI_API_KEY: this.apiKey, GOOGLE_GENAI_USE_VERTEXAI: 'false' }
+      : {};
   }
 
   async detect() {
@@ -30,13 +36,16 @@ class GeminiAdapter {
   }
 
   async checkAuth() {
+    if (!this.apiKey) {
+      return { ok: false, detail: 'Add a Gemini API key (aistudio.google.com/apikey) in Settings — Google retired the Gemini CLI individual login.' };
+    }
     try {
       const text = await this.complete('Reply with exactly the word: READY', {
         system: 'You are a connectivity probe. Output only what is requested.',
         timeoutMs: 90000,
       });
       const ok = text.trim().length > 0; // a successful, non-empty completion = authenticated
-      return { ok, detail: ok ? 'Authenticated (subscription)' : 'The CLI returned no output.' };
+      return { ok, detail: ok ? 'Authenticated (Gemini API key)' : 'The CLI returned no output.' };
     } catch (err) {
       return { ok: false, detail: err.message };
     }
@@ -54,7 +63,7 @@ class GeminiAdapter {
   async complete(prompt, opts = {}) {
     const args = this.buildArgs(prompt, opts);
     const { code, stdout, stderr } = await run(this.command, args, {
-      scrubEnv: this.scrub(),
+      env: this.env(),
       timeoutMs: opts.timeoutMs || 0,
       signal: opts.signal,
       onStdout: opts.onStdout,

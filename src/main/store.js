@@ -32,7 +32,7 @@ class Store {
       codexCommand: 'codex',
       codexModel: '',
       geminiCommand: 'gemini',
-      geminiModel: '',
+      geminiModel: 'gemini-2.5-flash', // Gemini is API-billed; default to the cheap Flash
       forceSubscription: true, // strip API-key env vars; use subscription login
       authorName: '', // if set, books are authored under this name (no invented pen name)
       research: true, // ground content with web search by default

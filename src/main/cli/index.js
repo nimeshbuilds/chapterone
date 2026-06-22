@@ -14,7 +14,10 @@ function buildAdapter(providerId, settings = {}) {
     return new CodexAdapter({ command: settings.codexCommand, model: settings.codexModel, extraArgs: settings.codexExtraArgs, forceSubscription });
   }
   if (providerId === 'gemini') {
-    return new GeminiAdapter({ command: settings.geminiCommand, model: settings.geminiModel, extraArgs: settings.geminiExtraArgs, forceSubscription });
+    // Gemini authenticates with a Gemini API key (Google retired the CLI login).
+    // Reuse the same key the user set for Nano Banana images — it's one Google key.
+    const apiKey = settings.geminiApiKey || (settings.images && settings.images.geminiApiKey) || '';
+    return new GeminiAdapter({ command: settings.geminiCommand, model: settings.geminiModel, extraArgs: settings.geminiExtraArgs, apiKey });
   }
   return new ClaudeAdapter({ command: settings.claudeCommand, model: settings.claudeModel, extraArgs: settings.claudeExtraArgs, forceSubscription });
 }

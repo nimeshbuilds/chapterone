@@ -427,6 +427,27 @@ async function switchProvider(p) {
 // ---------- guided sign-in modal ----------
 function openAuthModal(provider) {
   const name = providerLabel(provider);
+
+  // Gemini no longer uses a CLI/OAuth login (Google retired it). It runs on a
+  // Gemini API key, so route the user to the key instead of opening a Terminal.
+  if (provider === 'gemini') {
+    const s = state.settings || {};
+    const hasKey = !!((s.images && s.images.geminiApiKey) || s.geminiApiKey);
+    const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+      h('div', { class: 'modal', style: 'max-width:480px' },
+        h('h2', { style: 'margin:0 0 6px' }, 'Connect Gemini'),
+        h('p', { class: 'hint', style: 'margin-bottom:10px' },
+          'Google retired the Gemini CLI’s individual sign-in, so Gemini now runs on a Gemini API key (billed per token — its default model is the cheap Flash).'),
+        h('p', { class: 'hint', style: 'margin-bottom:14px' },
+          hasKey ? '✅ A Gemini API key is set, so Gemini is ready to use.'
+                 : 'Get a key at aistudio.google.com/apikey, then paste it into the Gemini API key field in Settings.'),
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn btn-gold btn-sm', onClick: () => { overlay.remove(); go('settings'); } }, hasKey ? 'Open Settings' : '🔑 Add key in Settings'),
+          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Close'))));
+    document.body.append(overlay);
+    return;
+  }
+
   const status = h('p', { class: 'hint' }, 'Opening Terminal…');
   const cmdLine = h('pre', { class: 'auth-log' }, '');
   let poll = null;
@@ -1669,11 +1690,11 @@ function renderSettings() {
   (imageModels.length ? imageModels : [{ id: 'gemini-3-pro-image', label: 'Nano Banana Pro' }])
     .forEach((m) => imgModelSel.append(h('option', { value: m.id, selected: m.id === (imgs.model || 'gemini-3-pro-image') ? 'selected' : false }, m.label + (m.price ? ` (~$${m.price}/img)` : ''))));
   const imageCard = h('div', { class: 'card' },
-    h('p', { class: 'section-title' }, 'AI Illustrations · Nano Banana'),
+    h('p', { class: 'section-title' }, 'Gemini API key · illustrations & Gemini engine'),
     h('p', { class: 'hint', style: 'margin-bottom:14px' },
-      'Optional. Nano Banana (Google’s Gemini image model) creates real, theme-matched illustrations for any book — it isn’t available on any CLI, so it uses a Gemini API key. This key is for images only, stored locally on this Mac, and never touches your CLI/text subscription. Get a key at aistudio.google.com/apikey, then pick “🍌 Nano Banana” as the image option when writing.'),
+      'Your Gemini API key powers two optional features: Nano Banana illustrations, and the Gemini writing engine (Google retired the Gemini CLI’s individual login, so Gemini now runs on this key — billed per token, which is why its default model is the cheap Flash). One key from aistudio.google.com/apikey covers both. Stored locally on this Mac.'),
     h('div', { class: 'row' },
-      h('label', { class: 'field' }, h('span', {}, 'Gemini API key (image-only)'),
+      h('label', { class: 'field' }, h('span', {}, 'Gemini API key (engine + images)'),
         h('input', { id: 's-img-key', type: 'password', value: imgs.geminiApiKey || '', placeholder: 'AIza…' })),
       h('label', { class: 'field' }, h('span', {}, 'Image model'), imgModelSel)),
     h('div', { class: 'btn-row' },

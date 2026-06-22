@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { GeminiAdapter } = require('../src/main/cli/geminiAdapter');
-const { providerList, modelsFor, loginFor, SUBSCRIPTION_SCRUB } = require('../src/main/cli/models');
+const { providerList, modelsFor, loginFor } = require('../src/main/cli/models');
 
 test('gemini builds args with model and prompt', () => {
   const a = new GeminiAdapter({ model: 'gemini-2.5-pro' });
@@ -12,9 +12,16 @@ test('gemini builds args with model and prompt', () => {
   assert.match(args[args.length - 1], /You are an author[\s\S]*Write a chapter/);
 });
 
-test('gemini scrubs Google api-key env by default', () => {
-  assert.deepStrictEqual(new GeminiAdapter({}).scrub(), SUBSCRIPTION_SCRUB.gemini);
-  assert.deepStrictEqual(new GeminiAdapter({ forceSubscription: false }).scrub(), []);
+test('gemini authenticates by injecting the API key (no subscription login)', () => {
+  assert.deepStrictEqual(new GeminiAdapter({}).env(), {}); // no key → nothing injected
+  const a = new GeminiAdapter({ apiKey: '  AIzaTEST  ' });
+  assert.strictEqual(a.env().GEMINI_API_KEY, 'AIzaTEST'); // trimmed
+  assert.strictEqual(a.env().GOOGLE_GENAI_USE_VERTEXAI, 'false');
+});
+
+test('gemini defaults to the cheap Flash model', () => {
+  assert.strictEqual(new GeminiAdapter({}).model, 'gemini-2.5-flash');
+  assert.strictEqual(new GeminiAdapter({ model: 'gemini-3-pro-preview' }).model, 'gemini-3-pro-preview');
 });
 
 test('gemini strips status noise from output', () => {
