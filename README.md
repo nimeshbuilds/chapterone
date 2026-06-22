@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="build/icon.png" alt="ChapterOne" width="120" height="120" />
+
 # ChapterOne
 
 ### Your Personal Book Writer
@@ -61,13 +63,17 @@ subscription** (the app can install and sign you in for you):
 
 | Engine | Install | Sign in |
 | --- | --- | --- |
-| **Claude Code** | `npm i -g @anthropic-ai/claude-code` | run `claude` and log in with your Claude subscription |
-| **Codex** | install the OpenAI Codex CLI | run `codex` and log in with ChatGPT |
-| **Gemini** | install the Gemini CLI | run `gemini` and log in with your Google account |
+| **[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)** | `npm i -g @anthropic-ai/claude-code` | `claude /login` — authorize your Claude Pro/Max plan |
+| **[Codex](https://developers.openai.com/codex/cli)** | `npm i -g @openai/codex` | `codex login` — sign in with ChatGPT |
+| **[Gemini](https://github.com/google-gemini/gemini-cli)** | `npm i -g @google/gemini-cli` | run `gemini`, choose **Login with Google** (Gemini AI Pro/Ultra) |
+
+> 💡 You don't have to use a terminal — ChapterOne can **install a CLI and walk
+> you through sign-in** from **Settings**, and shows which engines are ready.
 
 Optional, opt-in keys (stored locally, never used for text): a **Gemini API key**
-for Nano Banana illustrations, and an **ElevenLabs API key** for audiobook
-narration. Plus **Node.js 18+** to run from source.
+for [Nano Banana](https://aistudio.google.com/apikey) illustrations, and an
+**[ElevenLabs](https://elevenlabs.io) API key** for audiobook narration. Plus
+**Node.js 18+** to run from source.
 
 ## 🏗️ How it works
 

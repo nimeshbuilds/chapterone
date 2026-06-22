@@ -1,105 +1,89 @@
-# Signing & notarizing ChapterOne (no more Gatekeeper warning)
+# Signing & notarizing ChapterOne
 
 macOS shows *"Apple could not verify ChapterOne is free of malware…"* for any app
-that is **not notarized**. The only way to remove it for downloaded apps is to
-sign the app with an **Apple Developer ID** certificate and **notarize** it with
-Apple. This is already wired into the build (`electron-builder.config.js`); it
-turns on automatically once the credentials below are present, and stays off
-(unsigned, as today) otherwise.
+that is **not notarized**. Removing that warning for downloaded apps requires
+signing with an **Apple Developer ID** certificate and **notarizing** with Apple.
+
+Signing is done **manually / locally** for now (there is no CI signing workflow).
+The steps below are exactly what produces the published `v0.1.0` DMG.
 
 ## One-time setup
 
 1. **Enroll** in the Apple Developer Program — https://developer.apple.com/programs/ ($99/year).
 
 2. **Create a "Developer ID Application" certificate** and install it in your
-   login keychain. Easiest path: Xcode → Settings → Accounts → your Apple ID →
-   *Manage Certificates…* → **+** → **Developer ID Application**. (Or create it at
-   https://developer.apple.com/account/resources/certificates and double-click to
-   install.) Verify it's there:
+   login keychain. Easiest path: **Xcode → Settings → Accounts →** your Apple ID
+   **→ Manage Certificates… → ＋ → Developer ID Application.** Verify:
    ```bash
-   security find-identity -v -p codesigning   # should list "Developer ID Application: …"
+   security find-identity -v -p codesigning   # → "Developer ID Application: Your Name (TEAMID)"
    ```
+   The 10-character code in parentheses is your **Team ID**.
 
 3. **Create an app-specific password** for notarization at
    https://appleid.apple.com → Sign-In and Security → *App-Specific Passwords*.
 
-4. **Find your Team ID** at https://developer.apple.com/account → Membership
-   (a 10-character string like `AB12CD34EF`).
+4. **Store the notarization credentials in your keychain once**, so the password
+   never sits in your shell history or environment:
+   ```bash
+   xcrun notarytool store-credentials "chapterone-notary" \
+     --apple-id "you@example.com" \
+     --team-id "ABCDE12345"
+   # paste the app-specific password when prompted → "This profile is ready to use."
+   ```
 
-## Building a signed + notarized DMG
+## Build → notarize → staple
 
-Export the three env vars, then build as usual:
-
-```bash
-export APPLE_ID="you@example.com"
-export APPLE_APP_SPECIFIC_PASSWORD="abcd-efgh-ijkl-mnop"   # the app-specific password
-export APPLE_TEAM_ID="AB12CD34EF"
-
-npm run dist:mac
-```
-
-What happens automatically:
-- electron-builder finds your **Developer ID Application** cert and signs the app
-  (hardened runtime + entitlements are already configured in
-  `build/entitlements.mac.plist`).
-- It then **notarizes** with Apple's `notarytool` (a quick automated malware scan,
-  usually 1–5 minutes) and **staples** the ticket to the DMG.
-
-Result: users download the DMG, double-click, drag to Applications, and it opens
-with **no warning**.
-
-## Verify it worked
+electron-builder **signs** the app during the build (it auto-detects the
+Developer ID cert; hardened runtime + entitlements are already configured in
+`build/entitlements.mac.plist`). Then notarize and staple manually:
 
 ```bash
-# after building, mount the DMG / point at the .app
-spctl -a -vvv "/Applications/ChapterOne.app"        # → "accepted, source=Notarized Developer ID"
-codesign -dv --verbose=4 "/Applications/ChapterOne.app"  # → Authority=Developer ID Application: …
-xcrun stapler validate "release/ChapterOne-0.1.0-universal.dmg"  # → "The validate action worked!"
+npm run dist:mac                                                   # build + sign the universal DMG
+
+xcrun notarytool submit release/ChapterOne-0.1.0-universal.dmg \
+  --keychain-profile "chapterone-notary" --wait                   # ~2–15 min; wait for "status: Accepted"
+
+xcrun stapler staple release/ChapterOne-0.1.0-universal.dmg        # attach the ticket to the DMG
+xcrun stapler staple release/mac-universal/ChapterOne.app          # and to the app (offline-robust)
 ```
 
-## CI / GitHub Actions (recommended)
+> If `--wait` times out on Apple's status endpoint, the submission is still
+> processing — re-check with `xcrun notarytool info <id> --keychain-profile chapterone-notary`.
 
-`.github/workflows/release.yml` builds, signs, notarizes, and publishes a
-release automatically whenever you push a version tag (`v*`). Set it up once:
-
-### 1. Export your Developer ID cert as base64
-
-In **Keychain Access**, find **"Developer ID Application: …"** (login keychain),
-right-click → **Export** → save as `cert.p12` and set an export password. Then:
+## Verify
 
 ```bash
-base64 -i cert.p12 | pbcopy        # the base64 string is now on your clipboard
+spctl --assess --type execute -vv "/Applications/ChapterOne.app"        # → accepted, source=Notarized Developer ID
+codesign -dv --verbose=4 "/Applications/ChapterOne.app"                 # → Authority=Developer ID Application: …
+xcrun stapler validate "release/ChapterOne-0.1.0-universal.dmg"         # → The validate action worked!
 ```
 
-### 2. Add repo secrets
+A locally-built app is not quarantined, so it opens without a warning even before
+notarization. The notarization + staple is what makes the **downloaded** DMG open
+cleanly for everyone.
 
-GitHub → your repo → **Settings → Secrets and variables → Actions → New repository secret**. Add these **5**:
-
-| Secret name | Value |
-| --- | --- |
-| `CSC_LINK` | the base64 string from step 1 (paste) |
-| `CSC_KEY_PASSWORD` | the `.p12` export password you chose |
-| `APPLE_ID` | your Apple ID email |
-| `APPLE_APP_SPECIFIC_PASSWORD` | the app-specific password from appleid.apple.com |
-| `APPLE_TEAM_ID` | your 10-char Team ID |
-
-### 3. Cut a release
+## Publish the release
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+gh release create v0.1.0 \
+  --title "ChapterOne v0.1.0" --notes-file notes.md \
+  release/ChapterOne-0.1.0-universal.dmg
 ```
 
-GitHub Actions builds the universal DMG on a macOS runner, signs + notarizes it,
-and publishes a release with the DMG + zip attached — no local build, no secrets
-in code. Delete the test cert.p12 from your Mac afterward; the secret is enough.
+## Automating in CI later (optional)
+
+Not set up today. If you want GitHub Actions (macOS runner) to build, sign,
+notarize, and publish on a `v*` tag, you'd:
+
+- export the Developer ID cert from Keychain Access as a base64 `.p12` and add
+  repo secrets `CSC_LINK` + `CSC_KEY_PASSWORD`, plus `APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`;
+- `electron-builder.config.js` already auto-notarizes when those Apple env vars
+  are present, so the workflow is just `npm run dist:mac` + publish.
 
 ## Notes
-- Until you enroll, nothing changes — the build stays unsigned and testers use
-  one-time `right-click → Open` (or `xattr -dr com.apple.quarantine
-  "/Applications/ChapterOne.app"`).
-- For CI, you can instead provide the cert as `CSC_LINK` (base64 `.p12`) +
-  `CSC_KEY_PASSWORD`, and an App Store Connect API key via `APPLE_API_KEY` /
-  `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` instead of the Apple ID password.
-- **Windows** has the equivalent (SmartScreen): it needs an Authenticode / EV
-  code-signing certificate to avoid the "unknown publisher" warning.
+
+- **Unsigned builds** (no cert): testers open with a one-time `right-click → Open`,
+  or clear the quarantine flag: `xattr -dr com.apple.quarantine "/Applications/ChapterOne.app"`.
+- **Windows** has the equivalent (SmartScreen "unknown publisher"); it needs an
+  Authenticode / EV code-signing certificate, which this project does not have yet.

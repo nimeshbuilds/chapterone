@@ -6,6 +6,17 @@ All notable changes to ChapterOne are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Real app icon (the ChapterOne "1" brand mark) embedded in the macOS build,
+  generated from `build/icon.svg` via `npm run icon`.
+
+### Changed
+
+- Open-source documentation pass: README, SIGNING, and community docs updated;
+  CLI install/sign-in commands corrected to the exact packages
+  (`@anthropic-ai/claude-code`, `@openai/codex`, `@google/gemini-cli`).
+
 ### Security
 
 - Upgrade **nodemailer** 6 → 9 to fix a high-severity CRLF header-injection
