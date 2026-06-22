@@ -2,7 +2,7 @@
 
 const { run, probeVersion, enforceMinWords } = require('./spawn');
 
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'; // cheapest capable Flash
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'; // newest GA Flash: powerful + cheap
 
 /**
  * Adapter for Google's Gemini CLI running non-interactively.

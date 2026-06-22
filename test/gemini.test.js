@@ -19,9 +19,9 @@ test('gemini authenticates by injecting the API key (no subscription login)', ()
   assert.strictEqual(a.env().GOOGLE_GENAI_USE_VERTEXAI, 'false');
 });
 
-test('gemini defaults to the cheap Flash model', () => {
-  assert.strictEqual(new GeminiAdapter({}).model, 'gemini-2.5-flash');
-  assert.strictEqual(new GeminiAdapter({ model: 'gemini-3-pro-preview' }).model, 'gemini-3-pro-preview');
+test('gemini defaults to the newest cheap Flash model', () => {
+  assert.strictEqual(new GeminiAdapter({}).model, 'gemini-3.5-flash');
+  assert.strictEqual(new GeminiAdapter({ model: 'gemini-3.1-pro-preview' }).model, 'gemini-3.1-pro-preview');
 });
 
 test('gemini strips status noise from output', () => {
@@ -33,7 +33,7 @@ test('gemini strips status noise from output', () => {
 test('provider catalog includes all three with login metadata', () => {
   const ids = providerList().map((p) => p.id);
   assert.deepStrictEqual(ids, ['claude', 'codex', 'gemini']);
-  assert.ok(modelsFor('gemini').some((m) => m.id === 'gemini-2.5-pro'));
+  assert.ok(modelsFor('gemini').some((m) => m.id === 'gemini-3.5-flash'));
   assert.ok(loginFor('codex').args.includes('login'));
   assert.ok(typeof loginFor('gemini').hint === 'string');
 });

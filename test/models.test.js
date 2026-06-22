@@ -5,7 +5,7 @@ const { modelsFor, SUBSCRIPTION_SCRUB } = require('../src/main/cli/models');
 
 test('model lists per provider', () => {
   assert.ok(modelsFor('claude').some((m) => m.id === 'opus'));
-  assert.ok(modelsFor('codex').some((m) => m.id === 'gpt-5-codex'));
+  assert.ok(modelsFor('codex').some((m) => m.id === 'gpt-5.5'));
   assert.strictEqual(modelsFor('claude')[0].id, ''); // default first
 });
 

@@ -18,22 +18,22 @@ const CLAUDE_MODELS = [
   { id: 'haiku', label: 'Claude Haiku — fastest / lightest' },
 ];
 
+// Codex on a ChatGPT subscription (gpt-5.5 default, 5.4 fallback, 5.4-mini light).
 const CODEX_MODELS = [
   { id: '', label: 'Default — best on your plan (recommended)' },
   { id: 'gpt-5.5', label: 'GPT-5.5 — highest quality' },
   { id: 'gpt-5.4', label: 'GPT-5.4 — balanced' },
   { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini — fastest' },
-  { id: 'gpt-5-codex', label: 'GPT-5 Codex — code-tuned' },
 ];
 
 // Gemini runs via a Gemini API key (Google retired the CLI's individual login),
-// so billing is per-token — Flash is the cheap default. No "best on plan" option
-// because there is no plan; pick an explicit model.
+// so billing is per-token. Default to the newest GA Flash (3.5 Flash) — powerful
+// and cheap. No "best on plan" option because there is no plan; pick a model.
 const GEMINI_MODELS = [
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — cheapest (recommended)' },
-  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash — newest, fast (preview)' },
-  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro — highest quality (pricier)' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — stable (pricier)' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — newest, best value (recommended)' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — cheapest' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — highest quality (preview)' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — prior gen (stable)' },
 ];
 
 /** Env vars that force API-key billing; stripped so the CLI uses the
