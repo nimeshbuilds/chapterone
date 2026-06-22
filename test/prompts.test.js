@@ -6,8 +6,22 @@ const {
   clarifyPrompt,
   outlinePrompt,
   chapterPrompt,
+  stockQueryPrompt,
   targetWordsForLength,
 } = require('../src/main/book/prompts');
+
+test('stockQueryPrompt asks for one concrete query or NONE and includes chapter context', () => {
+  const p = stockQueryPrompt(
+    { title: 'The Hypervisor Labyrinth', premise: 'A thriller in a data center' },
+    { title: 'The Cold Aisle' },
+    '# The Cold Aisle\n\nRows of servers hummed in the freezing dark. ![x](image-search: ignore me)',
+  );
+  assert.match(p, /The Cold Aisle/);          // chapter title present
+  assert.match(p, /Hypervisor Labyrinth/);    // book title present
+  assert.match(p, /\bNONE\b/);                // explicit opt-out
+  assert.match(p, /3 to 7/);                  // bounded query length
+  assert.doesNotMatch(p, /image-search: ignore me/); // existing markers stripped from the excerpt
+});
 
 test('persona names the genre and bestseller framing', () => {
   const p = bestsellerPersona('Science Fiction');

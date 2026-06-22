@@ -97,6 +97,9 @@ const BOOK_CSS = `
   p + p { text-indent: 1.4em; margin-top: -0.2rem; }
   blockquote { border-left: 3px solid #c9a14a; margin: 1.4rem 0; padding: .2rem 1.2rem; color: #4a4a4a; font-style: italic; }
   em { font-style: italic; }
+  code { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: .88em; background: rgba(0,0,0,.06); padding: .1em .35em; border-radius: 4px; }
+  pre { background: #f5f4f1; border: 1px solid rgba(0,0,0,.10); border-radius: 8px; padding: .9rem 1.1rem; overflow-x: auto; margin: 1.3rem 0; line-height: 1.45; page-break-inside: avoid; break-inside: avoid; }
+  pre code { background: none; padding: 0; font-size: .82rem; white-space: pre; }
   img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 0 auto; }
   figure.figure { margin: 2rem 0; text-align: center; page-break-inside: avoid; break-inside: avoid; }
   figure.figure img { box-shadow: 0 6px 22px rgba(0,0,0,.16); }

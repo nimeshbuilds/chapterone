@@ -76,6 +76,33 @@ function sceneImagePrompt(book, chapter, sceneHint) {
   ].filter(Boolean).join(' ');
 }
 
+/**
+ * Derive ONE royalty-free stock-photo search query for a chapter. Used in stock
+ * mode as a reliable fallback when the writing model didn't embed an inline
+ * `image-search:` marker itself (models are inconsistent about that). The reply
+ * must be just the query words, or the single word NONE.
+ */
+function stockQueryPrompt(book, chapter, content) {
+  const excerpt = String(content || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')   // drop any image markers
+    .replace(/[#*`>_]/g, ' ')                 // drop markdown symbols
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 900);
+  return [
+    `Book: "${book.title}"${book.premise ? ` — ${book.premise}` : ''}.`,
+    `Chapter: "${chapter.title}".`,
+    `Excerpt: ${excerpt}`,
+    ``,
+    `Suggest ONE royalty-free stock-photo search query for the single most`,
+    `visually evocative, concrete, photographable subject in this chapter — a`,
+    `real place, landscape, object, building, tool, or scene that a photographer`,
+    `could actually shoot. 3 to 7 plain words, no punctuation. Avoid abstract`,
+    `ideas, named people, and anything not photographable. If nothing fits,`,
+    `reply with the single word NONE.`,
+  ].join('\n');
+}
+
 /** Normalize a spec/book's fiction-vs-nonfiction choice. '' = let the author decide. */
 function kindOf(specOrBook) {
   const raw = String((specOrBook && (specOrBook.kind || specOrBook.category)) || '').toLowerCase();
@@ -446,6 +473,7 @@ module.exports = {
   charactersBlock,
   coverImagePrompt,
   sceneImagePrompt,
+  stockQueryPrompt,
   artStyleFor,
   mastersPrompt,
   influenceDirective,

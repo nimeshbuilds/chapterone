@@ -9,8 +9,10 @@
  *      and proper curly quotes.
  *
  * `tidyProse` is line-aware so it preserves legitimate Markdown structure
- * (headings, lists, image markers) that the renderer/exporters rely on.
+ * (headings, lists, image markers, fenced code) that the renderer/exporters rely on.
  */
+
+const CODE = ''; // private-use sentinel (never in prose) to shield code spans
 
 /** Replace em/en dashes (and `--`) with commas; keep word-joining hyphens. */
 function stripDashes(s) {
@@ -63,10 +65,12 @@ function tidyProse(markdown) {
   const lines = String(markdown == null ? '' : markdown).split('\n');
   const out = [];
   let inFence = false;
-  for (let raw of lines) {
-    // Drop code fences entirely (a book has no code blocks); keep their content as prose.
-    if (/^\s*```/.test(raw)) { inFence = !inFence; continue; }
-    if (isRuleLine(raw)) { out.push(''); continue; }        // remove dash/star rules
+  for (const raw of lines) {
+    // Preserve fenced code blocks verbatim — keep the ``` markers AND the code
+    // inside untouched (no dash/quote/backtick munging) so they render as code.
+    if (/^\s*```/.test(raw)) { inFence = !inFence; out.push(raw); continue; }
+    if (inFence) { out.push(raw); continue; }
+    if (isRuleLine(raw)) { out.push(''); continue; }          // remove dash/star rules
     if (isImageLine(raw)) { out.push(raw.trim()); continue; } // keep image markers verbatim
 
     const headingMatch = raw.match(/^(\s{0,3}#{1,6}\s+)(.*)$/);
@@ -86,12 +90,16 @@ function tidyProse(markdown) {
 
 /** Inline cleanup for a normal prose line. */
 function cleanInline(line) {
-  let s = stripDashes(line);
-  s = s.replace(/`+/g, '');                       // no inline code ticks
+  // Shield inline `code` spans with a private-use sentinel so dash/quote tidying
+  // never touches them and the backticks survive for the Markdown renderer —
+  // inline code still renders.
+  const spans = [];
+  let s = String(line).replace(/`[^`]+`/g, (m) => { spans.push(m); return CODE + (spans.length - 1) + CODE; });
+  s = stripDashes(s);
   s = s.replace(/\*{3,}/g, '');                   // stray *** decoration
-  // collapse unbalanced emphasis runs we don't want shown literally:
   // (balanced **bold**/*italic* are left for the Markdown renderer)
   s = curlyQuotes(s);
+  s = s.replace(new RegExp(CODE + '(\\d+)' + CODE, 'g'), (_, i) => spans[+i]); // restore code spans
   return s.replace(/[ \t]+$/g, '');
 }
 
@@ -102,15 +110,17 @@ function collapseBlankRuns(text) {
 
 /**
  * Convert a chapter's Markdown to clean, speakable plain text for TTS:
- * strip headings markers, emphasis, links, and image markers; speak the
- * chapter title first.
+ * strip heading markers, emphasis, links, image markers, and code blocks;
+ * speak the chapter title first.
  */
 function markdownToSpeech(markdown) {
   const lines = String(markdown == null ? '' : markdown).split('\n');
   const parts = [];
+  let inFence = false;
   for (const line of lines) {
+    if (/^\s*```/.test(line)) { inFence = !inFence; continue; } // skip code fence + content
+    if (inFence) continue;
     if (isRuleLine(line) || isImageLine(line)) continue;
-    if (/^\s*```/.test(line)) continue;
     let s = line
       .replace(/^\s{0,3}#{1,6}\s+/, '')           // heading markers
       .replace(/!\[[^\]]*\]\([^)]*\)/g, '')        // images

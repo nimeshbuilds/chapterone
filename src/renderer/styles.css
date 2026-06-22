@@ -312,6 +312,9 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 .reader-content p { margin: 0 0 1.05em; }
 .reader-content p + p { text-indent: 1.3em; }
 .reader-content blockquote { border-left: 3px solid var(--accent-2); margin: 1.3em 0; padding: .2em 1.1em; font-style: italic; opacity: .9; }
+.reader-content code { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: .88em; background: var(--field); padding: .12em .38em; border-radius: 5px; }
+.reader-content pre { background: var(--field); border: 1px solid var(--border-soft); border-radius: 10px; padding: 1em 1.2em; overflow-x: auto; margin: 1.3em 0; line-height: 1.45; }
+.reader-content pre code { background: none; padding: 0; font-size: .82em; white-space: pre; }
 .reader-content figure.figure { margin: 2em 0; text-align: center; }
 .reader-content img { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
 .reader-content figcaption { font-size: .8em; opacity: .7; font-style: italic; margin-top: .6em; }

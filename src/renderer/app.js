@@ -282,6 +282,14 @@ function providerLabel(id) {
   const p = (state.models.providers || []).find((x) => x.id === id);
   return p ? p.label : id;
 }
+/** Human label for the chapter-illustration method a job is using. */
+function imageMethodLabel(spec) {
+  const mode = spec && (spec.imageMode || (spec.illustrate ? 'stock' : 'off'));
+  if (mode === 'nano') return 'Nano Banana (AI photos)';
+  if (mode === 'ai') return 'AI vector art (SVG)';
+  if (mode === 'stock') return 'Royalty-free stock photos';
+  return null; // no chapter illustrations (cover is always SVG)
+}
 function modelField(provider) { return provider + 'Model'; }
 
 function modelOptionsFor(provider) {
@@ -887,7 +895,8 @@ function newJob(spec) {
   return {
     jobId: `job-${Date.now()}`, spec, phase: 'starting', chapters: [], outline: [],
     title: (spec && spec.request || 'Book').slice(0, 40), bookId: null, error: null, done: false,
-    activity: '', activityLog: [], stream: '', streamCh: null, engine: (spec && spec.provider) || null,
+    activity: '', activityLog: [], stream: '', streamCh: null,
+    engine: (spec && spec.provider) || currentChain()[0] || 'claude', // the real primary engine
     startedAt: Date.now(),
   };
 }
@@ -997,10 +1006,19 @@ function handleProgress(e) {
       j.activity = e.message || `Polishing Chapter ${e.number}`;
       logActivity(j, '✨', `Chapter ${e.number}: editor polish pass`);
       break;
-    case 'art:start': j.activity = e.message || 'Illustrating…'; logActivity(j, '🎨', `Chapter ${e.number}: creating illustration`); break;
-    case 'art:done': logActivity(j, '🖼️', `Chapter ${e.number}: illustration ready`); break;
+    case 'art:start': {
+      j.activity = e.message || 'Illustrating…';
+      const how = e.method === 'stock' ? 'sourcing a royalty-free photo'
+        : e.method === 'svg' ? 'designing AI vector art (SVG)'
+        : e.method === 'nano' ? 'generating an image with Nano Banana'
+        : 'creating an illustration';
+      logActivity(j, '🎨', `Chapter ${e.number}: ${how}`);
+      break;
+    }
+    case 'art:done': logActivity(j, '🖼️', `Chapter ${e.number}: image ready`); break;
     case 'image:error': j.activity = e.message; logActivity(j, '⚠️', e.message || 'Image generation issue'); toast(e.message || 'Image generation issue', 'bad'); break;
     case 'chapter:done':
+      if (e.engine) j.engine = e.engine; // reflect the engine that actually wrote it
       j.chapters[e.index] = { number: e.number, title: e.title, words: e.words };
       j.activeIndex = e.index + 1; j.stream = ''; j.streamCh = null;
       logActivity(j, '✅', `Chapter ${e.number}: ${e.title} — done (${(e.words || 0).toLocaleString()} words)`);
@@ -1047,11 +1065,13 @@ function renderProgress() {
 
   const bar = h('div', { class: 'progress-bar' }, h('div', { style: `width:${pct}%` }));
 
+  const imgMethod = imageMethodLabel(j.spec);
   const stats = h('div', { class: 'stat-row' },
     statCard('Chapters', `${doneCount}/${total || '—'}`),
     statCard('Words written', wordsSoFar.toLocaleString(), 'stat-words'),
     statCard('Elapsed', fmtElapsed(Date.now() - j.startedAt), 'stat-elapsed'),
-    statCard('Engine', providerLabel(j.engine || (j.spec && j.spec.provider) || 'claude')));
+    statCard('Engine', providerLabel(j.engine || (j.spec && j.spec.provider) || 'claude')),
+    imgMethod ? statCard('Graphics', imgMethod) : null);
 
   // live writing preview
   let preview = null;

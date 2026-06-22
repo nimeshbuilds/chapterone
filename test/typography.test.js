@@ -22,9 +22,25 @@ test('tidyText cleans titles', () => {
   assert.strictEqual(t.tidyText('The Fear—Is *Data*'), 'The Fear, Is Data');
 });
 
-test('markdownToSpeech yields clean speakable text', () => {
-  const s = t.markdownToSpeech('# Title\n\nHello **world** and `code`.\n\n![](bwimg:x)\n');
+test('markdownToSpeech yields clean speakable text and skips code blocks', () => {
+  const s = t.markdownToSpeech('# Title\n\nHello **world** and `code`.\n\n```js\nconst x = 1;\n```\n\n![](bwimg:x)\n');
   assert.doesNotMatch(s, /[#*`]/);
   assert.match(s, /^Title/);
   assert.match(s, /Hello world and code\./);
+  assert.doesNotMatch(s, /const x = 1/); // code is not narrated
+});
+
+test('tidyProse preserves fenced code blocks verbatim (no dash/quote munging)', () => {
+  const out = t.tidyProse('Intro line.\n\n```js\nconst a = 1 - 2; // keep "this" dash\n```\n\nAfter.');
+  assert.match(out, /```js/);
+  assert.match(out, /const a = 1 - 2;/);   // inner dash untouched
+  assert.match(out, /"this"/);              // inner quotes not curled
+});
+
+test('tidyProse keeps inline code and never corrupts standalone numbers', () => {
+  const out = t.tidyProse('In 2024 run the `docker run` command — fast.');
+  assert.match(out, /`docker run`/);        // inline code intact
+  assert.match(out, /\b2024\b/);            // number not eaten by the span sentinel
+  assert.doesNotMatch(out, /undefined/);
+  assert.match(out, /command, fast\./);     // em-dash still becomes a comma
 });

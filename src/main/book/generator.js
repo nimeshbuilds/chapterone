@@ -13,6 +13,7 @@ const {
   chapterArtSvgPrompt,
   coverImagePrompt,
   sceneImagePrompt,
+  stockQueryPrompt,
   mastersPrompt,
   targetWordsForLength,
   kindOf,
@@ -31,6 +32,21 @@ function imageModeOf(spec) {
 }
 
 /**
+ * Insert an `image-search:` marker on its own line just after the chapter's
+ * first prose paragraph (so the photo sits near the top, under the heading).
+ * The resolver (book/images.js) turns it into a real Openverse image later.
+ */
+function insertImageMarker(content, caption, query) {
+  const lines = String(content == null ? '' : content).split('\n');
+  let idx = 0;
+  while (idx < lines.length && (/^\s*#/.test(lines[idx]) || lines[idx].trim() === '')) idx++; // skip heading/blanks
+  while (idx < lines.length && lines[idx].trim() !== '') idx++;                               // to end of 1st paragraph
+  const marker = `![${String(caption || '').replace(/[[\]()]/g, '').trim()}](image-search: ${query})`;
+  lines.splice(idx, 0, '', marker);
+  return lines.join('\n');
+}
+
+/**
  * Orchestrates the multi-step book generation pipeline against a CLI engine.
  * Supports web-grounded research, and pause/resume when a subscription lapses.
  */
@@ -44,9 +60,41 @@ class BookGenerator {
     this.imageConfig = opts.imageConfig || null;
   }
 
+  /** The id of the engine that's actually active right now (handles fallback). */
+  _engineId() {
+    const e = this.engine;
+    return (e && e.active && e.active.id) || (e && e.id) || null;
+  }
+
   /** True when Nano Banana image generation is selected AND a key is configured. */
   _nanoReady(mode) {
     return mode === 'nano' && !!(this.imageConfig && this.imageConfig.apiKey && this.imageConfig.imagesDir);
+  }
+
+  /**
+   * Stock-photo mode: guarantee the chapter has at least one image. If the
+   * writing model already embedded an `image-search:` marker, leave it for the
+   * resolver. Otherwise derive ONE concrete query and insert a marker, so a stock
+   * photo appears regardless of how diligently the model followed the inline
+   * instruction (Gemini, for one, tends to skip it). Best-effort and non-fatal.
+   */
+  async _ensureStockImage(book, chapter, planned, i, emit, signal) {
+    if (/!\[[^\]]*\]\(\s*image-search:/i.test(chapter.content)) return; // model already added one
+    emit('art:start', {
+      index: i, number: planned.number, title: planned.title, method: 'stock',
+      message: `Finding a royalty-free stock photo for Chapter ${planned.number}…`,
+    });
+    try {
+      const raw = await this.engine.complete(stockQueryPrompt(book, planned, chapter.content), {
+        system: 'You suggest stock-photo search queries. Reply with ONLY the query (3 to 7 concrete, photographable words) or the single word NONE. No quotes, no markdown, no explanation.',
+        timeoutMs: 120000, signal,
+      });
+      const query = String(raw || '').trim().split('\n')[0].replace(/^[\s"'`*#>_-]+|[\s"'`*]+$/g, '').slice(0, 80);
+      if (query && !/^none$/i.test(query)) {
+        chapter.content = insertImageMarker(chapter.content, planned.title, query);
+        emit('art:done', { index: i, number: planned.number });
+      }
+    } catch (_) { /* a chapter without a photo is fine */ }
   }
 
   /** Persist a generated image buffer under <imagesDir>/<bookId>/<name>.<ext>. */
@@ -200,7 +248,7 @@ class BookGenerator {
     if (n <= 0) return;
     const aspect = band ? '4:3' : '16:9';
     for (let k = 0; k < n; k++) {
-      onProgress({ phase: 'art:start', index: i, number: planned.number, title: planned.title, message: `Illustrating Chapter ${planned.number} with Nano Banana…` });
+      onProgress({ phase: 'art:start', index: i, number: planned.number, title: planned.title, method: 'nano', message: `Illustrating Chapter ${planned.number} with Nano Banana…` });
       try {
         const hint = (planned.beats && planned.beats[k]) || planned.summary || planned.title;
         const img = await generateImage({
@@ -358,11 +406,13 @@ class BookGenerator {
       book.chapters[i] = chapter;
       book.updatedAt = new Date().toISOString();
 
-      // Illustrations: real Nano Banana images, or an AI-designed SVG vignette.
+      // Illustrations: real Nano Banana images, an AI-designed SVG vignette, or a
+      // royalty-free stock photo. The progress message names the method so the
+      // user always knows which graphics engine is being used.
       if (this._nanoReady(imageMode)) {
         await this._nanoChapterArt(book, chapter, planned, i, hooks);
       } else if (imageMode === 'ai') {
-        emit('art:start', { index: i, number: planned.number, title: planned.title, message: `Illustrating Chapter ${planned.number}…` });
+        emit('art:start', { index: i, number: planned.number, title: planned.title, method: 'svg', message: `Illustrating Chapter ${planned.number} with AI vector art (SVG)…` });
         try {
           const rawArt = await this.engine.complete(chapterArtSvgPrompt(book, planned), {
             system: 'You are an editorial illustrator. Output only a single valid SVG.',
@@ -374,11 +424,13 @@ class BookGenerator {
           if (signal && signal.aborted) { this._markPaused(book, err.message); if (onChapter) await onChapter(book); throw err; }
           // Non-fatal: a chapter without art is fine.
         }
+      } else if (imageMode === 'stock') {
+        await this._ensureStockImage(book, chapter, planned, i, emit, signal);
       }
 
       emit('chapter:done', {
         index: i, total: book.outline.length, number: planned.number,
-        title: planned.title, words: chapter.words, book,
+        title: planned.title, words: chapter.words, book, engine: this._engineId(),
       });
       if (onChapter) await onChapter(book);
 
