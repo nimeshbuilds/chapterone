@@ -298,51 +298,52 @@ function toggle(id, checked, label, onChange) {
   return h('label', { class: 'switch' }, input, h('span', { class: 'track' }, h('span', { class: 'thumb' })), h('span', { class: 'switch-label' }, label));
 }
 
-/** Compute the ordered fallback chain from settings (primary first). */
+/** The ordered engine chain. chain[0] is the primary; the rest are fallbacks in
+ *  order. The stored order is preserved exactly (so reordering sticks). */
 function currentChain() {
   const s = state.settings;
   const ids = (state.models.providers || []).map((p) => p.id);
-  const primary = s.provider || 'claude';
-  const set = new Set(Array.isArray(s.chain) ? s.chain : [primary]);
-  set.add(primary);
-  const ordered = [primary, ...ids.filter((id) => id !== primary && set.has(id))];
-  return [...new Set(ordered)];
+  let chain = (Array.isArray(s.chain) && s.chain.length) ? s.chain.slice() : [s.provider || 'claude'];
+  chain = [...new Set(chain)].filter((id) => !ids.length || ids.includes(id));
+  if (!chain.length) chain = [s.provider || ids[0] || 'claude'];
+  return chain;
 }
 
+/** Persist a new chain order. chain[0] becomes the primary engine. */
 async function setChain(ordered) {
-  await updateSettings({ chain: ordered });
+  const chain = [...new Set((ordered || []).filter(Boolean))];
+  if (!chain.length) return;
+  await updateSettings({ chain, provider: chain[0] });
+  await refreshPrereq();
   renderEngineBarInPlace();
 }
 
-/** Ordered chain rows (each with a per-provider model picker) + add buttons. */
+/** Ordered chain rows (each with a per-provider model picker) + add buttons.
+ *  chain[0] is the primary. Every row can move ↑/↓ and be removed ✕ — except
+ *  when only one engine remains (then it has no reorder/remove buttons). */
 function chainBuilder() {
-  const s = state.settings;
-  const primary = s.provider || 'claude';
   const chain = currentChain();
   const ids = (state.models.providers || []).map((p) => p.id);
+  const only = chain.length === 1;
   const wrap = h('div', { class: 'chain-builder' });
 
   chain.forEach((pid, idx) => {
-    const isPrimary = pid === primary;
+    const isPrimary = idx === 0;
+    const swap = (a, i, j) => { const c = a.slice(); [c[i], c[j]] = [c[j], c[i]]; return c; };
     const row = h('div', { class: `chain-step ${isPrimary ? 'primary' : ''}` },
       h('span', { class: 'chain-order' }, String(idx + 1)),
       h('div', { class: 'chain-name' }, providerLabel(pid), isPrimary ? h('span', { class: 'chain-tag' }, 'primary') : null),
       modelOptionsFor(pid),
       h('button', { class: 'icon-btn', title: 'Sign in', onClick: () => openAuthModal(pid) }, '🔑'),
-      isPrimary ? null : h('button', {
-        class: 'icon-btn danger', title: 'Remove from chain',
-        onClick: () => setChain(chain.filter((x) => x !== pid)),
-      }, '✕'),
-      isPrimary || idx <= 1 ? null : h('button', {
-        class: 'icon-btn', title: 'Move up',
-        onClick: () => { const a = chain.slice(); [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; setChain(a); },
-      }, '↑'));
+      idx > 0 ? h('button', { class: 'icon-btn', title: 'Move up', onClick: () => setChain(swap(chain, idx - 1, idx)) }, '↑') : null,
+      idx < chain.length - 1 ? h('button', { class: 'icon-btn', title: 'Move down', onClick: () => setChain(swap(chain, idx, idx + 1)) }, '↓') : null,
+      only ? null : h('button', { class: 'icon-btn danger', title: 'Remove from chain', onClick: () => setChain(chain.filter((x) => x !== pid)) }, '✕'));
     wrap.append(row);
   });
 
   const addable = ids.filter((id) => !chain.includes(id));
   if (addable.length) {
-    const add = h('div', { class: 'chain-add' }, h('span', { class: 'mini-label' }, 'Add fallback:'));
+    const add = h('div', { class: 'chain-add' }, h('span', { class: 'mini-label' }, 'Add engine:'));
     for (const id of addable) {
       add.append(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => setChain([...chain, id]) }, `+ ${providerLabel(id)}`));
     }
@@ -417,17 +418,10 @@ function renderEngineBarInPlace() {
   if (old) old.replaceWith(engineBar());
 }
 async function switchProvider(p) {
-  // Make p the primary engine. Switching engines DROPS the previous primary, so
-  // you can stop using Claude (or any engine) entirely just by picking another —
-  // while keeping any *other* fallbacks you explicitly added. Add fallbacks back
-  // anytime from the chain builder.
-  const s = state.settings;
-  const oldPrimary = s.provider || 'claude';
-  const existing = Array.isArray(s.chain) ? s.chain : [];
-  const fallbacks = existing.filter((id) => id !== oldPrimary && id !== p);
-  await updateSettings({ provider: p, chain: [p, ...fallbacks] });
-  await refreshPrereq();
-  renderEngineBarInPlace();
+  // Make p the primary engine: move it to the front of the chain, keeping the
+  // rest in order. Remove an engine entirely (e.g. Claude) with its ✕ button.
+  const chain = currentChain();
+  await setChain([p, ...chain.filter((id) => id !== p)]);
 }
 
 // ---------- guided sign-in modal ----------
