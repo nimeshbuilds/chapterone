@@ -88,7 +88,7 @@ always leaves a resumable draft. On failure mid-chapter the book is marked
 `status:'paused'` with `pausedReason` (see errors.js).
 
 Key spec flags: `size` (small|medium|large), `research`, `polish`,
-`imageMode` (off|ai|stock), `model`, `provider`.
+`imageMode` (off|ai|nano; legacy `stock` is migrated to `ai` in store.getSettings), `model`, `provider`.
 
 ## Non-obvious gotchas (read these)
 

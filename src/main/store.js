@@ -69,7 +69,12 @@ class Store {
   getSettings() {
     try {
       const raw = fs.readFileSync(this.settingsPath, 'utf8');
-      return deepMerge(this.defaultSettings(), JSON.parse(raw));
+      const s = deepMerge(this.defaultSettings(), JSON.parse(raw));
+      // Stock photos retired (a small CC pool, rarely relevant for book scenes).
+      // Fall back to the always-relevant, free AI vector art instead.
+      if (s.imageMode === 'stock') s.imageMode = 'ai';
+      if (s.illustrate) s.illustrate = false;
+      return s;
     } catch (_) {
       return this.defaultSettings();
     }

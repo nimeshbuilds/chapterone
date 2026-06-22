@@ -284,10 +284,9 @@ function providerLabel(id) {
 }
 /** Human label for the chapter-illustration method a job is using. */
 function imageMethodLabel(spec) {
-  const mode = spec && (spec.imageMode || (spec.illustrate ? 'stock' : 'off'));
+  const mode = spec && spec.imageMode;
   if (mode === 'nano') return 'Nano Banana (AI photos)';
-  if (mode === 'ai') return 'AI vector art (SVG)';
-  if (mode === 'stock') return 'Royalty-free stock photos';
+  if (mode === 'ai' || (spec && spec.illustrate) || mode === 'stock') return 'AI vector art (SVG)';
   return null; // no chapter illustrations (cover is always SVG)
 }
 function modelField(provider) { return provider + 'Model'; }
@@ -389,18 +388,18 @@ function chainBuilder() {
   return wrap;
 }
 
-/** Off / AI art / Stock photos segmented control. */
+/** No images / AI vector art / Nano Banana segmented control. */
 function hasImageKey() {
   return !!(state.settings.images && state.settings.images.geminiApiKey && state.settings.images.geminiApiKey.trim());
 }
 function imageModeControl() {
-  const mode = state.settings.imageMode || 'off';
+  let mode = state.settings.imageMode || 'off';
+  if (mode === 'stock') { mode = 'ai'; updateSettings({ imageMode: 'ai' }); } // stock retired → vector art
   const seg = h('div', { class: 'seg' });
   const opts = [
+    { v: 'ai', l: '🎨 AI vector art (free)' },
+    { v: 'nano', l: '🍌 Nano Banana (real AI photos)' },
     { v: 'off', l: 'No images' },
-    { v: 'nano', l: '🍌 Nano Banana (real AI art)' },
-    { v: 'ai', l: '🎨 Vector art' },
-    { v: 'stock', l: '📷 Stock photos' },
   ];
   for (const o of opts) {
     seg.append(h('button', { class: mode === o.v ? 'active' : '', onClick: () => updateSettings({ imageMode: o.v }).then(renderEngineBarInPlace) }, o.l));
@@ -411,10 +410,8 @@ function imageModeControl() {
         ? 'Real, theme-matched illustrations generated with Google’s Nano Banana (Gemini image API). ~$0.13/image with the Pro model; density adapts to a kids book’s age. A cost estimate is shown before writing.'
         : 'Nano Banana needs your Gemini API key (image-only, separate from your CLI subscription).')
     : mode === 'ai'
-      ? 'Your selected engine designs a bespoke vector cover and a chapter illustration that match the book’s theme — copyright-free.'
-      : mode === 'stock'
-        ? 'Sources high-resolution, openly-licensed photos from Openverse, with a credits page.'
-        : 'No images will be added.';
+      ? 'Your selected engine (Claude, Codex, or Gemini) designs a bespoke vector cover and a chapter illustration that match each chapter — always relevant and copyright-free, no extra cost.'
+      : 'No images will be added (a designed cover is still created).';
   return h('div', { class: 'engine-col grow' },
     h('span', { class: 'mini-label' }, 'Cover & illustrations'),
     seg,
