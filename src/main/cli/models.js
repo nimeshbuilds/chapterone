@@ -31,9 +31,10 @@ const CODEX_MODELS = [
 // so they keep working as Google ships new versions without us hardcoding IDs
 // the key may not have access to. Flash is the cheap default.
 const GEMINI_MODELS = [
-  { id: 'gemini-flash-latest', label: 'Gemini Flash (latest) — best value (recommended)' },
-  { id: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite (latest) — cheapest' },
-  { id: 'gemini-pro-latest', label: 'Gemini Pro (latest) — highest quality (pricier)' },
+  { id: 'gemini-flash-latest', label: 'Gemini Flash (latest — currently 3.5 Flash) — recommended' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — newest, best value' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — cheapest' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — highest quality (pricier)' },
   { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — pinned stable' },
 ];
 
