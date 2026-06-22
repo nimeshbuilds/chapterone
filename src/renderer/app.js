@@ -197,15 +197,30 @@ async function refreshPrereq() {
 
   const auth = state.authStatus && state.authStatus[provider];
 
+  const isGemini = provider === 'gemini';
   if (active && active.found) {
     if (!auth) {
-      pill.className = 'pill'; // unknown yet — auth probe running
-      pill.textContent = `● ${name} · checking sign-in…`;
+      pill.className = 'pill'; // unknown yet — auth/connectivity probe running
+      pill.textContent = `● ${name} · ${isGemini ? 'testing connection…' : 'checking sign-in…'}`;
       banner.classList.add('hidden');
     } else if (auth.signedIn) {
       pill.className = 'pill ok';
-      pill.textContent = `● ${name} · signed in${chainNote}`;
+      pill.textContent = `● ${name} · ${isGemini ? 'API key connected' : 'signed in'}${chainNote}`;
       banner.classList.add('hidden');
+    } else if (isGemini) {
+      // Gemini uses an API key, not a sign-in — frame it as connectivity.
+      const keySet = hasImageKey();
+      pill.className = 'pill bad';
+      pill.textContent = `● Gemini · ${keySet ? 'API key not reachable' : 'needs API key'}`;
+      banner.innerHTML = '';
+      banner.append(
+        h('span', { class: 'grow' }, keySet
+          ? '⚠️ Gemini’s API key isn’t reaching the Gemini API (check the key or your connection). Gemini has no subscription login.'
+          : '⚠️ Gemini has no subscription login — it needs a Gemini API key to use as a writing engine.'),
+        h('button', { class: 'btn btn-gold btn-sm', onClick: () => openAuthModal('gemini') }, keySet ? '🔑 Update API key' : '🔑 Add Gemini API key'),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheckAuth() }, 'Re-test'),
+        h('button', { class: 'btn btn-ghost btn-sm', title: 'Hide until next check', onClick: () => banner.classList.add('hidden') }, '✕'));
+      banner.classList.remove('hidden');
     } else {
       pill.className = 'pill bad';
       pill.textContent = `● ${name} · not signed in`;
@@ -234,7 +249,7 @@ async function refreshPrereq() {
     const meta = providerMeta(provider);
     banner.append(
       meta.npmPackage ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => openInstallModal(provider) }, `⬇ Install ${name}`) : null,
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(provider) }, `🔑 Sign in to ${name}`),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(provider) }, isGemini ? '🔑 Add Gemini API key' : `🔑 Sign in to ${name}`),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings'),
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Hide until next check', onClick: () => banner.classList.add('hidden') }, '✕'));
     banner.classList.remove('hidden');
@@ -1624,10 +1639,14 @@ function renderSettings() {
     const info = p[key];
     const ok = info && info.found;
     const a = authOf(key);
+    const isG = key === 'gemini'; // Gemini = API key + connectivity, not sign-in
     const dot = !ok ? 'bad' : (a ? (a.signedIn ? 'ok' : 'warn') : 'warn');
+    const chipText = isG
+      ? (a ? (a.signedIn ? '✓ Connected' : (hasImageKey() ? 'Key not reachable' : 'Needs API key')) : 'Testing…')
+      : (a ? (a.signedIn ? '✓ Signed in' : 'Not signed in') : 'Checking…');
     const authChip = !ok ? null : h('span', {
       style: `font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;${a ? (a.signedIn ? 'color:var(--ok);background:rgba(31,170,107,.14)' : 'color:var(--accent-2);background:rgba(192,138,46,.16)') : 'color:var(--text-dim)'}`,
-    }, a ? (a.signedIn ? '✓ Signed in' : 'Not signed in') : 'Checking…');
+    }, chipText);
     const actions = [
       h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : 'not installed'),
       authChip,
@@ -1637,7 +1656,8 @@ function renderSettings() {
       title: npmOk ? `Install ${label} via npm` : 'Requires npm (install Node.js first)',
       onClick: () => openInstallModal(key),
     }, '⬇ Install'));
-    if (!(a && a.signedIn)) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(key) }, '🔑 Sign in'));
+    if (isG) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal('gemini') }, a && a.signedIn ? '🔑 API key' : '🔑 Add API key'));
+    else if (!(a && a.signedIn)) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(key) }, '🔑 Sign in'));
     return h('div', { class: 'kv' },
       h('span', { class: 'k' }, h('span', { class: `status-dot ${dot}` }), label),
       h('span', { style: 'display:flex;align-items:center;gap:10px' }, ...actions.filter(Boolean)));
