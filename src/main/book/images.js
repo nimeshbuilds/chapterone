@@ -232,6 +232,12 @@ async function resolveImagesForBook(book, { imagesDir, onProgress = () => {}, si
   const cache = new Map(book.images.map((im) => [im.query, im]));
   let counter = book.images.length;
 
+  // Total markers across the book, so the UI can show "used / planned".
+  let total = 0;
+  for (const ch of book.chapters || []) total += parseImageMarkers(ch.content).length;
+  let used = 0;
+  onProgress({ phase: 'image:added', n: 0, total });
+
   for (const chapter of book.chapters || []) {
     const markers = parseImageMarkers(chapter.content);
     for (const mk of markers) {
@@ -267,6 +273,8 @@ async function resolveImagesForBook(book, { imagesDir, onProgress = () => {}, si
           mk.full,
           `![${mk.caption || img.caption || ''}](bwimg:${img.id})`
         );
+        used += 1;
+        onProgress({ phase: 'image:added', n: used, total, query: mk.query });
       } else {
         // Drop the marker, keep the caption as plain emphasised text.
         chapter.content = chapter.content.replace(

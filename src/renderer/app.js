@@ -897,6 +897,7 @@ function newJob(spec) {
     title: (spec && spec.request || 'Book').slice(0, 40), bookId: null, error: null, done: false,
     activity: '', activityLog: [], stream: '', streamCh: null,
     engine: (spec && spec.provider) || currentChain()[0] || 'claude', // the real primary engine
+    imagesUsed: 0, imagesTotal: 0, // live illustration counter
     startedAt: Date.now(),
   };
 }
@@ -1015,7 +1016,12 @@ function handleProgress(e) {
       logActivity(j, '🎨', `Chapter ${e.number}: ${how}`);
       break;
     }
-    case 'art:done': logActivity(j, '🖼️', `Chapter ${e.number}: image ready`); break;
+    case 'art:done': j.imagesUsed = (j.imagesUsed || 0) + 1; logActivity(j, '🖼️', `Chapter ${e.number}: image ready (${j.imagesUsed})`); break;
+    case 'image:added':
+      if (e.n != null) j.imagesUsed = e.n; else j.imagesUsed = (j.imagesUsed || 0) + 1;
+      if (e.total != null) j.imagesTotal = e.total;
+      if (e.query) { j.activity = `Adding image ${j.imagesUsed}${j.imagesTotal ? `/${j.imagesTotal}` : ''}: “${e.query}”`; logActivity(j, '🖼️', `Image ${j.imagesUsed}${j.imagesTotal ? `/${j.imagesTotal}` : ''} added: ${e.query}`); }
+      break;
     case 'image:error': j.activity = e.message; logActivity(j, '⚠️', e.message || 'Image generation issue'); toast(e.message || 'Image generation issue', 'bad'); break;
     case 'chapter:done':
       if (e.engine) j.engine = e.engine; // reflect the engine that actually wrote it
@@ -1024,7 +1030,8 @@ function handleProgress(e) {
       logActivity(j, '✅', `Chapter ${e.number}: ${e.title} — done (${(e.words || 0).toLocaleString()} words)`);
       break;
     case 'images':
-      if (e.query) { j.activity = `Finding image: “${e.query}”`; logActivity(j, '🔎', `Sourcing image: ${e.query}`); }
+    case 'image:search':
+      if (e.query) { j.activity = `Finding a photo: “${e.query}”`; logActivity(j, '🔎', `Searching: ${e.query}`); }
       break;
     case 'engine:switch':
       if (e.type === 'falling-back') { j.activity = `⚠️ ${providerLabel(e.fromId)} hit a ${e.kind} limit — switching to ${providerLabel(e.toId)}…`; logActivity(j, '🔁', j.activity); toast(j.activity, 'bad'); }
@@ -1071,7 +1078,7 @@ function renderProgress() {
     statCard('Words written', wordsSoFar.toLocaleString(), 'stat-words'),
     statCard('Elapsed', fmtElapsed(Date.now() - j.startedAt), 'stat-elapsed'),
     statCard('Engine', providerLabel(j.engine || (j.spec && j.spec.provider) || 'claude')),
-    imgMethod ? statCard('Graphics', imgMethod) : null);
+    imgMethod ? statCard(imgMethod, `${j.imagesUsed || 0}${j.imagesTotal ? ` / ${j.imagesTotal}` : ''}`, 'stat-images') : null);
 
   // live writing preview
   let preview = null;

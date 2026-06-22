@@ -82,7 +82,7 @@ class BookGenerator {
     if (/!\[[^\]]*\]\(\s*image-search:/i.test(chapter.content)) return; // model already added one
     emit('art:start', {
       index: i, number: planned.number, title: planned.title, method: 'stock',
-      message: `Finding a royalty-free stock photo for Chapter ${planned.number}…`,
+      message: `Choosing a photo subject for Chapter ${planned.number}…`,
     });
     try {
       const raw = await this.engine.complete(stockQueryPrompt(book, planned, chapter.content), {
@@ -91,8 +91,9 @@ class BookGenerator {
       });
       const query = String(raw || '').trim().split('\n')[0].replace(/^[\s"'`*#>_-]+|[\s"'`*]+$/g, '').slice(0, 80);
       if (query && !/^none$/i.test(query)) {
+        // Insert the marker only; the real photo is fetched (and counted) later
+        // in resolveImagesForBook, which streams the live "images used" count.
         chapter.content = insertImageMarker(chapter.content, planned.title, query);
-        emit('art:done', { index: i, number: planned.number });
       }
     } catch (_) { /* a chapter without a photo is fine */ }
   }
