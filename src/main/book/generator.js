@@ -529,7 +529,7 @@ class BookGenerator {
       const text = await this.engine.complete(mastersPrompt(spec), {
         system: 'You output only valid JSON. No markdown, no commentary.',
         research: !!spec.research,
-        timeoutMs: 240000,
+        timeoutMs: 120000, // optional step — never let it block the book for minutes
         signal, quiet: true,
       });
       const json = extractJson(text);
