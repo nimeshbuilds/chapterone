@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { run, probeVersion, enforceMinWords } = require('./spawn');
 const { SUBSCRIPTION_SCRUB } = require('./models');
 
@@ -30,17 +33,52 @@ class GrokAdapter {
     return probeVersion(this.command, ['--version']);
   }
 
+  /**
+   * Auth check WITHOUT spawning the CLI. Running `grok -p` while signed out
+   * launches an interactive browser OAuth flow — so polling it (as the sign-in
+   * modal does) opened a new browser tab with a fresh code every few seconds.
+   * Instead we look for the locally-cached auth token Grok writes after
+   * `grok login` (config dir ~/.grok-build, override with GROK_HOME). No CLI
+   * call, no browser.
+   */
   async checkAuth() {
     try {
-      const text = await this.complete('Reply with exactly the word: READY', {
-        system: 'You are a connectivity probe. Output only what is requested.',
-        timeoutMs: 90000,
-      });
-      const ok = text.trim().length > 0; // a successful, non-empty completion = authenticated
-      return { ok, detail: ok ? 'Authenticated (subscription)' : 'The CLI returned no output.' };
-    } catch (err) {
-      return { ok: false, detail: err.message };
+      const home = process.env.GROK_HOME || path.join(os.homedir(), '.grok-build');
+      if (!fs.existsSync(home)) return { ok: false, detail: 'Not signed in — run “grok login” in Terminal.' };
+      const hasToken = this._scanForToken(home, 0);
+      return hasToken
+        ? { ok: true, detail: 'Signed in (subscription)' }
+        : { ok: false, detail: 'Not signed in — run “grok login” in Terminal.' };
+    } catch (_) {
+      return { ok: false, detail: 'Not signed in.' };
     }
+  }
+
+  /**
+   * Shallow-recursive search for a credentials/token file — matched by an
+   * auth-ish filename OR by token-signature content (so it still works if Grok
+   * names the file something unexpected).
+   */
+  _scanForToken(dir, depth) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return false; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isFile()) {
+        try {
+          const st = fs.statSync(full);
+          if (st.size <= 2) continue;
+          if (/(auth|token|credential|session|oauth|account)/i.test(e.name)) return true;
+          if (st.size < 65536) {
+            const txt = fs.readFileSync(full, 'utf8');
+            if (/xai-[A-Za-z0-9]|access_token|refresh_token|"?(id|access)_?token"?\s*[:=]/i.test(txt)) return true;
+          }
+        } catch (_) { /* skip unreadable */ }
+      } else if (e.isDirectory() && depth < 2 && !/node_modules|cache|logs/i.test(e.name)) {
+        if (this._scanForToken(full, depth + 1)) return true;
+      }
+    }
+    return false;
   }
 
   buildArgs(prompt, opts = {}) {

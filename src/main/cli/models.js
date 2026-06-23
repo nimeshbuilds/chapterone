@@ -95,8 +95,8 @@ const PROVIDERS = {
     npmPackage: '@xai-official/grok',
     docsUrl: 'https://docs.x.ai/build/cli',
     login: {
-      args: [],
-      hint: 'A Terminal window opens running “grok”. On first run it opens your browser to sign in with your xAI account (SuperGrok or X Premium Plus) — no API key needed. Then come back and click “I’ve finished”.',
+      args: ['login'],
+      hint: 'A Terminal window opens running “grok login”. It opens your browser ONCE to sign in with your xAI account (SuperGrok or X Premium Plus) — no API key needed. Finish in the browser, then come back; ChapterOne detects it automatically.',
     },
   },
 };

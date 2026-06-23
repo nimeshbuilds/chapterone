@@ -36,3 +36,26 @@ test('grok extractFinal strips banner/status lines', () => {
   assert.match(out, /The actual answer\./);
   assert.doesNotMatch(out, /model:|tokens used/);
 });
+
+test('grok login uses the dedicated `grok login` command', () => {
+  assert.deepStrictEqual(loginFor('grok').args, ['login']);
+});
+
+test('grok checkAuth detects the cached token file WITHOUT spawning the CLI (no browser)', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const prev = process.env.GROK_HOME;
+  try {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-empty-'));
+    process.env.GROK_HOME = empty;
+    assert.strictEqual((await new GrokAdapter({}).checkAuth()).ok, false);
+
+    const authed = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-authed-'));
+    fs.writeFileSync(path.join(authed, 'auth.json'), '{"token":"xai-abc"}');
+    process.env.GROK_HOME = authed;
+    assert.strictEqual((await new GrokAdapter({}).checkAuth()).ok, true);
+  } finally {
+    if (prev === undefined) delete process.env.GROK_HOME; else process.env.GROK_HOME = prev;
+  }
+});
