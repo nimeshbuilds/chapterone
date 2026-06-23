@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { classifyBook } = require('./book/classify');
 
 /**
  * Tiny JSON-file persistence for settings and the book library.
@@ -203,6 +204,7 @@ class Store {
           chapters: (b.chapters || []).filter(Boolean).length,
           plannedChapters: (b.outline || []).length,
           cover: coverDataUri(b),
+          classification: classifyBook(b), // industry-standard audience/format label
           createdAt: b.createdAt,
           updatedAt: b.updatedAt,
         });

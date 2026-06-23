@@ -25,6 +25,7 @@ const { createEngine, createChainEngine, checkPrerequisites, installProviderCli,
 const { modelsFor, providerList, loginFor, PROVIDERS } = require('./cli/models');
 const { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, verifyKey, priceFor, modelLabel } = require('./book/nanoBanana');
 const { bandOf, plannedImageCount, readerVarsForBand } = require('./book/ageBands');
+const { classifyBook } = require('./book/classify');
 const elevenlabs = require('./book/elevenlabs');
 const { markdownToSpeech, tidyText } = require('./book/typography');
 const { AuthSessionManager } = require('./cli/authSession');
@@ -448,6 +449,7 @@ function registerIpc(store) {
       status: book.status,
       ageBand: book.ageBand || '',
       isKids: !!book.isKids,
+      classification: classifyBook(book),
       readerFontPx: (readerVarsForBand(book.ageBand) || {}).fontPx || null,
       pausedReason: book.pausedReason || null,
       words: book.words || 0,

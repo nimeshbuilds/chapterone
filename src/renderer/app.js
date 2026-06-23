@@ -673,6 +673,11 @@ function fmtDate(iso) {
 function statusLabelFor(b) {
   return b.status === 'generating' ? 'Writing…' : (b.status === 'paused' ? 'Paused' : (b.status || 'draft'));
 }
+/** Industry-standard audience/format badge (Picture Book · Ages 3–5, Adult · Fiction, …). */
+function classBadge(c, text) {
+  if (!c) return null;
+  return h('span', { class: `class-badge ${c.kids ? 'kids' : 'adult'}`, title: `${c.label} · ${c.audience}` }, `${c.emoji} ${text || c.label}`);
+}
 function coverFor(b, cls) {
   return b.cover
     ? h('div', { class: `book-cover has-art ${cls || ''}` }, h('img', { src: b.cover, alt: '' }))
@@ -703,6 +708,7 @@ async function renderLibrary() {
     list.append(h('div', { class: 'book-row head' },
       h('span', { class: 'c-cover' }, ''),
       h('span', { class: 'c-title' }, 'Name'),
+      h('span', { class: 'c-aud' }, 'Audience'),
       h('span', { class: 'c-genre' }, 'Genre'),
       h('span', { class: 'c-prog' }, 'Length'),
       h('span', { class: 'c-status' }, 'Status'),
@@ -711,6 +717,7 @@ async function renderLibrary() {
       const row = h('div', { class: 'book-row', onClick: () => go('reader', b.id) },
         coverFor(b, 'thumb'),
         h('span', { class: 'c-title' }, h('span', { class: 'r-title' }, b.title || 'Untitled'), h('span', { class: 'r-by' }, `by ${b.author || 'Anonymous'}`)),
+        h('span', { class: 'c-aud' }, classBadge(b.classification)),
         h('span', { class: 'c-genre' }, b.genre || '—'),
         h('span', { class: 'c-prog' }, `${b.chapters}/${b.plannedChapters || b.chapters} ch · ${(b.words || 0).toLocaleString()} w`),
         h('span', { class: 'c-status' }, h('span', { class: `badge ${b.status}` }, statusLabelFor(b))),
@@ -728,7 +735,8 @@ async function renderLibrary() {
       const card = h('div', { class: 'book-card', onClick: () => go('reader', b.id) },
         coverFor(b),
         h('div', { class: 'book-meta' },
-          h('div', { class: 'stat' },
+          h('div', { class: 'stat class-stat' }, classBadge(b.classification)),
+          h('div', { class: 'stat', style: 'margin-top:8px' },
             h('span', { class: `badge ${b.status}` }, statusLabelFor(b)),
             h('span', {}, b.genre || '')),
           h('div', { class: 'stat', style: 'margin-top:8px' },
@@ -1530,6 +1538,7 @@ async function renderReader(id) {
     h('button', { class: 'icon-btn', title: 'Library', onClick: () => go('library') }, '←'),
     h('button', { class: 'icon-btn', title: 'Contents', onClick: toggleToc }, '☰'),
     h('div', { class: 'title' }, content.title),
+    classBadge(content.classification),
     h('div', { class: 'spacer' }),
     // typography controls
     h('div', { class: 'reader-tools' },

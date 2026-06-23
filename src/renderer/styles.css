@@ -475,10 +475,21 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 
 .book-list { display: flex; flex-direction: column; border: 1px solid var(--border-soft); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
 .book-row {
-  display: grid; grid-template-columns: 44px minmax(180px,2.2fr) 1fr 1.3fr 0.9fr 1.2fr;
+  display: grid; grid-template-columns: 44px minmax(150px,1.9fr) 1.4fr 1fr 1.2fr 0.85fr 1.05fr;
   align-items: center; gap: 14px; padding: 9px 16px; cursor: pointer;
   border-top: 1px solid var(--border-soft); font-size: 13px;
 }
+.book-row .c-aud { min-width: 0; }
+/* audience / format classification badge */
+.class-badge {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border: 1px solid transparent;
+}
+.class-badge.kids { color: #2f8f5b; background: rgba(31,170,107,.13); border-color: rgba(31,170,107,.28); }
+.class-badge.adult { color: var(--accent-2); background: rgba(192,138,46,.14); border-color: rgba(192,138,46,.30); }
+.book-meta .class-stat { display: block; }
 .book-row:first-child { border-top: none; }
 .book-row:not(.head):hover { background: var(--field); }
 .book-row.head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); cursor: default; background: var(--field); padding: 8px 16px; }
