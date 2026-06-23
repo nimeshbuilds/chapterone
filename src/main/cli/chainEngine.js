@@ -2,7 +2,15 @@
 
 const { classifyError, shouldFallback } = require('../book/errors');
 
-const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Sleep that resolves early if the signal aborts — so Cancel is responsive
+ *  even while we're waiting out a retry backoff. */
+const delay = (ms, signal) => new Promise((resolve) => {
+  if (signal && signal.aborted) return resolve();
+  const t = setTimeout(done, ms);
+  const onAbort = () => done();
+  function done() { clearTimeout(t); if (signal) signal.removeEventListener('abort', onAbort); resolve(); }
+  if (signal) signal.addEventListener('abort', onAbort, { once: true });
+});
 
 /**
  * An engine that wraps an ordered list of provider adapters and provides an
@@ -77,7 +85,8 @@ class ChainEngine {
           const aborted = opts.signal && opts.signal.aborted;
           if (transient && attempt < MAX_ATTEMPTS && !aborted) {
             announce({ type: 'retrying', id: adapter.id, kind, attempt, error: err.message });
-            await delay((BACKOFF[kind] || BACKOFF.network)[attempt - 1] || 15000);
+            await delay((BACKOFF[kind] || BACKOFF.network)[attempt - 1] || 15000, opts.signal);
+            if (opts.signal && opts.signal.aborted) throw err; // user cancelled during backoff
             continue;
           }
           break; // out of retries for this adapter — fall through to the next

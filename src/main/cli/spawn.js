@@ -56,6 +56,7 @@ function run(command, args = [], opts = {}) {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let aborted = false;
     let timer = null;
 
     const cleanup = () => {
@@ -65,6 +66,7 @@ function run(command, args = [], opts = {}) {
 
     const onAbort = () => {
       if (settled) return;
+      aborted = true;
       try {
         child.kill('SIGTERM');
       } catch (_) {
@@ -116,6 +118,9 @@ function run(command, args = [], opts = {}) {
       if (settled) return;
       settled = true;
       cleanup();
+      // A user cancel/abort must REJECT (clearly "cancelled"), never resolve with
+      // a partial/short result that downstream would treat as success or retry.
+      if (aborted) { reject(new Error('Generation cancelled by user')); return; }
       resolve({ code: code == null ? -1 : code, stdout, stderr });
     });
 

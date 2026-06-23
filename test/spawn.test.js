@@ -24,9 +24,11 @@ test('reports non-zero exit codes', async () => {
   assert.strictEqual(code, 3);
 });
 
-test('aborts a running child', async () => {
+test('aborting a running child rejects with a clear cancellation (never a partial success)', async () => {
   const ac = new AbortController();
   setTimeout(() => ac.abort(), 50);
-  const { code } = await run(NODE, ['-e', 'setTimeout(()=>{}, 10000)'], { signal: ac.signal });
-  assert.notStrictEqual(code, 0);
+  await assert.rejects(
+    run(NODE, ['-e', 'setTimeout(()=>{}, 10000)'], { signal: ac.signal }),
+    /cancel/i,
+  );
 });
