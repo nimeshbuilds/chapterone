@@ -242,7 +242,7 @@ async function refreshPrereq() {
     banner.innerHTML = '';
     const msg = others.length
       ? `${name} isn’t set up. Sign in below, or use an engine you already have:`
-      : `No AI engine is ready yet. Install any one of Claude Code, Codex, or Gemini and sign in with your own subscription — ChapterOne uses whichever you pick.`;
+      : `No AI engine is ready yet. Install any one of Claude Code, Codex, Grok, or Gemini and sign in with your own subscription — ChapterOne uses whichever you pick.`;
     banner.append(h('span', { class: 'grow' }, `⚠️ ${msg}`));
     for (const id of others) {
       banner.append(h('button', { class: 'btn btn-gold btn-sm', onClick: () => switchProvider(id) }, `Use ${providerLabel(id)}`));
@@ -353,13 +353,17 @@ function chainBuilder() {
   chain.forEach((pid, idx) => {
     const isPrimary = idx === 0;
     const swap = (a, i, j) => { const c = a.slice(); [c[i], c[j]] = [c[j], c[i]]; return c; };
+    const found = !!(state.prereq && state.prereq[pid] && state.prereq[pid].found);
+    const meta = providerMeta(pid);
     const geminiTag = pid === 'gemini'
       ? h('span', { class: 'chain-tag ' + (hasImageKey() ? 'apikey' : 'warn') }, hasImageKey() ? 'API key' : 'needs API key')
-      : null;
+      : (!found ? h('span', { class: 'chain-tag warn' }, 'not installed') : null);
     const row = h('div', { class: `chain-step ${isPrimary ? 'primary' : ''}` },
       h('span', { class: 'chain-order' }, String(idx + 1)),
       h('div', { class: 'chain-name' }, providerLabel(pid), isPrimary ? h('span', { class: 'chain-tag' }, 'primary') : null, geminiTag),
       modelOptionsFor(pid),
+      // Offer install first when the CLI isn't on PATH (skip Gemini — it's API-key only).
+      (!found && pid !== 'gemini' && meta.npmPackage) ? h('button', { class: 'icon-btn', title: `Install ${providerLabel(pid)}`, onClick: () => openInstallModal(pid) }, '⬇') : null,
       h('button', { class: 'icon-btn', title: pid === 'gemini' ? 'Gemini API key' : 'Sign in', onClick: () => openAuthModal(pid) }, '🔑'),
       idx > 0 ? h('button', { class: 'icon-btn', title: 'Move up', onClick: () => setChain(swap(chain, idx - 1, idx)) }, '↑') : null,
       idx < chain.length - 1 ? h('button', { class: 'icon-btn', title: 'Move down', onClick: () => setChain(swap(chain, idx, idx + 1)) }, '↓') : null,
@@ -487,6 +491,12 @@ function openAuthModal(provider) {
           h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Close'))));
     document.body.append(overlay);
     return;
+  }
+
+  // The CLI must exist before we can sign in — if it isn't on PATH, install first.
+  const installed = !!(state.prereq && state.prereq[provider] && state.prereq[provider].found);
+  if (!installed && providerMeta(provider).npmPackage) {
+    return openInstallModal(provider);
   }
 
   const status = h('p', { class: 'hint' }, 'Opening Terminal…');
