@@ -2,9 +2,12 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-/** Unwrap the {ok,data,error} envelope from IPC handlers into a promise. */
-async function invoke(channel, payload) {
-  const res = await ipcRenderer.invoke(channel, payload);
+/** Unwrap the {ok,data,error} envelope from IPC handlers into a promise.
+ *  Variadic: forwards every argument so multi-arg handlers (e.g. model:verify
+ *  with provider + model) receive them all — passing only the first silently
+ *  dropped the rest. */
+async function invoke(channel, ...args) {
+  const res = await ipcRenderer.invoke(channel, ...args);
   if (res && res.ok) return res.data;
   throw new Error((res && res.error) || `IPC ${channel} failed`);
 }
