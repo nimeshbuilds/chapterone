@@ -42,8 +42,8 @@ const GEMINI_MODELS = [
 // headless. Models come from `grok models`; grok-build is xAI's latest (512K
 // context) and the best default. Composer 2.5 is Cursor's coding model.
 const GROK_MODELS = [
-  { id: 'grok-build', label: 'Grok Build — xAI’s latest (recommended)' },
-  { id: 'grok-composer-2.5-fast', label: 'Composer 2.5 Fast — Cursor’s coding model' },
+  { id: 'grok-composer-2.5-fast', label: 'Composer 2.5 Fast — fastest, great prose (recommended)' },
+  { id: 'grok-build', label: 'Grok Build — xAI’s latest, agentic (slower)' },
   { id: '', label: 'CLI default' },
 ];
 

@@ -18,8 +18,8 @@ function classifyError(message) {
   if (/(rate limit|rate_limit|429|overloaded|too many requests)/.test(m)) {
     return 'rate_limit';
   }
-  if (/(timed out|timeout|etimedout|enotfound|econnreset|econnrefused|socket hang up|network|getaddrinfo|dns)/.test(m)) {
-    return 'network';
+  if (/(timed out|timeout|etimedout|enotfound|econnreset|econnrefused|socket hang up|network|getaddrinfo|dns|internal error|internal server|service unavailable|bad gateway|gateway timeout|\b50[0234]\b|try again)/.test(m)) {
+    return 'network'; // includes transient server errors — retryable
   }
   return 'unknown';
 }

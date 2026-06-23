@@ -35,7 +35,7 @@ class Store {
       geminiCommand: 'gemini',
       geminiModel: 'gemini-flash-latest', // REST API + key; alias → newest Flash the key can use
       grokCommand: 'grok',
-      grokModel: 'grok-build', // xAI's latest, 512K context — the best default
+      grokModel: 'grok-composer-2.5-fast', // fastest + reliable for prose (grok-build's agentic mode is slow/flaky headless)
       forceSubscription: true, // strip API-key env vars; use subscription login
       authorName: '', // if set, books are authored under this name (no invented pen name)
       research: true, // ground content with web search by default
