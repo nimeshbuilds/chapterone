@@ -3,6 +3,7 @@
 const { ClaudeAdapter } = require('./claudeAdapter');
 const { CodexAdapter } = require('./codexAdapter');
 const { GeminiAdapter } = require('./geminiAdapter');
+const { GrokAdapter } = require('./grokAdapter');
 const { ChainEngine } = require('./chainEngine');
 const { PROVIDER_IDS, PROVIDERS } = require('./models');
 const { run, probeVersion } = require('./spawn');
@@ -18,6 +19,9 @@ function buildAdapter(providerId, settings = {}) {
     // login is dead). Reuse the same key set for Nano Banana — it's one Google key.
     const apiKey = settings.geminiApiKey || (settings.images && settings.images.geminiApiKey) || '';
     return new GeminiAdapter({ model: settings.geminiModel, apiKey });
+  }
+  if (providerId === 'grok') {
+    return new GrokAdapter({ command: settings.grokCommand, model: settings.grokModel, extraArgs: settings.grokExtraArgs, forceSubscription });
   }
   return new ClaudeAdapter({ command: settings.claudeCommand, model: settings.claudeModel, extraArgs: settings.claudeExtraArgs, forceSubscription });
 }
@@ -69,11 +73,12 @@ async function checkPrerequisites(settings = {}) {
   const claude = buildAdapter('claude', settings);
   const codex = buildAdapter('codex', settings);
   const gemini = buildAdapter('gemini', settings);
-  const [c, x, g, npm] = await Promise.all([claude.detect(), codex.detect(), gemini.detect(), detectNpm()]);
+  const grok = buildAdapter('grok', settings);
+  const [c, x, g, k, npm] = await Promise.all([claude.detect(), codex.detect(), gemini.detect(), grok.detect(), detectNpm()]);
   return {
     node: { found: true, version: process.versions.node },
     npm,
-    claude: c, codex: x, gemini: g,
+    claude: c, codex: x, gemini: g, grok: k,
     activeProvider: settings.provider || 'claude',
     chain: resolveChain(settings),
   };
@@ -118,5 +123,5 @@ async function installProviderCli(providerId, opts = {}) {
 module.exports = {
   buildAdapter, resolveChain, createEngine, createChainEngine, checkPrerequisites,
   detectNpm, installProviderCli,
-  ClaudeAdapter, CodexAdapter, GeminiAdapter, ChainEngine,
+  ClaudeAdapter, CodexAdapter, GeminiAdapter, GrokAdapter, ChainEngine,
 };

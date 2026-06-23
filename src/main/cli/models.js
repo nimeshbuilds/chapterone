@@ -38,12 +38,20 @@ const GEMINI_MODELS = [
   { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — pinned stable' },
 ];
 
+// Grok Build CLI on a SuperGrok / X Premium Plus subscription. Drives `grok -p`
+// headless; the CLI default model is grok-build-0.1.
+const GROK_MODELS = [
+  { id: '', label: 'Default — best on your plan (recommended)' },
+  { id: 'grok-build-0.1', label: 'Grok Build 0.1 — agentic model' },
+];
+
 /** Env vars that force API-key billing; stripped so the CLI uses the
  * subscription login instead. */
 const SUBSCRIPTION_SCRUB = {
   claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'],
   codex: ['OPENAI_API_KEY', 'OPENAI_API_BASE'],
   gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_USE_VERTEXAI'],
+  grok: ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'],
 };
 
 /**
@@ -81,6 +89,16 @@ const PROVIDERS = {
       hint: 'A Terminal window opens running “gemini”. When it starts, choose “Login with Google” (or type /auth) and sign in with the Google account on your Gemini AI Pro/Ultra plan — no API key needed. Then come back and click “I’ve finished”.',
     },
   },
+  grok: {
+    id: 'grok', label: 'Grok', command: 'grok', models: GROK_MODELS,
+    install: 'npm i -g @xai-official/grok',
+    npmPackage: '@xai-official/grok',
+    docsUrl: 'https://docs.x.ai/build/cli',
+    login: {
+      args: [],
+      hint: 'A Terminal window opens running “grok”. On first run it opens your browser to sign in with your xAI account (SuperGrok or X Premium Plus) — no API key needed. Then come back and click “I’ve finished”.',
+    },
+  },
 };
 
 const PROVIDER_IDS = Object.keys(PROVIDERS);
@@ -99,7 +117,7 @@ function loginFor(provider) {
 }
 
 module.exports = {
-  CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS,
+  CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, GROK_MODELS,
   SUBSCRIPTION_SCRUB, PROVIDERS, PROVIDER_IDS,
   modelsFor, providerList, loginFor,
 };

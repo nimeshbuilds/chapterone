@@ -29,9 +29,9 @@ test('gemini error messages are actionable', () => {
   assert.match(describeError(403, '{}', 'x'), /rejected/i);
 });
 
-test('provider catalog includes all three with login metadata', () => {
+test('provider catalog includes all engines with login metadata', () => {
   const ids = providerList().map((p) => p.id);
-  assert.deepStrictEqual(ids, ['claude', 'codex', 'gemini']);
+  assert.deepStrictEqual(ids, ['claude', 'codex', 'gemini', 'grok']);
   assert.ok(modelsFor('gemini').some((m) => m.id === 'gemini-flash-latest'));
   assert.ok(loginFor('codex').args.includes('login'));
   assert.ok(typeof loginFor('gemini').hint === 'string');

@@ -33,6 +33,8 @@ class Store {
       codexModel: '',
       geminiCommand: 'gemini',
       geminiModel: 'gemini-flash-latest', // REST API + key; alias → newest Flash the key can use
+      grokCommand: 'grok',
+      grokModel: '', // empty => CLI default (grok-build-0.1)
       forceSubscription: true, // strip API-key env vars; use subscription login
       authorName: '', // if set, books are authored under this name (no invented pen name)
       research: true, // ground content with web search by default
