@@ -47,11 +47,14 @@ class ChainEngine {
     for (let i = this.index; i < this.adapters.length; i++) {
       const adapter = this.adapters[i];
       let kind = 'unknown';
-      // Retry TRANSIENT (network / rate-limit) failures on the SAME adapter with
-      // backoff before giving up. A momentary blip to a cloud CLI's proxy
-      // shouldn't end the book — especially with a single-engine chain that has
-      // nothing to fall back to.
-      const MAX_ATTEMPTS = 3;
+      // Retry TRANSIENT (network / rate-limit / transient-server) failures on the
+      // SAME adapter with backoff before giving up. Cloud CLIs (e.g. Grok's
+      // proxy) blip and throttle; a single-engine chain has nothing to fall back
+      // to, so we ride it out with several attempts and kind-aware waits.
+      const MAX_ATTEMPTS = 5;
+      // ms to wait before each retry, indexed by attempt-1. Rate limits need
+      // longer to clear than a momentary network blip.
+      const BACKOFF = { network: [1500, 4000, 8000, 15000], rate_limit: [5000, 12000, 24000, 40000] };
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
           const out = await adapter.complete(prompt, opts);
@@ -74,7 +77,7 @@ class ChainEngine {
           const aborted = opts.signal && opts.signal.aborted;
           if (transient && attempt < MAX_ATTEMPTS && !aborted) {
             announce({ type: 'retrying', id: adapter.id, kind, attempt, error: err.message });
-            await delay(Math.min(12000, 1500 * 2 ** (attempt - 1))); // 1.5s, 3s
+            await delay((BACKOFF[kind] || BACKOFF.network)[attempt - 1] || 15000);
             continue;
           }
           break; // out of retries for this adapter — fall through to the next
