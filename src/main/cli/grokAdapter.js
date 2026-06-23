@@ -43,12 +43,18 @@ class GrokAdapter {
    */
   async checkAuth() {
     try {
-      const home = process.env.GROK_HOME || path.join(os.homedir(), '.grok-build');
-      if (!fs.existsSync(home)) return { ok: false, detail: 'Not signed in — run “grok login” in Terminal.' };
-      const hasToken = this._scanForToken(home, 0);
-      return hasToken
-        ? { ok: true, detail: 'Signed in (subscription)' }
-        : { ok: false, detail: 'Not signed in — run “grok login” in Terminal.' };
+      // Grok stores the session token in ~/.grok/auth.json (key host auth.x.ai).
+      // An explicit GROK_HOME wins exclusively; otherwise check ~/.grok then the
+      // legacy ~/.grok-build.
+      const candidates = process.env.GROK_HOME
+        ? [process.env.GROK_HOME]
+        : [path.join(os.homedir(), '.grok'), path.join(os.homedir(), '.grok-build')];
+      for (const home of candidates) {
+        if (fs.existsSync(home) && this._scanForToken(home, 0)) {
+          return { ok: true, detail: 'Signed in (subscription)' };
+        }
+      }
+      return { ok: false, detail: 'Not signed in — run “grok login” in Terminal.' };
     } catch (_) {
       return { ok: false, detail: 'Not signed in.' };
     }
@@ -82,12 +88,14 @@ class GrokAdapter {
   }
 
   buildArgs(prompt, opts = {}) {
-    const args = ['--no-auto-update'];
+    // `-p/--single` = headless single prompt; plain output is clean assistant text.
+    const args = ['--no-auto-update', '--output-format', 'plain'];
     if (this.model) args.push('--model', this.model);
+    if (opts.research === false) args.push('--disable-web-search'); // search is on by default
     if (this.extraArgs.length) args.push(...this.extraArgs);
     // Grok has no separate system-prompt flag in headless mode, so fold it in.
     const full = opts.system ? `${opts.system}\n\n${prompt}` : prompt;
-    args.push('-p', full); // single-prompt headless mode
+    args.push('-p', full);
     return args;
   }
 

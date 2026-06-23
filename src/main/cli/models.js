@@ -39,10 +39,12 @@ const GEMINI_MODELS = [
 ];
 
 // Grok Build CLI on a SuperGrok / X Premium Plus subscription. Drives `grok -p`
-// headless; the CLI default model is grok-build-0.1.
+// headless. Models come from `grok models`; grok-build is xAI's latest (512K
+// context) and the best default. Composer 2.5 is Cursor's coding model.
 const GROK_MODELS = [
-  { id: '', label: 'Default — best on your plan (recommended)' },
-  { id: 'grok-build-0.1', label: 'Grok Build 0.1 — agentic model' },
+  { id: 'grok-build', label: 'Grok Build — xAI’s latest (recommended)' },
+  { id: 'grok-composer-2.5-fast', label: 'Composer 2.5 Fast — Cursor’s coding model' },
+  { id: '', label: 'CLI default' },
 ];
 
 /** Env vars that force API-key billing; stripped so the CLI uses the
