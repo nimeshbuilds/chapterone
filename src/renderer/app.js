@@ -484,9 +484,15 @@ function engineBar() {
         h('span', { class: 'mini-label' }, 'Primary engine'),
         seg)),
     h('div', { class: 'engine-row', style: 'margin-top:14px;flex-direction:column;align-items:stretch;gap:8px' },
-      h('span', { class: 'mini-label' }, 'Engines, models & automatic fallback chain'),
+      h('div', { class: 'preset-row' },
+        h('span', { class: 'mini-label' }, 'Engines, models & automatic fallback chain'),
+        h('div', { class: 'preset-btns' },
+          h('span', { class: 'preset-label' }, 'Quick pick:'),
+          h('button', { class: 'btn btn-ghost btn-sm', title: 'Fastest model on every engine in your chain', onClick: () => applyPreset('fast') }, '⚡ Fast'),
+          h('button', { class: 'btn btn-ghost btn-sm', title: 'Largest / highest-quality model on every engine', onClick: () => applyPreset('pro') }, '💎 Pro'),
+          h('button', { class: 'btn btn-ghost btn-sm', title: 'Best on your plan / recommended default', onClick: () => applyPreset('default') }, 'Default'))),
       chainBuilder(),
-      h('span', { class: 'hint' }, 'Writing runs top-to-bottom. If an engine’s quota runs out mid-book, it continues automatically on the next — pick a model for each.')),
+      h('span', { class: 'hint' }, 'Writing runs top-to-bottom. If an engine’s quota runs out mid-book, it continues automatically on the next. Use Quick pick to set Fast / Pro / Default models across every engine at once.')),
     h('div', { class: 'engine-row', style: 'margin-top:14px' }, imageModeControl()),
     h('div', { class: 'engine-row toggles' },
       toggle('t-research', s.research, '🔎 Research real facts & sources (web)', (v) => updateSettings({ research: v })),
@@ -497,6 +503,18 @@ function engineBar() {
 function renderEngineBarInPlace() {
   const old = $('#engine-bar');
   if (old) old.replaceWith(engineBar());
+}
+/** Set Fast / Pro / Default models on every engine in the current chain at once. */
+async function applyPreset(preset) {
+  const presets = state.models.presets || {};
+  const patch = {};
+  for (const id of currentChain()) {
+    const p = presets[id] || {};
+    patch[modelField(id)] = p[preset] != null ? p[preset] : (p.default || '');
+  }
+  await updateSettings(patch);
+  renderEngineBarInPlace();
+  toast(`${preset === 'fast' ? '⚡ Fast' : preset === 'pro' ? '💎 Pro' : 'Default'} models applied`, 'ok');
 }
 async function switchProvider(p) {
   // Make p the primary engine: move it to the front of the chain, keeping the

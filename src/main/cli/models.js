@@ -47,6 +47,23 @@ const GROK_MODELS = [
   { id: '', label: 'CLI default' },
 ];
 
+// One-click model presets per provider. "Fast" = the quickest/cheapest model,
+// "Pro" = the largest/highest-quality, "default" = best on the plan / recommended.
+// Used by the Fast/Pro/Default quick-select buttons in the engine bar.
+const MODEL_PRESETS = {
+  claude: { fast: 'haiku', pro: 'opus', default: '' },
+  codex: { fast: 'gpt-5.4-mini', pro: 'gpt-5.5', default: '' },
+  gemini: { fast: 'gemini-3.1-flash-lite', pro: 'gemini-3.1-pro-preview', default: 'gemini-flash-latest' },
+  grok: { fast: 'grok-composer-2.5-fast', pro: 'grok-build', default: 'grok-composer-2.5-fast' },
+};
+
+/** The model id for a provider's preset ('fast' | 'pro' | 'default'). */
+function presetModel(provider, preset) {
+  const p = MODEL_PRESETS[provider];
+  if (!p) return '';
+  return p[preset] != null ? p[preset] : (p.default || '');
+}
+
 /** Env vars that force API-key billing; stripped so the CLI uses the
  * subscription login instead. */
 const SUBSCRIPTION_SCRUB = {
@@ -120,6 +137,6 @@ function loginFor(provider) {
 
 module.exports = {
   CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, GROK_MODELS,
-  SUBSCRIPTION_SCRUB, PROVIDERS, PROVIDER_IDS,
-  modelsFor, providerList, loginFor,
+  SUBSCRIPTION_SCRUB, PROVIDERS, PROVIDER_IDS, MODEL_PRESETS,
+  modelsFor, providerList, loginFor, presetModel,
 };

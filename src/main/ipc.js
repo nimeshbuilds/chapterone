@@ -122,6 +122,7 @@ function registerIpc(store) {
     codex: modelsFor('codex'),
     gemini: modelsFor('gemini'),
     grok: modelsFor('grok'),
+    presets: require('./cli/models').MODEL_PRESETS,
     providers: providerList(),
     imageModels: IMAGE_MODELS,
     defaultImageModel: DEFAULT_IMAGE_MODEL,

@@ -413,6 +413,9 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 }
 .chain-step.primary { border-color: var(--accent); background: linear-gradient(135deg, rgba(109,94,240,.14), transparent); }
 .chain-name { display: flex; align-items: center; gap: 7px; font-size: 14px; min-width: 110px; font-weight: 500; }
+.preset-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.preset-btns { display: inline-flex; align-items: center; gap: 6px; }
+.preset-label { font-size: 11px; color: var(--text-dim); }
 .chain-step .model-select { width: auto; flex: 1; min-width: 140px; padding: 7px 10px; font-size: 13px; }
 .chain-step .model-pick { flex: 1; min-width: 160px; }
 .model-pick { display: flex; flex-direction: column; gap: 6px; }
