@@ -673,6 +673,11 @@ function fmtDate(iso) {
 function statusLabelFor(b) {
   return b.status === 'generating' ? 'Writing…' : (b.status === 'paused' ? 'Paused' : (b.status || 'draft'));
 }
+/** Status badge only when the book isn't finished — a completed book needs no chip. */
+function statusBadge(b) {
+  if (b.status === 'complete') return null;
+  return h('span', { class: `badge ${b.status}` }, statusLabelFor(b));
+}
 /** Industry-standard audience/format badge (Picture Book · Ages 3–5, Adult · Fiction, …). */
 function classBadge(c, text) {
   if (!c) return null;
@@ -720,7 +725,7 @@ async function renderLibrary() {
         h('span', { class: 'c-aud' }, classBadge(b.classification)),
         h('span', { class: 'c-genre' }, b.genre || '—'),
         h('span', { class: 'c-prog' }, `${b.chapters}/${b.plannedChapters || b.chapters} ch · ${(b.words || 0).toLocaleString()} w`),
-        h('span', { class: 'c-status' }, h('span', { class: `badge ${b.status}` }, statusLabelFor(b))),
+        h('span', { class: 'c-status' }, statusBadge(b)),
         h('span', { class: 'c-date' }, fmtDate(b.createdAt),
           b.status === 'paused' ? h('button', { class: 'btn btn-gold btn-sm', style: 'margin-left:10px', onClick: (e) => { e.stopPropagation(); startResume(b.id); } }, '▶ Continue') : null));
       list.append(row);
@@ -737,8 +742,8 @@ async function renderLibrary() {
         h('div', { class: 'book-meta' },
           h('div', { class: 'stat class-stat' }, classBadge(b.classification)),
           h('div', { class: 'stat', style: 'margin-top:8px' },
-            h('span', { class: `badge ${b.status}` }, statusLabelFor(b)),
-            h('span', {}, b.genre || '')),
+            h('span', {}, b.genre || ''),
+            statusBadge(b)),
           h('div', { class: 'stat', style: 'margin-top:8px' },
             h('span', {}, `${b.chapters}/${b.plannedChapters || b.chapters} ch`),
             h('span', {}, `${(b.words || 0).toLocaleString()} words`)),
