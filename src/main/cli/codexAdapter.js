@@ -44,8 +44,17 @@ class CodexAdapter {
 
   buildArgs(prompt, opts = {}) {
     const args = ['exec', '--skip-git-repo-check'];
+    // Codex defaults to `xhigh` reasoning (built for hard coding/math): for prose
+    // it is slow and burns the ChatGPT quota fast, so a full book hits usage/rate
+    // limits and starts failing. `medium` keeps the writing quality while cutting
+    // token use ~3-5x and running far faster. The user can override via extraArgs.
+    const hasReasoning = this.extraArgs.some((a) => /model_reasoning_effort/.test(String(a)));
+    if (!hasReasoning) args.push('-c', 'model_reasoning_effort="medium"');
     if (this.model) args.push('--model', this.model);
-    if (opts.research) args.push('--search'); // enable web search grounding
+    // Web-search grounding. Newer Codex (>=0.x) replaced the `--search` flag with
+    // a config tool toggle; the old flag now errors with "unexpected argument
+    // '--search'", which was failing every research-enabled call.
+    if (opts.research) args.push('-c', 'tools.web_search=true');
     if (this.extraArgs.length) args.push(...this.extraArgs);
     const full = opts.system ? `${opts.system}\n\n${prompt}` : prompt;
     args.push(full);
