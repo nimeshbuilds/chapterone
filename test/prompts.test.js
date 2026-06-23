@@ -164,3 +164,25 @@ test('Nano Banana image prompts avoid text and name characters', () => {
   assert.match(coverImagePrompt(book), /Do NOT render any text/i);
   assert.match(sceneImagePrompt(book, { title: 'C', summary: 's' }, 'a forest'), /NO text/i);
 });
+
+test('character reference photos flow to the image prompt + Nano inputs', () => {
+  const { sceneImagePrompt, characterReferencePhotos } = require('../src/main/book/prompts');
+  const book = { title: 'B', characters: [
+    { name: 'Nikit', role: 'age 4', photo: { data: 'AAAA', mime: 'image/jpeg' } },
+    { name: 'Shanvik', role: 'baby' }, // no photo
+  ] };
+  const block = sceneImagePrompt(book, { title: 'C' }, 'a backyard scene');
+  assert.match(block, /Nikit/);
+  assert.match(block, /Reference photos are provided/i);
+  assert.match(block, /RESEMBLE/i);
+  const refs = characterReferencePhotos(book);
+  assert.strictEqual(refs.length, 1);
+  assert.deepStrictEqual(refs[0], { data: 'AAAA', mime: 'image/jpeg' });
+});
+
+test('no reference photos → plain character block, no refs', () => {
+  const { sceneImagePrompt, characterReferencePhotos } = require('../src/main/book/prompts');
+  const book = { title: 'B', characters: [{ name: 'Tess', role: 'hero' }] };
+  assert.doesNotMatch(sceneImagePrompt(book, { title: 'C' }, 's'), /Reference photos/i);
+  assert.strictEqual(characterReferencePhotos(book).length, 0);
+});

@@ -15,6 +15,7 @@ const {
   coverArtHtmlPrompt,
   coverImagePrompt,
   sceneImagePrompt,
+  characterReferencePhotos,
   stockQueryPrompt,
   mastersPrompt,
   targetWordsForLength,
@@ -221,6 +222,7 @@ class BookGenerator {
         const img = await generateImage({
           apiKey: this.imageConfig.apiKey, model: this.imageConfig.model,
           prompt: coverImagePrompt(book), aspectRatio: '1:1', size: '2K', signal,
+          referenceImages: characterReferencePhotos(book), // uploaded character photos → likeness
         });
         book.coverPng = this._saveImage(book, 'cover', img);
         book.updatedAt = new Date().toISOString();
@@ -284,6 +286,7 @@ class BookGenerator {
         const img = await generateImage({
           apiKey: this.imageConfig.apiKey, model: this.imageConfig.model,
           prompt: sceneImagePrompt(book, planned, hint), aspectRatio: aspect, size: '1K', signal,
+          referenceImages: characterReferencePhotos(book), // uploaded character photos → likeness
         });
         const file = this._saveImage(book, `ch${planned.number}-img${k + 1}`, img);
         if (k === 0) {

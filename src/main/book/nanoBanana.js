@@ -100,8 +100,16 @@ async function generateImage(opts = {}) {
   // field for it on all models). The body uses ONLY the documented field
   // responseModalities on generationConfig (no other config field is valid).
   const aspectHint = opts.aspectRatio ? `Compose this as a ${opts.aspectRatio} aspect ratio image. ` : '';
+  // Optional reference photos (e.g. a child's uploaded picture) so the model
+  // draws a character that RESEMBLES them, in the book's art style. Sent as
+  // inline image parts before the text; capped to keep the request small.
+  const parts = [];
+  for (const ref of (opts.referenceImages || []).slice(0, 4)) {
+    if (ref && ref.data) parts.push({ inline_data: { mime_type: ref.mime || 'image/jpeg', data: ref.data } });
+  }
+  parts.push({ text: aspectHint + opts.prompt });
   const body = {
-    contents: [{ parts: [{ text: aspectHint + opts.prompt }] }],
+    contents: [{ parts }],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
   };
 

@@ -795,19 +795,61 @@ function sizeSelect(selected) {
   for (const o of opts) s.append(h('option', { value: o.v, selected: o.v === selected ? 'selected' : false }, o.l));
   return s;
 }
+/** Downscale an uploaded image to a small JPEG data URI so it's light to store
+ *  and to send to Nano Banana as a reference. Resolves { mime, data }. */
+function resizePhoto(file, max = 768) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the image'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Unsupported image'));
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const hgt = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = hgt;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, hgt);
+        const uri = canvas.toDataURL('image/jpeg', 0.82);
+        const m = /^data:([^;]+);base64,(.*)$/.exec(uri);
+        if (m) resolve({ mime: m[1], data: m[2] }); else reject(new Error('Encode failed'));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function charactersEditor(values = []) {
   const list = h('div', { class: 'chars-list' });
   const addRow = (c = {}) => {
+    let photo = c.photo && c.photo.data ? c.photo : null;
+    const thumbImg = h('img', { alt: '', style: photo ? '' : 'display:none' });
+    if (photo) thumbImg.src = `data:${photo.mime || 'image/jpeg'};base64,${photo.data}`;
+    const placeholder = h('span', { class: 'char-thumb-ph', style: photo ? 'display:none' : '' }, '🙂');
+    const file = h('input', { type: 'file', accept: 'image/*', style: 'display:none' });
+    file.addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      try {
+        photo = await resizePhoto(f);
+        thumbImg.src = `data:${photo.mime};base64,${photo.data}`;
+        thumbImg.style.display = ''; placeholder.style.display = 'none';
+      } catch (err) { toast(`Couldn't use that image: ${err.message}`, 'bad'); }
+    });
+    const thumb = h('button', { class: 'char-thumb', type: 'button', title: 'Upload a photo so the illustrations resemble them', onClick: () => file.click() }, thumbImg, placeholder);
     const row = h('div', { class: 'char-row' },
+      thumb, file,
       h('input', { class: 'char-name', placeholder: 'Name (e.g. Aanya)', value: c.name || '' }),
       h('input', { class: 'char-role', placeholder: 'Who they are (e.g. age 5, the brave hero who loves dinosaurs)', value: c.role || '' }),
       h('button', { class: 'icon-btn danger', type: 'button', title: 'Remove', onClick: () => row.remove() }, '✕'));
+    row._getPhoto = () => photo;
     list.append(row);
   };
   (values || []).forEach((c) => addRow(c));
   return h('div', { class: 'chars-editor', id: 'chars-editor' },
     h('span', { class: 'mini-label' }, 'Characters (optional) — make it personal'),
-    h('span', { class: 'hint', style: 'margin:0 0 8px' }, 'Add real people (your child, family, friends) and who they are. The book will star them by name.'),
+    h('span', { class: 'hint', style: 'margin:0 0 8px' }, 'Add real people (your child, family, friends) and who they are. Tap the 🙂 to upload a photo — with Nano Banana illustrations, the art will resemble them.'),
     list,
     h('button', { class: 'btn btn-ghost btn-sm', type: 'button', style: 'align-self:flex-start;margin-top:8px', onClick: () => addRow({}) }, '+ Add character'));
 }
@@ -816,7 +858,12 @@ function readCharacters() {
   document.querySelectorAll('#chars-editor .char-row').forEach((r) => {
     const name = r.querySelector('.char-name').value.trim();
     const role = r.querySelector('.char-role').value.trim();
-    if (name) out.push({ name, role });
+    if (name) {
+      const c = { name, role };
+      const photo = r._getPhoto && r._getPhoto();
+      if (photo && photo.data) c.photo = photo;
+      out.push(c);
+    }
   });
   return out;
 }

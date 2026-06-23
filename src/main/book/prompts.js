@@ -51,7 +51,20 @@ function artStyleFor(book) {
 function charactersVisualBlock(book) {
   const chars = ((book && book.characters) || []).filter((c) => c && c.name);
   if (!chars.length) return '';
-  return `Depict these recurring characters consistently every time: ${chars.map((c) => `${c.name}${c.role ? ` (${c.role})` : ''}`).join('; ')}.`;
+  const base = `Depict these recurring characters consistently every time: ${chars.map((c) => `${c.name}${c.role ? ` (${c.role})` : ''}`).join('; ')}.`;
+  // If the user uploaded reference photos, the generator passes them as input
+  // images in the SAME order as these names — tell the model to use them.
+  const withPhotos = chars.filter((c) => c.photo && c.photo.data).map((c) => c.name);
+  if (!withPhotos.length) return base;
+  return `${base} Reference photos are provided (in order) for: ${withPhotos.join(', ')}. Render each of these characters to clearly RESEMBLE their reference photo — same face, hair, skin tone and overall look — but redrawn in the book's illustration style (do not copy the photo realistically or include the background).`;
+}
+
+/** Reference photos for the characters that have one, in name order (matches
+ *  charactersVisualBlock). Returned as Nano Banana inline-image inputs. */
+function characterReferencePhotos(book) {
+  return ((book && book.characters) || [])
+    .filter((c) => c && c.name && c.photo && c.photo.data)
+    .map((c) => ({ data: c.photo.data, mime: c.photo.mime || 'image/jpeg' }));
 }
 
 /** Image prompt for a book cover (Nano Banana). */
@@ -529,6 +542,7 @@ module.exports = {
   kindDirective,
   kidsDirective,
   charactersBlock,
+  characterReferencePhotos,
   coverImagePrompt,
   sceneImagePrompt,
   stockQueryPrompt,

@@ -543,8 +543,16 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 .chars-editor { display: flex; flex-direction: column; margin-top: 6px; }
 .chars-list { display: flex; flex-direction: column; gap: 8px; }
 .char-row { display: flex; gap: 8px; align-items: center; }
-.char-row .char-name { flex: 0 0 34%; }
+.char-row .char-name { flex: 0 0 30%; }
 .char-row .char-role { flex: 1; }
+.char-thumb {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 9px; padding: 0; overflow: hidden;
+  border: 1px dashed var(--border-soft); background: var(--field);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.char-thumb:hover { border-color: var(--accent); }
+.char-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.char-thumb-ph { font-size: 18px; opacity: .7; }
 
 /* ---- kids reader tweaks (picture-book ages) ---- */
 .epub-reader[data-age="1-2"] .reader-content,
