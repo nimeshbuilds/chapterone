@@ -1084,7 +1084,9 @@ function handleProgress(e) {
     case 'influences:start': j.activity = e.message || 'Studying the best authors…'; logActivity(j, '📚', 'Studying the category’s best authors to learn — and surpass — them…'); break;
     case 'influences:done':
       if (e.authors && e.authors.length) { j.influences = e.authors; logActivity(j, '🎓', `Learned from ${e.authors.join(', ')} — now aiming higher`); }
-      else logActivity(j, '🎓', 'Proceeding with master-level craft'); break;
+      else if (e.message) { logActivity(j, '⚠️', e.message); toast(e.message, 'bad'); }
+      else logActivity(j, '🎓', 'Proceeding with master-level craft');
+      break;
     case 'outline:start': logActivity(j, '🗂️', 'Designing the book concept & chapter outline…'); break;
     case 'outline:done':
     case 'resume':

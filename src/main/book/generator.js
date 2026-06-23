@@ -524,18 +524,19 @@ class BookGenerator {
    * @returns {Promise<{category,authors,blueprint}|null>}
    */
   async studyInfluences(spec, emit = () => {}, signal) {
-    emit('influences:start', { message: 'Studying the category’s very best authors…' });
+    emit('influences:start', { message: 'Researching the category’s very best authors on the web (this takes a minute)…' });
     try {
       const text = await this.engine.complete(mastersPrompt(spec), {
         system: 'You output only valid JSON. No markdown, no commentary.',
         research: !!spec.research,
-        timeoutMs: 120000, // optional step — never let it block the book for minutes
+        ground: !!spec.research, // grounding call: allow (bounded) web search even on Grok
+        timeoutMs: 420000, // generous — a grounded web search can legitimately take a few minutes
         signal, quiet: true,
       });
       const json = extractJson(text);
       const authors = Array.isArray(json.authors) ? json.authors.filter((a) => a && a.name) : [];
       if (!authors.length || !json.blueprint) {
-        emit('influences:done', { authors: [], skipped: true });
+        emit('influences:done', { authors: [], skipped: true, message: 'The author research came back empty — writing from the model’s own knowledge.' });
         return null;
       }
       const influences = { category: json.category || spec.genre || '', authors, blueprint: json.blueprint };
@@ -543,7 +544,8 @@ class BookGenerator {
       return influences;
     } catch (err) {
       if (signal && signal.aborted) throw err;
-      emit('influences:done', { authors: [], skipped: true });
+      // Surface the reason rather than silently skipping — the user asked to know.
+      emit('influences:done', { authors: [], skipped: true, message: `Couldn’t research authors (${err.message.slice(0, 80)}) — writing from the model’s own knowledge.` });
       return null; // never block book creation on this enrichment step
     }
   }

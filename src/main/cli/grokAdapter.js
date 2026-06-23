@@ -111,10 +111,17 @@ class GrokAdapter {
     // `-p/--single` = headless single prompt; plain output is clean assistant text.
     const args = ['--no-auto-update', '--output-format', 'plain'];
     if (this.model) args.push('--model', this.model);
-    // grok-build runs web search as a slow AGENTIC multi-search loop — a single
-    // grounded call can take minutes (vs ~10s without). Disable it so each call
-    // is a fast single completion. Override via grokExtraArgs to force search.
-    if (!this.extraArgs.some((a) => /web-search/.test(String(a)))) args.push('--disable-web-search');
+    // grok-build runs web search as a slow AGENTIC multi-search loop (minutes per
+    // call). So we enable search ONLY for explicit grounding calls (opts.ground —
+    // e.g. studying the best authors), capping the agent turns so it searches a
+    // little then answers. Every other call (chapters, art, recaps) writes from
+    // the already-grounded plan with search OFF, so it's a fast single completion.
+    const forced = this.extraArgs.some((a) => /web-search/.test(String(a)));
+    if (opts.ground && !this.extraArgs.some((a) => /disable-web-search/.test(String(a)))) {
+      args.push('--max-turns', '12'); // room to search, then answer (won't loop forever)
+    } else if (!forced) {
+      args.push('--disable-web-search');
+    }
     if (this.extraArgs.length) args.push(...this.extraArgs);
     // Grok has no separate system-prompt flag in headless mode, so fold it in.
     const full = opts.system ? `${opts.system}\n\n${prompt}` : prompt;
