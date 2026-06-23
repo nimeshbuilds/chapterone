@@ -33,6 +33,26 @@ class GrokAdapter {
     return probeVersion(this.command, ['--version']);
   }
 
+  /** Parse `grok models` into the list of available model ids. */
+  async listModels() {
+    const { stdout } = await run(this.command, ['models'], { scrubEnv: this.scrub(), timeoutMs: 30000 });
+    const ids = [];
+    for (const line of String(stdout || '').split('\n')) {
+      const m = line.match(/^\s*[-*]\s*([A-Za-z0-9._-]+)/);
+      if (m) ids.push(m[1]);
+    }
+    return ids;
+  }
+
+  /** Is `model` a real Grok model? Checks the live `grok models` list. */
+  async verifyModel(model) {
+    const ids = await this.listModels();
+    if (!ids.length) return { valid: null, detail: 'Could not read Grok’s model list.' };
+    return ids.includes(model)
+      ? { valid: true, detail: 'Valid Grok model' }
+      : { valid: false, detail: `Not a Grok model. Available: ${ids.join(', ')}` };
+  }
+
   /**
    * Auth check WITHOUT spawning the CLI. Running `grok -p` while signed out
    * launches an interactive browser OAuth flow — so polling it (as the sign-in

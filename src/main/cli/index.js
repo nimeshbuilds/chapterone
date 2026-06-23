@@ -62,6 +62,33 @@ function createChainEngine(settings = {}, opts = {}) {
   return new ChainEngine(adapters, { onSwitch: opts.onSwitch });
 }
 
+/**
+ * Verify a custom model id is valid for a provider.
+ * @returns {Promise<{valid: boolean|null, detail: string}>} valid:null = couldn't verify.
+ */
+async function verifyModel(provider, model, settings = {}) {
+  const m = String(model || '').trim();
+  if (!m) return { valid: true, detail: 'Uses the plan/CLI default model' };
+  try {
+    const adapter = buildAdapter(provider, settings);
+    if (typeof adapter.verifyModel === 'function') return await adapter.verifyModel(m); // grok, gemini
+    // Claude / Codex have no model-list command — probe with the model and read
+    // the error. A "model not found" style error means it's invalid.
+    const probe = buildAdapter(provider, { ...settings, [`${provider}Model`]: m });
+    try {
+      const out = await probe.complete('Reply with exactly: OK', { system: 'Output only what is requested.', timeoutMs: 45000 });
+      return out.trim().length ? { valid: true, detail: 'Valid model' } : { valid: null, detail: 'No output — could not verify.' };
+    } catch (err) {
+      if (/not\s*found|unknown model|invalid model|does not exist|unsupported model|no such model|model_not_found/i.test(err.message)) {
+        return { valid: false, detail: `Not a valid ${provider} model.` };
+      }
+      return { valid: null, detail: `Couldn’t verify (${err.message.slice(0, 80)})` };
+    }
+  } catch (e) {
+    return { valid: null, detail: e.message };
+  }
+}
+
 /** Detect whether a usable `npm` is on PATH (needed for one-click installs). */
 async function detectNpm() {
   const probe = await probeVersion('npm', ['--version'], 8000);
@@ -122,6 +149,6 @@ async function installProviderCli(providerId, opts = {}) {
 
 module.exports = {
   buildAdapter, resolveChain, createEngine, createChainEngine, checkPrerequisites,
-  detectNpm, installProviderCli,
+  detectNpm, installProviderCli, verifyModel,
   ClaudeAdapter, CodexAdapter, GeminiAdapter, GrokAdapter, ChainEngine,
 };

@@ -297,21 +297,57 @@ function modelOptionsFor(provider) {
   const field = modelField(provider);
   const current = state.settings[field] || '';
   const known = list.map((m) => m.id);
+  const isCustom = !!current && !known.includes(current);
+
+  const wrap = h('div', { class: 'model-pick' });
   const sel = h('select', { id: `eng-model-${provider}`, class: 'model-select' });
-  for (const m of list) sel.append(h('option', { value: m.id, selected: m.id === current ? 'selected' : false }, m.label));
-  if (current && !known.includes(current)) sel.append(h('option', { value: current, selected: 'selected' }, `Custom: ${current}`));
-  sel.append(h('option', { value: '__custom__' }, 'Custom model…'));
+  for (const m of list) sel.append(h('option', { value: m.id, selected: (!isCustom && m.id === current) ? 'selected' : false }, m.label));
+  sel.append(h('option', { value: '__custom__', selected: isCustom ? 'selected' : false }, isCustom ? `Custom: ${current}` : 'Custom model…'));
+
+  // Inline custom-model entry with live verification against the real provider.
+  const input = h('input', { class: 'model-custom-input', placeholder: 'type the exact model id…', value: isCustom ? current : '' });
+  const chip = h('span', { class: 'model-verify' }, '');
+  const customRow = h('div', { class: 'model-custom', style: isCustom ? '' : 'display:none' }, input, chip);
+  const setChip = (cls, text) => { chip.className = 'model-verify ' + cls; chip.textContent = text; };
+
+  let token = 0;
+  const verify = async (val) => {
+    const v = val.trim();
+    if (!v) { setChip('', ''); return; }
+    const mine = ++token;
+    setChip('checking', '⏳ checking…');
+    try {
+      const r = await api.verifyModel(provider, v);
+      if (mine !== token) return; // a newer keystroke superseded this check
+      if (r.valid === true) setChip('ok', '✓ ' + (r.detail || 'valid model'));
+      else if (r.valid === false) setChip('bad', '✗ ' + (r.detail || 'not a valid model'));
+      else setChip('warn', '⚠ ' + (r.detail || 'could not verify'));
+    } catch (e) { if (mine === token) setChip('warn', '⚠ ' + e.message); }
+  };
+
+  let timer = null;
+  input.addEventListener('input', () => {
+    if (timer) clearTimeout(timer);
+    const val = input.value.trim();
+    setChip('checking', '⏳ …');
+    timer = setTimeout(async () => { await updateSettings({ [field]: val }); verify(val); }, 700);
+  });
+
   sel.addEventListener('change', async () => {
     if (sel.value === '__custom__') {
-      const v = window.prompt(`Enter a custom model id for ${providerLabel(provider)}:`, current || '');
-      if (v == null) { sel.value = current || ''; return; }
-      await updateSettings({ [field]: v.trim() });
-      renderEngineBarInPlace();
+      customRow.style.display = '';
+      input.focus();
+      if (input.value.trim()) verify(input.value);
     } else {
+      customRow.style.display = 'none';
       await updateSettings({ [field]: sel.value });
+      renderEngineBarInPlace();
     }
   });
-  return sel;
+
+  if (isCustom) verify(current); // verify the saved custom value on load
+  wrap.append(sel, customRow);
+  return wrap;
 }
 
 function toggle(id, checked, label, onChange) {
@@ -616,11 +652,45 @@ function openInstallModal(provider) {
 }
 
 // ---------- LIBRARY ----------
+function libView() { return localStorage.getItem('bw.lib.view') === 'list' ? 'list' : 'tiles'; }
+function setLibView(v) { localStorage.setItem('bw.lib.view', v); renderLibrary(); }
+
+/** Mac-Finder-style date: "Today, 9:41 AM" / "Jun 22" (this year) / "Jun 22, 2025". */
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const now = new Date();
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return `Today, ${time}`;
+  const opts = d.getFullYear() === now.getFullYear()
+    ? { month: 'short', day: 'numeric' }
+    : { month: 'short', day: 'numeric', year: 'numeric' };
+  return d.toLocaleDateString(undefined, opts);
+}
+
+function statusLabelFor(b) {
+  return b.status === 'generating' ? 'Writing…' : (b.status === 'paused' ? 'Paused' : (b.status || 'draft'));
+}
+function coverFor(b, cls) {
+  return b.cover
+    ? h('div', { class: `book-cover has-art ${cls || ''}` }, h('img', { src: b.cover, alt: '' }))
+    : h('div', { class: `book-cover ${cls || ''}`, style: `background:${coverGradient(b.title)}` },
+        h('h3', {}, b.title || 'Untitled'),
+        h('div', { class: 'by' }, `by ${b.author || 'Anonymous'}`));
+}
+
 async function renderLibrary() {
   const books = await api.listBooks().catch(() => []);
+  const view = libView();
   const head = h('div', { class: 'page-head' },
     h('h1', {}, 'Your Library'),
     h('p', {}, 'Bestseller-grade books, written on demand and ready for Kindle.'));
+
+  const viewToggle = h('div', { class: 'seg view-toggle' },
+    h('button', { class: view === 'tiles' ? 'active' : '', title: 'Tiles', onClick: () => setLibView('tiles') }, '▦ Tiles'),
+    h('button', { class: view === 'list' ? 'active' : '', title: 'List', onClick: () => setLibView('list') }, '☰ List'));
 
   let body;
   if (!books.length) {
@@ -628,25 +698,43 @@ async function renderLibrary() {
       h('div', { class: 'big' }, '📖'),
       h('p', {}, "You haven't written a book yet."),
       h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ Write my first book'));
+  } else if (view === 'list') {
+    const list = h('div', { class: 'book-list' });
+    list.append(h('div', { class: 'book-row head' },
+      h('span', { class: 'c-cover' }, ''),
+      h('span', { class: 'c-title' }, 'Name'),
+      h('span', { class: 'c-genre' }, 'Genre'),
+      h('span', { class: 'c-prog' }, 'Length'),
+      h('span', { class: 'c-status' }, 'Status'),
+      h('span', { class: 'c-date' }, 'Created')));
+    for (const b of books) {
+      const row = h('div', { class: 'book-row', onClick: () => go('reader', b.id) },
+        coverFor(b, 'thumb'),
+        h('span', { class: 'c-title' }, h('span', { class: 'r-title' }, b.title || 'Untitled'), h('span', { class: 'r-by' }, `by ${b.author || 'Anonymous'}`)),
+        h('span', { class: 'c-genre' }, b.genre || '—'),
+        h('span', { class: 'c-prog' }, `${b.chapters}/${b.plannedChapters || b.chapters} ch · ${(b.words || 0).toLocaleString()} w`),
+        h('span', { class: 'c-status' }, h('span', { class: `badge ${b.status}` }, statusLabelFor(b))),
+        h('span', { class: 'c-date' }, fmtDate(b.createdAt),
+          b.status === 'paused' ? h('button', { class: 'btn btn-gold btn-sm', style: 'margin-left:10px', onClick: (e) => { e.stopPropagation(); startResume(b.id); } }, '▶ Continue') : null));
+      list.append(row);
+    }
+    body = h('div', {},
+      h('div', { class: 'lib-toolbar' }, h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ New Book'), viewToggle),
+      list);
   } else {
     const grid = h('div', { class: 'book-grid' });
     for (const b of books) {
       const paused = b.status === 'paused';
-      const statusLabel = b.status === 'generating' ? 'Writing…' : (paused ? 'Paused' : (b.status || 'draft'));
-      const coverEl = b.cover
-        ? h('div', { class: 'book-cover has-art' }, h('img', { src: b.cover, alt: '' }))
-        : h('div', { class: 'book-cover', style: `background:${coverGradient(b.title)}` },
-            h('h3', {}, b.title || 'Untitled'),
-            h('div', { class: 'by' }, `by ${b.author || 'Anonymous'}`));
       const card = h('div', { class: 'book-card', onClick: () => go('reader', b.id) },
-        coverEl,
+        coverFor(b),
         h('div', { class: 'book-meta' },
           h('div', { class: 'stat' },
-            h('span', { class: `badge ${b.status}` }, statusLabel),
+            h('span', { class: `badge ${b.status}` }, statusLabelFor(b)),
             h('span', {}, b.genre || '')),
           h('div', { class: 'stat', style: 'margin-top:8px' },
             h('span', {}, `${b.chapters}/${b.plannedChapters || b.chapters} ch`),
             h('span', {}, `${(b.words || 0).toLocaleString()} words`)),
+          h('div', { class: 'stat date-row', style: 'margin-top:8px' }, h('span', {}, fmtDate(b.createdAt))),
           paused ? h('button', {
             class: 'btn btn-gold btn-sm', style: 'margin-top:12px;width:100%',
             onClick: (e) => { e.stopPropagation(); startResume(b.id); },
@@ -654,8 +742,7 @@ async function renderLibrary() {
       grid.append(card);
     }
     body = h('div', {},
-      h('div', { class: 'btn-row', style: 'margin-bottom:20px' },
-        h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ New Book')),
+      h('div', { class: 'lib-toolbar' }, h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ New Book'), viewToggle),
       grid);
   }
   mount(h('div', { class: 'view' }, head, body));

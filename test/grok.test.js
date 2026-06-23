@@ -3,7 +3,13 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { GrokAdapter } = require('../src/main/cli/grokAdapter');
 const { providerList, modelsFor, loginFor, SUBSCRIPTION_SCRUB } = require('../src/main/cli/models');
-const { buildAdapter, resolveChain } = require('../src/main/cli/index');
+const { buildAdapter, resolveChain, verifyModel } = require('../src/main/cli/index');
+
+test('verifyModel treats an empty model as valid (uses the plan default)', async () => {
+  const r = await verifyModel('grok', '', {});
+  assert.strictEqual(r.valid, true);
+  assert.match(r.detail, /default/i);
+});
 
 test('grok buildArgs uses headless -p with no-auto-update and folds in the system prompt', () => {
   const args = new GrokAdapter({}).buildArgs('write a chapter', { system: 'SYS' });

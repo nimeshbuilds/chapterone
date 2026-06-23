@@ -21,7 +21,7 @@ function openLoginTerminal(cmd) {
 }
 
 const { Store } = require('./store');
-const { createEngine, createChainEngine, checkPrerequisites, installProviderCli } = require('./cli');
+const { createEngine, createChainEngine, checkPrerequisites, installProviderCli, verifyModel } = require('./cli');
 const { modelsFor, providerList, loginFor, PROVIDERS } = require('./cli/models');
 const { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, verifyKey, priceFor, modelLabel } = require('./book/nanoBanana');
 const { bandOf, plannedImageCount, readerVarsForBand } = require('./book/ageBands');
@@ -330,6 +330,9 @@ function registerIpc(store) {
     const sender = event.sender;
     const onLine = (text) => { if (!sender.isDestroyed()) sender.send('cli:install:output', { provider, text }); };
     return installProviderCli(provider, { command, onLine });
+  }));
+  ipcMain.handle('model:verify', wrap(async (_e, provider, model) => {
+    return verifyModel(provider, model, store.getSettings());
   }));
   ipcMain.handle('prereq:auth', wrap(async (_e, provider) => {
     const settings = store.getSettings();

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   // prerequisites
   checkPrerequisites: () => invoke('prereq:check'),
   checkAuth: (provider) => invoke('prereq:auth', provider),
+  verifyModel: (provider, model) => invoke('model:verify', provider, model),
   getAuthStatus: () => invoke('prereq:authStatus'),
 
   // Nano Banana images

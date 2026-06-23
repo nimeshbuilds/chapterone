@@ -32,6 +32,36 @@ class GeminiAdapter {
     return this.apiKey ? { found: true, version: 'API key' } : { found: false };
   }
 
+  /** Is `model` a real Gemini model the key can use? Checks the models.list API. */
+  async verifyModel(model) {
+    if (!this.apiKey) return { valid: null, detail: 'Add a Gemini API key first.' };
+    // `-latest` aliases resolve server-side and aren't always in the list.
+    if (/-latest$/.test(model)) return { valid: true, detail: 'Valid alias (resolves to the newest model)' };
+    const ids = await this._listModels();
+    if (!ids.length) return { valid: null, detail: 'Could not read the model list.' };
+    return ids.includes(model)
+      ? { valid: true, detail: 'Valid Gemini model for your key' }
+      : { valid: false, detail: 'Not a model your key can use.' };
+  }
+
+  _listModels() {
+    return new Promise((resolve) => {
+      const req = https.request({ host: HOST, path: `/v1beta/models?key=${encodeURIComponent(this.apiKey)}&pageSize=200`, method: 'GET' }, (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => {
+          try {
+            const j = JSON.parse(body);
+            resolve((j.models || []).map((m) => String(m.name || '').replace(/^models\//, '')));
+          } catch (_) { resolve([]); }
+        });
+      });
+      req.on('error', () => resolve([]));
+      req.setTimeout(15000, () => req.destroy());
+      req.end();
+    });
+  }
+
   async checkAuth() {
     if (!this.apiKey) {
       return { ok: false, detail: 'Add a Gemini API key (aistudio.google.com/apikey) in Settings.' };

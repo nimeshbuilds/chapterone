@@ -206,7 +206,7 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 }
 .book-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
 .book-cover {
-  height: 156px; display: flex; flex-direction: column; justify-content: flex-end;
+  aspect-ratio: 2 / 3; display: flex; flex-direction: column; justify-content: flex-end;
   padding: 16px; color: #fff;
 }
 .book-cover h3 { margin: 0; font-size: 16px; line-height: 1.25; font-family: 'New York', Georgia, serif; }
@@ -414,6 +414,20 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 .chain-step.primary { border-color: var(--accent); background: linear-gradient(135deg, rgba(109,94,240,.14), transparent); }
 .chain-name { display: flex; align-items: center; gap: 7px; font-size: 14px; min-width: 110px; font-weight: 500; }
 .chain-step .model-select { width: auto; flex: 1; min-width: 140px; padding: 7px 10px; font-size: 13px; }
+.chain-step .model-pick { flex: 1; min-width: 160px; }
+.model-pick { display: flex; flex-direction: column; gap: 6px; }
+.model-custom { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.model-custom-input {
+  flex: 1; min-width: 150px; padding: 6px 9px; border-radius: 7px;
+  border: 1px solid var(--border-soft); background: var(--field); color: var(--text);
+  font-size: 12px; font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+.model-custom-input:focus { outline: none; border-color: var(--accent); }
+.model-verify { font-size: 11px; font-weight: 600; white-space: nowrap; }
+.model-verify.checking { color: var(--text-dim); }
+.model-verify.ok { color: var(--ok); }
+.model-verify.bad { color: var(--bad); }
+.model-verify.warn { color: var(--accent-2); }
 .chain-order {
   display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
   font-size: 11px; font-weight: 700; background: var(--accent); color: #fff;
@@ -450,8 +464,34 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 .a-time { font-size: 11px; color: var(--text-dim); }
 
 /* ---- covers ---- */
-.book-cover.has-art { padding: 0; height: 204px; background: rgba(0,0,0,.15); }
-.book-cover.has-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Show the FULL cover, never cropped: a 2:3 frame with the whole image fit inside. */
+.book-cover.has-art { padding: 0; aspect-ratio: 2 / 3; background: rgba(0,0,0,.22); display: flex; align-items: center; justify-content: center; }
+.book-cover.has-art img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+/* ---- library: view toggle, list view ---- */
+.lib-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; }
+.seg.view-toggle { display: inline-flex; }
+.book-meta .date-row { color: var(--text-dim); opacity: .8; }
+
+.book-list { display: flex; flex-direction: column; border: 1px solid var(--border-soft); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+.book-row {
+  display: grid; grid-template-columns: 44px minmax(180px,2.2fr) 1fr 1.3fr 0.9fr 1.2fr;
+  align-items: center; gap: 14px; padding: 9px 16px; cursor: pointer;
+  border-top: 1px solid var(--border-soft); font-size: 13px;
+}
+.book-row:first-child { border-top: none; }
+.book-row:not(.head):hover { background: var(--field); }
+.book-row.head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); cursor: default; background: var(--field); padding: 8px 16px; }
+.book-row.head:hover { background: var(--field); }
+.book-row .book-cover.thumb { aspect-ratio: 2 / 3; width: 32px; height: 48px; border-radius: 4px; padding: 0; overflow: hidden; }
+.book-row .book-cover.thumb.has-art { background: rgba(0,0,0,.22); }
+.book-row .book-cover.thumb h3 { font-size: 7px; padding: 3px; margin: 0; }
+.book-row .book-cover.thumb .by { display: none; }
+.book-row .c-title { display: flex; flex-direction: column; min-width: 0; }
+.book-row .r-title { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.book-row .r-by { color: var(--text-dim); font-size: 11px; }
+.book-row .c-genre, .book-row .c-prog { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.book-row .c-date { color: var(--text-dim); display: flex; align-items: center; white-space: nowrap; }
 .reader-cover { text-align: center; margin: 0 auto 2.5rem; max-width: 70%; }
 .reader-cover img { max-width: 100%; max-height: 80vh; border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.3); }
 
