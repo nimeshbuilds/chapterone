@@ -14,7 +14,10 @@ test('verifyModel treats an empty model as valid (uses the plan default)', async
 test('grok buildArgs uses headless -p with no-auto-update and folds in the system prompt', () => {
   const args = new GrokAdapter({}).buildArgs('write a chapter', { system: 'SYS' });
   assert.ok(args.includes('--no-auto-update'));
-  assert.strictEqual(args[args.indexOf('-p') + 1], 'SYS\n\nwrite a chapter');
+  const p = args[args.indexOf('-p') + 1];
+  assert.match(p, /SYS/);
+  assert.match(p, /write a chapter$/);
+  assert.match(p, /Do NOT narrate/i); // no-narration rule folded in
 });
 
 test('grok model flag only when configured', () => {
@@ -64,4 +67,23 @@ test('grok checkAuth detects the cached token file WITHOUT spawning the CLI (no 
   } finally {
     if (prev === undefined) delete process.env.GROK_HOME; else process.env.GROK_HOME = prev;
   }
+});
+
+test('grok strips agentic narration/preamble but keeps real prose', () => {
+  const { GrokAdapter, isNarration } = require('../src/main/cli/grokAdapter');
+  const a = new GrokAdapter({});
+  assert.ok(isNarration('Verifying local details for Merritt Vista, then producing the full revised chapter.'));
+  assert.ok(isNarration("I'll verify a few SeaWorld facts first, then write the poem."));
+  assert.ok(isNarration('Writing the full sixteen-page chapter from the brief and verified setting details.'));
+  assert.ok(!isNarration('First, the sun rose over the quiet town.')); // genuine prose
+  assert.ok(!isNarration('Chirp and rustle, rock and peep!'));
+  // leading preamble removed, content preserved
+  const out = a.extractFinal("I'll verify the facts, then write.\n\nFar-Off SeaWorld Hush\nPage 1\nChirp and peep!");
+  assert.match(out, /^Far-Off SeaWorld Hush/);
+  assert.doesNotMatch(out, /verify the facts/);
+});
+
+test('grok system prompt forbids narration', () => {
+  const args = new GrokAdapter({}).buildArgs('write ch1', { system: 'You are an author.' });
+  assert.match(args[args.indexOf('-p') + 1], /Do NOT narrate/i);
 });

@@ -123,8 +123,12 @@ class GrokAdapter {
       args.push('--disable-web-search');
     }
     if (this.extraArgs.length) args.push(...this.extraArgs);
+    // Grok-Composer is an agentic model that narrates its plan ("I'll verify the
+    // facts, then write the chapter…"). Forbid that so the output is content-only.
+    const NO_NARRATION = 'CRITICAL OUTPUT RULE: Respond with ONLY the requested content itself. Do NOT narrate your process, plans, verification, or steps. No preamble, no "I\'ll…", no meta-commentary. Begin immediately with the content.';
+    const system = opts.system ? `${opts.system}\n\n${NO_NARRATION}` : NO_NARRATION;
     // Grok has no separate system-prompt flag in headless mode, so fold it in.
-    const full = opts.system ? `${opts.system}\n\n${prompt}` : prompt;
+    const full = `${system}\n\n${prompt}`;
     args.push('-p', full);
     return args;
   }
@@ -145,11 +149,10 @@ class GrokAdapter {
     return out;
   }
 
-  /** Strip any leading status/banner lines Grok prints before the answer. */
+  /** Strip status/banner lines AND any leading agentic narration/preamble. */
   extractFinal(raw) {
     if (!raw) return '';
-    const lines = String(raw).split('\n');
-    const cleaned = lines.filter((l) => {
+    const lines = String(raw).split('\n').filter((l) => {
       const t = l.trim();
       if (!t) return true;
       if (/^\[?\d{4}-\d{2}-\d{2}/.test(t)) return false; // timestamps
@@ -157,8 +160,28 @@ class GrokAdapter {
       if (/^-{3,}$/.test(t)) return false;
       return true;
     });
-    return cleaned.join('\n');
+    // Drop leading "I'll verify the facts, then write the chapter…"-style preamble
+    // the agentic model emits before the real content. Conservative: a line must
+    // both START like planning AND mention a planning/meta keyword, so genuine
+    // prose ("First, the sun rose.") is never stripped.
+    let i = 0;
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t) { i++; continue; }
+      if (isNarration(t)) { i++; continue; }
+      break;
+    }
+    return lines.slice(i).join('\n').replace(/^\n+/, '');
   }
 }
 
-module.exports = { GrokAdapter };
+/** True if a line is agentic narration/preamble (planning start + meta keyword). */
+function isNarration(line) {
+  const t = String(line).trim().replace(/^#+\s*/, '').replace(/^[*_>\s]+/, '');
+  if (!t) return false;
+  const startsLikePlan = /^(i['’]?ll|i will|i['’]?m|i am|let me|let['’]s|first[,\s]|now[,\s]|next[,\s]|okay[,\s]|sure[,\s]|alright[,\s]|here(?:'s| is)|the draft|verifying|writing|producing|drafting|checking|let me)\b/i.test(t);
+  const hasMeta = /\b(verif(y|ying|ied)|writ(e|ing)|produc(e|ing)|draft|drafting|revised|brief|facts|setting details|the full (chapter|poem|book|story|page)|then (write|produce|draft|verify)|sixteen-page|editorial notes)\b/i.test(t);
+  return startsLikePlan && hasMeta;
+}
+
+module.exports = { GrokAdapter, isNarration };
