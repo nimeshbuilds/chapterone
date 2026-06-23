@@ -120,6 +120,7 @@ function registerIpc(store) {
     claude: modelsFor('claude'),
     codex: modelsFor('codex'),
     gemini: modelsFor('gemini'),
+    grok: modelsFor('grok'),
     providers: providerList(),
     imageModels: IMAGE_MODELS,
     defaultImageModel: DEFAULT_IMAGE_MODEL,

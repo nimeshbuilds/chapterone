@@ -79,7 +79,7 @@ async function verifyModel(provider, model, settings = {}) {
       const out = await probe.complete('Reply with exactly: OK', { system: 'Output only what is requested.', timeoutMs: 45000 });
       return out.trim().length ? { valid: true, detail: 'Valid model' } : { valid: null, detail: 'No output — could not verify.' };
     } catch (err) {
-      if (/not\s*found|unknown model|invalid model|does not exist|unsupported model|no such model|model_not_found/i.test(err.message)) {
+      if (/not\s*found|unknown model|invalid[_\s]model|does not exist|not supported|no such model|model_not_found|invalid_request_error|unrecognized|not available/i.test(err.message)) {
         return { valid: false, detail: `Not a valid ${provider} model.` };
       }
       return { valid: null, detail: `Couldn’t verify (${err.message.slice(0, 80)})` };
