@@ -309,7 +309,8 @@ function registerIpc(store) {
   ipcMain.handle('prereq:authStatus', wrap(async () => {
     const settings = store.getSettings();
     const pre = await checkPrerequisites(settings);
-    const ids = ['claude', 'codex', 'gemini'];
+    const { PROVIDER_IDS } = require('./cli/models');
+    const ids = PROVIDER_IDS; // every catalogued engine, incl. grok — never hardcode
     const entries = await Promise.all(ids.map(async (id) => {
       if (!(pre[id] && pre[id].found)) return [id, { installed: false, signedIn: false }];
       try {
