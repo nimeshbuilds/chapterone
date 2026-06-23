@@ -61,11 +61,43 @@ function makeWindow() {
   });
 }
 
+/** Wrap a sanitized HTML/CSS art fragment in a fixed-size document. */
+function htmlDocFor(fragment, width, height) {
+  return (
+    '<!doctype html><meta charset="utf-8">' +
+    `<style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:${width}px;height:${height}px;overflow:hidden;background:#fff}` +
+    `body>*{width:${width}px;height:${height}px}</style>` +
+    fragment
+  );
+}
+
+/** Render a hybrid HTML/CSS + inline-SVG art fragment to a PNG buffer. */
+async function renderHtmlInWindow(win, fragment, width, height) {
+  win.setContentSize(width, height);
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlDocFor(fragment, width, height)));
+  // HTML art can be heavier (gradients, blur, many nodes) — give it a touch longer.
+  await delay(450);
+  const img = await win.webContents.capturePage();
+  const png = img.toPNG();
+  if (!png || png.length < 100) throw new Error('Empty raster');
+  return png;
+}
+
 /** Rasterize a single SVG string to a PNG buffer. Main-process only. */
 async function rasterizeSvg(svg, opts = {}) {
   const win = makeWindow();
   try {
     return await renderInWindow(win, svg, opts.maxWidth || 1000);
+  } finally {
+    try { win.destroy(); } catch (_) { /* ignore */ }
+  }
+}
+
+/** Rasterize a single HTML/CSS art fragment to a PNG buffer. Main-process only. */
+async function rasterizeHtml(fragment, { width = 1200, height = 750 } = {}) {
+  const win = makeWindow();
+  try {
+    return await renderHtmlInWindow(win, fragment, width, height);
   } finally {
     try { win.destroy(); } catch (_) { /* ignore */ }
   }
@@ -82,13 +114,15 @@ async function rasterizeBookArt(book, imagesDir) {
   fs.mkdirSync(dir, { recursive: true });
 
   const jobs = [];
-  if (book.coverSvg && !(book.coverPng && fs.existsSync(book.coverPng))) {
-    jobs.push({ svg: book.coverSvg, max: 1000, name: 'cover.png', set: (f) => { book.coverPng = f; } });
+  // Cover: prefer the hybrid HTML design, fall back to SVG.
+  if (!(book.coverPng && fs.existsSync(book.coverPng))) {
+    if (book.coverHtml) jobs.push({ html: book.coverHtml, w: 1200, h: 1800, name: 'cover.png', set: (f) => { book.coverPng = f; } });
+    else if (book.coverSvg) jobs.push({ svg: book.coverSvg, max: 1000, name: 'cover.png', set: (f) => { book.coverPng = f; } });
   }
   (book.chapters || []).forEach((c, i) => {
-    if (c && c.artSvg && !(c.artFile && fs.existsSync(c.artFile))) {
-      jobs.push({ svg: c.artSvg, max: 1100, name: `chapter-${i + 1}-art.png`, set: (f) => { c.artFile = f; } });
-    }
+    if (!c || (c.artFile && fs.existsSync(c.artFile))) return;
+    if (c.artHtml) jobs.push({ html: c.artHtml, w: 1200, h: 750, name: `chapter-${i + 1}-art.png`, set: (f) => { c.artFile = f; } });
+    else if (c.artSvg) jobs.push({ svg: c.artSvg, max: 1100, name: `chapter-${i + 1}-art.png`, set: (f) => { c.artFile = f; } });
   });
   if (!jobs.length) return book;
 
@@ -96,11 +130,13 @@ async function rasterizeBookArt(book, imagesDir) {
   try {
     for (const job of jobs) {
       try {
-        const png = await renderInWindow(win, job.svg, job.max);
+        const png = job.html
+          ? await renderHtmlInWindow(win, job.html, job.w, job.h)
+          : await renderInWindow(win, job.svg, job.max);
         const f = path.join(dir, job.name);
         fs.writeFileSync(f, png);
         job.set(f);
-      } catch (_) { /* keep SVG fallback for this item */ }
+      } catch (_) { /* keep the SVG/HTML source as a fallback for this item */ }
     }
   } finally {
     try { win.destroy(); } catch (_) { /* ignore */ }
@@ -108,4 +144,4 @@ async function rasterizeBookArt(book, imagesDir) {
   return book;
 }
 
-module.exports = { rasterizeSvg, rasterizeBookArt, svgSize };
+module.exports = { rasterizeSvg, rasterizeHtml, rasterizeBookArt, svgSize };

@@ -108,9 +108,13 @@ Key spec flags: `size` (small|medium|large), `research`, `polish`,
 - **SVG must be sanitized.** Any model-produced SVG goes through
   `aiArt.sanitizeSvg` (strips script/handlers/foreignObject/external refs)
   before it's embedded or rendered. Never embed raw model SVG.
-- **The CLIs cannot generate raster images.** "AI art" = the CLI designs an
-  **SVG**, which we then rasterize to PNG (`export/rasterize.js`). Don't promise
-  DALL·E-style generation.
+- **The CLIs cannot generate raster images.** "AI art" = the CLI designs a
+  **hybrid HTML/CSS + inline-SVG scene illustration** (preferred) or a pure
+  **SVG** (fallback), which we then render to PNG via an offscreen Chromium
+  window (`export/rasterize.js`: `rasterizeBookArt` handles `coverHtml`/`artHtml`
+  and `coverSvg`/`artSvg`). Both are hardened in `book/aiArt.js`
+  (`sanitizeHtml`/`sanitizeSvg`) and rendered with `javascript:false`. Don't
+  promise DALL·E-style generation; real raster AI = Nano Banana (image API key).
 - **Electron-only modules:** `export/pdf.js`, `export/rasterize.js`, and the
   IPC/main glue need a running Electron app (BrowserWindow). They can't run
   under plain `node --test`. Test them via the headless smoke pattern below.

@@ -11,6 +11,8 @@ const {
   recapPrompt,
   coverSvgPrompt,
   chapterArtSvgPrompt,
+  chapterArtHtmlPrompt,
+  coverArtHtmlPrompt,
   coverImagePrompt,
   sceneImagePrompt,
   stockQueryPrompt,
@@ -23,7 +25,7 @@ const { generateImage } = require('./nanoBanana');
 const { resolveChapterImages } = require('./images');
 const { tidyProse, tidyText } = require('./typography');
 const { extractJson } = require('./json');
-const { sanitizeSvg } = require('./aiArt');
+const { sanitizeSvg, sanitizeHtml } = require('./aiArt');
 const { classifyError, isResumable, describe } = require('./errors');
 
 /** Resolve the image strategy from a spec (back-compat with the old flag). */
@@ -234,10 +236,22 @@ class BookGenerator {
 
     onProgress({ phase: 'cover:start', message: 'Designing the book cover…' });
     try {
+      // Preferred: a hybrid HTML/CSS + inline-SVG cover; fall back to pure SVG.
+      const rawHtml = await this.engine.complete(coverArtHtmlPrompt(book), {
+        system: 'You are a master book-cover designer. Output ONLY a single self-contained HTML fragment with an inline <style>. No commentary, no code fences.',
+        timeoutMs: 300000, signal,
+      });
+      const html = sanitizeHtml(rawHtml);
+      if (html) {
+        book.coverHtml = html;
+        book.updatedAt = new Date().toISOString();
+        onProgress({ phase: 'cover:done', book });
+        if (onChapter) await onChapter(book);
+        return;
+      }
       const raw = await this.engine.complete(coverSvgPrompt(book), {
         system: 'You are a master book-cover designer. Output only a single valid SVG.',
-        timeoutMs: 300000,
-        signal,
+        timeoutMs: 300000, signal,
       });
       const svg = sanitizeSvg(raw);
       if (svg) {
@@ -429,14 +443,26 @@ class BookGenerator {
       if (this._nanoReady(imageMode)) {
         await this._nanoChapterArt(book, chapter, planned, i, hooks);
       } else if (imageMode === 'ai') {
-        emit('art:start', { index: i, number: planned.number, title: planned.title, method: 'svg', message: `Illustrating Chapter ${planned.number} with AI vector art (SVG)…` });
+        emit('art:start', { index: i, number: planned.number, title: planned.title, method: 'ai', message: `Illustrating Chapter ${planned.number}…` });
         try {
-          const rawArt = await this.engine.complete(chapterArtSvgPrompt(book, planned), {
-            system: 'You are an editorial illustrator. Output only a single valid SVG.',
+          // Preferred: a hybrid HTML/CSS + inline-SVG SCENE illustration (richer,
+          // more relevant). Fall back to pure SVG if it doesn't come back clean.
+          const rawHtml = await this.engine.complete(chapterArtHtmlPrompt(book, planned), {
+            system: 'You are a world-class illustrator and front-end designer. Output ONLY a single self-contained HTML fragment (with an inline <style>) that draws the scene. No commentary, no code fences.',
             timeoutMs: 300000, signal,
           });
-          const art = sanitizeSvg(rawArt);
-          if (art) { chapter.artSvg = art; emit('art:done', { index: i, number: planned.number }); }
+          const html = sanitizeHtml(rawHtml);
+          if (html) {
+            chapter.artHtml = html;
+            emit('art:done', { index: i, number: planned.number });
+          } else {
+            const rawArt = await this.engine.complete(chapterArtSvgPrompt(book, planned), {
+              system: 'You are an editorial illustrator. Output only a single valid SVG.',
+              timeoutMs: 300000, signal,
+            });
+            const art = sanitizeSvg(rawArt);
+            if (art) { chapter.artSvg = art; emit('art:done', { index: i, number: planned.number }); }
+          }
         } catch (err) {
           if (signal && signal.aborted) { this._markPaused(book, err.message); if (onChapter) await onChapter(book); throw err; }
           // Non-fatal: a chapter without art is fine.

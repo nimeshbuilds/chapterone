@@ -386,6 +386,64 @@ function coverSvgPrompt(book, { width = 1200, height = 1800 } = {}) {
 /**
  * Chapter illustration — one tasteful, theme-matched SVG vignette per chapter.
  */
+/**
+ * Hybrid HTML/CSS + inline-SVG SCENE illustration for a chapter. This is the
+ * preferred art path: models compose far richer, more relevant pictures in
+ * HTML/CSS than in raw SVG, and we render the result to PNG through an offscreen
+ * Chromium window. The goal is a real depiction of the chapter's scene, not a
+ * decorative title banner.
+ */
+function chapterArtHtmlPrompt(book, chapter, { width = 1200, height = 750 } = {}) {
+  const chars = charactersVisualBlock(book);
+  return [
+    `You are a world-class illustrator and front-end designer. Create ONE beautiful, fully-rendered ILLUSTRATION that DEPICTS THE KEY SCENE of this chapter — an actual picture of what happens (its setting, characters, and objects), NOT a title card, NOT an abstract banner.`,
+    ``,
+    `BOOK: ${book.title}${book.premise ? ` — ${book.premise}` : ''}`,
+    `GENRE: ${book.genre || ''}`,
+    `ART STYLE: ${artStyleFor(book)}`,
+    `CHAPTER ${chapter.number}: ${chapter.title}`,
+    `SCENE TO DEPICT: ${chapter.summary || (chapter.beats || []).join('; ') || chapter.title}`,
+    chars ? `CHARACTERS (draw them consistently): ${chars}` : '',
+    ``,
+    `Deliver a single self-contained HTML fragment that renders to exactly ${width}x${height} px:`,
+    `- A root element exactly ${width}px wide by ${height}px tall, containing an inline <style>.`,
+    `- COMPOSE A REAL SCENE: a clear focal subject, a setting/background, a sense of depth (foreground, midground, background), and lighting/mood that fit the chapter.`,
+    `- Use CSS for environment, gradients, lighting, shadows, atmosphere, and layout; use INLINE SVG for precise shapes (characters, creatures, objects, silhouettes). Combine both freely and layer them.`,
+    `- Cohesive, tasteful, premium palette that matches the book's mood. Soft shadows, gradients, and glow where apt. Make it look professionally designed and emotionally resonant.`,
+    `- NO title text, NO captions, NO labels, NO watermark — it is an illustration, not a poster. Do not write the chapter title anywhere.`,
+    `- SELF-CONTAINED ONLY: inline CSS and inline SVG (emoji allowed). Absolutely NO <script>, NO <iframe>, NO external images, fonts, links, or URLs, NO network requests, NO animation that depends on JavaScript.`,
+    ``,
+    `Output ONLY the HTML fragment, starting with a tag (e.g. <div ...>). No markdown code fences, no commentary.`,
+  ].filter(Boolean).join('\n');
+}
+
+/**
+ * Hybrid HTML/CSS + inline-SVG front cover. Unlike chapter art, the cover SHOULD
+ * carry the title and author with strong typography.
+ */
+function coverArtHtmlPrompt(book, { width = 1200, height = 1800 } = {}) {
+  return [
+    `You are a celebrated book-cover designer. Design a striking, professional, sales-ready FRONT COVER as a single self-contained HTML fragment that renders to exactly ${width}x${height} px.`,
+    ``,
+    `TITLE: ${book.title}`,
+    book.subtitle ? `SUBTITLE: ${book.subtitle}` : '',
+    `AUTHOR: ${book.author || ''}`,
+    `GENRE: ${book.genre || ''}`,
+    `ART STYLE: ${artStyleFor(book)}`,
+    `MOOD/PREMISE: ${book.premise || ''}`,
+    `THEMES: ${(book.themes || []).join(', ')}`,
+    ``,
+    `Rules:`,
+    `- Root element exactly ${width}px wide by ${height}px tall, with an inline <style>.`,
+    `- A bold, evocative illustration/background — CSS gradients, lighting, depth, and inline SVG art/iconography/symbolism that capture the genre and emotional tone. Think comparable bestsellers.`,
+    `- Strong typographic hierarchy: the TITLE prominent and the AUTHOR name clear, well-kerned and legible. Use only generic system font stacks (e.g. Georgia, serif / Helvetica, sans-serif).`,
+    `- Premium, cohesive palette with atmosphere and depth.`,
+    `- SELF-CONTAINED ONLY: inline CSS and inline SVG (emoji allowed). NO <script>, NO external images, fonts, links, or URLs, NO network.`,
+    ``,
+    `Output ONLY the HTML fragment, starting with a tag (e.g. <div ...>). No markdown code fences, no commentary.`,
+  ].filter(Boolean).join('\n');
+}
+
 function chapterArtSvgPrompt(book, chapter, { width = 1200, height = 700 } = {}) {
   return [
     `You are an editorial illustrator for a premium ${book.genre || ''} book. Create ONE elegant, atmospheric chapter illustration as a single self-contained SVG that visually echoes this chapter and the book's overall design.`,
@@ -486,6 +544,8 @@ module.exports = {
   imageInstruction,
   coverSvgPrompt,
   chapterArtSvgPrompt,
+  chapterArtHtmlPrompt,
+  coverArtHtmlPrompt,
   SIZES,
   sizeOf,
   chapterHintForSize,

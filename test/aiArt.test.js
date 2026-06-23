@@ -1,7 +1,34 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { extractSvg, sanitizeSvg, svgToDataUri } = require('../src/main/book/aiArt');
+const { extractSvg, sanitizeSvg, svgToDataUri, extractHtmlArt, sanitizeHtml } = require('../src/main/book/aiArt');
+
+test('extractHtmlArt pulls the fragment out of fenced chatter', () => {
+  const out = extractHtmlArt('Here you go:\n```html\n<div class="art"><svg></svg></div>\n```\nDone.');
+  assert.match(out, /^<div/);
+  assert.match(out, /<\/div>$/);
+});
+
+test('sanitizeHtml strips scripts, frames, handlers and external refs but keeps CSS+SVG', () => {
+  const dirty = '<div onclick="hack()"><style>.a{background:url(https://evil/x.png)}@import url(//evil/y.css);}</style>'
+    + '<script>steal()</script><iframe src="//evil"></iframe><img src="https://evil/t.png">'
+    + '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#39f"/></svg>🌟</div>';
+  const clean = sanitizeHtml(dirty);
+  assert.ok(clean);
+  assert.doesNotMatch(clean, /<script/i);
+  assert.doesNotMatch(clean, /<iframe/i);
+  assert.doesNotMatch(clean, /onclick/i);
+  assert.doesNotMatch(clean, /@import/i);
+  assert.doesNotMatch(clean, /url\(\s*['"]?https?:/i);     // external CSS url neutralized
+  assert.doesNotMatch(clean, /src="https?:/i);            // external img neutralized
+  assert.match(clean, /<svg/);                            // inline SVG kept
+  assert.match(clean, /🌟/);                              // emoji kept
+});
+
+test('sanitizeHtml rejects non-markup input', () => {
+  assert.strictEqual(sanitizeHtml('just plain text'), null);
+  assert.strictEqual(sanitizeHtml(''), null);
+});
 
 test('extractSvg pulls the svg out of chatter', () => {
   const out = extractSvg('Sure! Here is the cover:\n<svg viewBox="0 0 10 10"><rect/></svg>\nEnjoy.');

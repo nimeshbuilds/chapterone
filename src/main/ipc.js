@@ -84,9 +84,10 @@ function registerIpc(store) {
     (c.artFile && fs.existsSync(c.artFile) && fileDataUri(c.artFile, 'image/png')) ||
     (c.artSvg ? svgToDataUri(c.artSvg) : null);
 
-  /** Rasterize AI-designed SVG art to PNG so it displays everywhere. */
+  /** Rasterize AI-designed art (hybrid HTML or SVG) to PNG so it displays everywhere. */
   const maybeRasterize = async (book) => {
-    const hasArt = book.coverSvg || (book.chapters || []).some((c) => c && c.artSvg);
+    const hasArt = book.coverSvg || book.coverHtml
+      || (book.chapters || []).some((c) => c && (c.artSvg || c.artHtml));
     if (!hasArt) return book;
     try {
       await rasterizeBookArt(book, store.imagesDir);
