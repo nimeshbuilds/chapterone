@@ -37,6 +37,10 @@ class ChainEngine {
   async checkAuth() { return this.active.checkAuth(); }
 
   async complete(prompt, opts = {}) {
+    // Optional, non-essential calls (illustrations, image queries) pass
+    // `quiet: true` so a failure there falls back silently and never raises the
+    // alarming "all engines failed" banner — the caller treats it as best-effort.
+    const announce = opts.quiet ? () => {} : this.onSwitch;
     let lastErr = null;
     for (let i = this.index; i < this.adapters.length; i++) {
       const adapter = this.adapters[i];
@@ -46,7 +50,7 @@ class ChainEngine {
           // We recovered on a later adapter — make it the new active one.
           const from = this.adapters[this.index];
           this.index = i;
-          this.onSwitch({ type: 'switched', fromId: from.id, toId: adapter.id, model: adapter.model });
+          announce({ type: 'switched', fromId: from.id, toId: adapter.id, model: adapter.model });
         }
         return out;
       } catch (err) {
@@ -55,14 +59,14 @@ class ChainEngine {
         if (!shouldFallback(kind)) throw err; // e.g. user cancellation
         const next = this.adapters[i + 1];
         if (next) {
-          this.onSwitch({
+          announce({
             type: 'falling-back',
             fromId: adapter.id, toId: next.id, kind,
             error: err.message,
           });
         } else {
           // No more adapters: the whole chain is exhausted.
-          this.onSwitch({ type: 'exhausted', fromId: adapter.id, kind, error: err.message });
+          announce({ type: 'exhausted', fromId: adapter.id, kind, error: err.message });
         }
       }
     }

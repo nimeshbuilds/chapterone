@@ -71,3 +71,17 @@ test('a too-short completion (minWords) triggers fallback to the next engine', a
   assert.ok(out.split(/\s+/).length >= 200);
   assert.strictEqual(chain.id, 'b'); // switched to the working engine
 });
+
+test('quiet calls fall back silently (no exhausted/switch broadcast)', async () => {
+  const { ChainEngine } = require('../src/main/cli/chainEngine');
+  const dead = { id: 'a', model: '', async complete() { throw new Error('rate limit exceeded'); } };
+  const alsoDead = { id: 'b', model: '', async complete() { throw new Error('rate limit exceeded'); } };
+  const events = [];
+  const chain = new ChainEngine([dead, alsoDead], { onSwitch: (e) => events.push(e) });
+  await assert.rejects(chain.complete('art', { quiet: true }));
+  assert.strictEqual(events.length, 0); // nothing broadcast for an optional call
+
+  // a loud call on the same chain still broadcasts
+  await assert.rejects(chain.complete('chapter'));
+  assert.ok(events.some((e) => e.type === 'exhausted'));
+});

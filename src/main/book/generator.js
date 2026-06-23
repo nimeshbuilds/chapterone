@@ -92,7 +92,7 @@ class BookGenerator {
       try {
         const raw = await this.engine.complete(stockQueryPrompt(book, planned, chapter.content), {
           system: 'You suggest stock-photo search queries. Reply with ONLY the query (3 to 7 concrete, photographable words) or the single word NONE. No quotes, no markdown, no explanation.',
-          timeoutMs: 120000, signal,
+          timeoutMs: 120000, signal, quiet: true,
         });
         const query = String(raw || '').trim().split('\n')[0].replace(/^[\s"'`*#>_-]+|[\s"'`*]+$/g, '').slice(0, 80);
         if (query && !/^none$/i.test(query)) {
@@ -239,7 +239,7 @@ class BookGenerator {
       // Preferred: a hybrid HTML/CSS + inline-SVG cover; fall back to pure SVG.
       const rawHtml = await this.engine.complete(coverArtHtmlPrompt(book), {
         system: 'You are a master book-cover designer. Output ONLY a single self-contained HTML fragment with an inline <style>. No commentary, no code fences.',
-        timeoutMs: 300000, signal,
+        timeoutMs: 300000, signal, quiet: true,
       });
       const html = sanitizeHtml(rawHtml);
       if (html) {
@@ -251,7 +251,7 @@ class BookGenerator {
       }
       const raw = await this.engine.complete(coverSvgPrompt(book), {
         system: 'You are a master book-cover designer. Output only a single valid SVG.',
-        timeoutMs: 300000, signal,
+        timeoutMs: 300000, signal, quiet: true,
       });
       const svg = sanitizeSvg(raw);
       if (svg) {
@@ -316,7 +316,7 @@ class BookGenerator {
       try {
         prevRecap = await this.engine.complete(recapPrompt(last.title, last.content), {
           timeoutMs: 120000,
-          signal: hooks.signal,
+          signal: hooks.signal, quiet: true,
         });
       } catch (_) {
         prevRecap = (book.outline[startIndex - 1] || {}).summary || '';
@@ -398,7 +398,7 @@ class BookGenerator {
               system: 'You are a world-class book editor. Output only the revised chapter in Markdown.',
               research: flags.research,
               timeoutMs: 900000,
-              signal,
+              signal, quiet: true,
             }
           );
           if (revised && revised.trim().length > prose.trim().length * 0.5) {
@@ -449,7 +449,7 @@ class BookGenerator {
           // more relevant). Fall back to pure SVG if it doesn't come back clean.
           const rawHtml = await this.engine.complete(chapterArtHtmlPrompt(book, planned), {
             system: 'You are a world-class illustrator and front-end designer. Output ONLY a single self-contained HTML fragment (with an inline <style>) that draws the scene. No commentary, no code fences.',
-            timeoutMs: 300000, signal,
+            timeoutMs: 300000, signal, quiet: true,
           });
           const html = sanitizeHtml(rawHtml);
           if (html) {
@@ -458,7 +458,7 @@ class BookGenerator {
           } else {
             const rawArt = await this.engine.complete(chapterArtSvgPrompt(book, planned), {
               system: 'You are an editorial illustrator. Output only a single valid SVG.',
-              timeoutMs: 300000, signal,
+              timeoutMs: 300000, signal, quiet: true,
             });
             const art = sanitizeSvg(rawArt);
             if (art) { chapter.artSvg = art; emit('art:done', { index: i, number: planned.number }); }
@@ -480,7 +480,7 @@ class BookGenerator {
       if (i < book.outline.length - 1) {
         try {
           prevRecap = await this.engine.complete(recapPrompt(planned.title, chapter.content), {
-            timeoutMs: 120000, signal,
+            timeoutMs: 120000, signal, quiet: true,
           });
         } catch (_) {
           prevRecap = planned.summary;
@@ -530,7 +530,7 @@ class BookGenerator {
         system: 'You output only valid JSON. No markdown, no commentary.',
         research: !!spec.research,
         timeoutMs: 240000,
-        signal,
+        signal, quiet: true,
       });
       const json = extractJson(text);
       const authors = Array.isArray(json.authors) ? json.authors.filter((a) => a && a.name) : [];
