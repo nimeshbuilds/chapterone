@@ -463,6 +463,14 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 }
 .pause-note .btn { margin-left: auto; }
 
+.live-reading-note {
+  margin: 14px 22px; padding: 10px 16px; border-radius: var(--radius-sm);
+  background: rgba(31,170,107,.12); border: 1px solid rgba(31,170,107,.30);
+  color: var(--text); font-size: 13px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.live-reading-note .live-text { font-weight: 600; }
+.live-reading-note > .btn:last-child { margin-left: auto; }
+
 /* ---- setup / onboarding card ---- */
 .setup-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .setup-engine {

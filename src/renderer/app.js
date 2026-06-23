@@ -171,6 +171,7 @@ function deviceSelect(kind, current, onChange, firstLabel) {
 // ---------- navigation ----------
 async function go(view, arg) {
   if (view !== 'reader' && state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
+  if (view !== 'reader') state.readerLive = null; // stop refreshing the live-reading banner
   if (view !== 'progress' && state.progressTimer) { clearInterval(state.progressTimer); state.progressTimer = null; }
   if (state.view === 'settings' && view !== 'settings') stopMicStream(); // free the mic when leaving Settings
   state.view = view;
@@ -972,7 +973,11 @@ function startResume(id) {
     .catch((err) => { j.error = err.message; redrawProgress(); toast(`Writing paused again: ${err.message}`, 'bad'); })
     .finally(() => off && off());
 }
-function redrawProgress() { if (state.view === 'progress') renderProgress(); }
+function redrawProgress() {
+  if (state.view === 'progress') renderProgress();
+  // Reading a book that's still being written: refresh its live "still writing" banner.
+  else if (state.view === 'reader' && state.readerLive) state.readerLive.update();
+}
 
 function handleProgress(e) {
   const j = state.job;
@@ -1119,6 +1124,9 @@ function renderProgress() {
       j.bookId ? h('button', { class: 'btn btn-ghost', onClick: () => go('reader', j.bookId) }, 'Open partial draft') : null,
       h('button', { class: 'btn btn-ghost', onClick: () => go('library') }, '← Library'));
   } else {
+    if (j.bookId && doneCount > 0) {
+      actions.append(h('button', { class: 'btn btn-gold', onClick: () => go('reader', j.bookId) }, '📖 Start reading while it writes'));
+    }
     actions.append(h('button', { class: 'btn btn-danger', onClick: async () => { await api.cancelGeneration(j.jobId); toast('Stopping…'); } }, 'Pause / Cancel'));
   }
 
@@ -1444,11 +1452,37 @@ async function renderReader(id) {
     pageInfo,
     h('button', { class: 'btn btn-ghost btn-sm', id: 'r-next', onClick: () => step(1) }, 'Next ›'));
 
+  // --- live banner: reading a book that is still being written ---
+  // The job lives in the main process, so navigating here doesn't stop it; new
+  // chapters are saved as they finish and surface here via a "Load new" button.
+  const liveJob = state.job;
+  const isGenerating = !!(liveJob && liveJob.bookId === id && !liveJob.done && !liveJob.error);
+  const loadedChapters = chapters.length;
+  const liveText = h('span', { class: 'live-text' }, '');
+  const loadNewBtn = h('button', { class: 'btn btn-gold btn-sm', style: 'display:none', onClick: () => { saveReaderPos(id, cur); renderReader(id); } }, '↻ Load new');
+  const liveBanner = h('div', { class: 'live-reading-note', style: isGenerating ? '' : 'display:none' },
+    h('span', { class: 'live-dot' }), liveText, loadNewBtn,
+    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('progress') }, '← Back to progress'));
+  const updateLive = () => {
+    const j = state.job;
+    if (!j || j.bookId !== id) { liveBanner.style.display = 'none'; return; }
+    liveBanner.style.display = '';
+    const done = j.chapters.filter(Boolean).length;
+    const total = j.outline.length || done;
+    if (j.done) { liveText.textContent = `✅ Finished — ${done} chapter${done === 1 ? '' : 's'} ready`; loadNewBtn.textContent = '↻ Load finished book'; }
+    else if (j.error) { liveText.textContent = `⏸️ Writing paused — ${done} chapter${done === 1 ? '' : 's'} so far`; loadNewBtn.textContent = '↻ Load latest'; }
+    else { liveText.textContent = `✍️ Still writing — chapter ${Math.min(done + 1, total)} of ${total}`; loadNewBtn.textContent = '↻ Load new'; }
+    loadNewBtn.style.display = (done > loadedChapters || j.done || j.error) ? '' : 'none';
+  };
+  if (isGenerating) updateLive();
+  // Register so book:progress events refresh this banner while the user reads.
+  state.readerLive = isGenerating ? { id, update: updateLive } : null;
+
   const main = h('main', { class: 'reader-main' },
-    paused && content.pausedReason
+    isGenerating ? liveBanner : (paused && content.pausedReason
       ? h('div', { class: 'pause-note' }, `⏸️ ${content.pausedReason.detail || 'Paused.'} `,
           h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue writing'))
-      : null,
+      : null),
     contentEl, nav);
 
   root.append(bar, h('div', { class: 'reader-progress' }, progressFill), audioBar, h('div', { class: 'reader-body' }, tocDrawer, main));
@@ -1697,10 +1731,13 @@ function renderSettings() {
       h('label', { class: 'field' }, h('span', {}, 'Codex command'),
         h('input', { id: 's-codex-cmd', value: s.codexCommand || 'codex' })),
       h('label', { class: 'field' }, h('span', {}, 'Gemini command'),
-        h('input', { id: 's-gemini-cmd', value: s.geminiCommand || 'gemini' }))),
+        h('input', { id: 's-gemini-cmd', value: s.geminiCommand || 'gemini' })),
+      h('label', { class: 'field' }, h('span', {}, 'Grok command'),
+        h('input', { id: 's-grok-cmd', value: s.grokCommand || 'grok' }))),
     statusRow('claude', 'Claude Code CLI'),
     statusRow('codex', 'Codex CLI'),
     statusRow('gemini', 'Gemini CLI'),
+    statusRow('grok', 'Grok CLI'),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-ghost btn-sm', onClick: saveEngineCmds }, 'Save commands'),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check CLIs'),
@@ -2012,6 +2049,7 @@ async function saveEngineCmds() {
     claudeCommand: $('#s-claude-cmd').value.trim() || 'claude',
     codexCommand: $('#s-codex-cmd').value.trim() || 'codex',
     geminiCommand: $('#s-gemini-cmd').value.trim() || 'gemini',
+    grokCommand: $('#s-grok-cmd').value.trim() || 'grok',
   });
   await recheck();
   toast('Commands saved.', 'ok');
