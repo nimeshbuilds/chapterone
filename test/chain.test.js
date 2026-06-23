@@ -85,3 +85,20 @@ test('quiet calls fall back silently (no exhausted/switch broadcast)', async () 
   await assert.rejects(chain.complete('chapter'));
   assert.ok(events.some((e) => e.type === 'exhausted'));
 });
+
+test('a transient network error is retried on the same adapter, not failed', async () => {
+  const { ChainEngine } = require('../src/main/cli/chainEngine');
+  let calls = 0;
+  const flaky = { id: 'grok', model: 'grok-build', async complete() {
+    calls++;
+    if (calls < 3) throw new Error('getaddrinfo ENOTFOUND cli-chat-proxy.grok.com'); // network blip x2
+    return 'chapter text '.repeat(50);
+  } };
+  const events = [];
+  const chain = new ChainEngine([flaky], { onSwitch: (e) => events.push(e) });
+  const out = await chain.complete('write', {});
+  assert.ok(out.length > 0);          // recovered after retries
+  assert.strictEqual(calls, 3);        // failed twice, succeeded on the 3rd
+  assert.ok(events.some((e) => e.type === 'retrying'));
+  assert.ok(!events.some((e) => e.type === 'exhausted')); // never declared failure
+});

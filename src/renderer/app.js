@@ -1148,7 +1148,8 @@ function handleProgress(e) {
       if (e.query) { j.activity = `Finding a photo: “${e.query}”`; logActivity(j, '🔎', `Searching: ${e.query}`); }
       break;
     case 'engine:switch':
-      if (e.type === 'falling-back') { j.activity = `⚠️ ${providerLabel(e.fromId)} hit a ${e.kind} limit — switching to ${providerLabel(e.toId)}…`; logActivity(j, '🔁', j.activity); toast(j.activity, 'bad'); }
+      if (e.type === 'retrying') { j.activity = `⚠️ ${providerLabel(e.id)} had a ${e.kind} hiccup — retrying (attempt ${(e.attempt || 1) + 1})…`; logActivity(j, '🔄', j.activity); }
+      else if (e.type === 'falling-back') { j.activity = `⚠️ ${providerLabel(e.fromId)} hit a ${e.kind} limit — switching to ${providerLabel(e.toId)}…`; logActivity(j, '🔁', j.activity); toast(j.activity, 'bad'); }
       else if (e.type === 'switched') { j.engine = e.toId; logActivity(j, '✅', `Now writing with ${providerLabel(e.toId)}`); }
       else if (e.type === 'exhausted') { logActivity(j, '⛔', `All engines in the chain failed (${e.kind})`); }
       break;
