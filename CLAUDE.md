@@ -41,20 +41,24 @@ src/main/                 Electron MAIN process (Node)
   util.js                 safeFilename, etc.
   cli/
     spawn.js              child_process runner: stdin feed, abort, timeout, env scrub
-    models.js             provider catalog (PROVIDERS), model lists, login metadata, scrub vars
+    models.js             provider catalog (PROVIDERS), model lists, MODEL_PRESETS, login, scrub vars
     claudeAdapter.js      drives `claude -p` (web tools via --allowedTools)
-    codexAdapter.js       drives `codex exec` (--search)
-    geminiAdapter.js      drives `gemini -p`
-    chainEngine.js        ChainEngine: ordered fallback across adapters
+    codexAdapter.js       drives `codex exec` (-c tools.web_search=true; medium reasoning)
+    geminiAdapter.js      Gemini REST API (key-based; CLI login retired) + verifyModel
+    grokAdapter.js        drives `grok -p` (Composer 2.5 default; strips agentic narration)
+    chainEngine.js        ChainEngine: ordered fallback + transient-error retry w/ backoff
     authSession.js        AuthSessionManager: interactive login streaming + stdin
-    index.js              buildAdapter / createEngine / createChainEngine / checkPrerequisites
+    index.js              buildAdapter / createEngine / createChainEngine / verifyModel
+    spawn.js              child runner (Windows-aware command resolution; abort = reject)
   book/
-    prompts.js            ALL prompt text + SIZES + size helpers
+    prompts.js            ALL prompt text + SIZES + char reference photos + size helpers
     generator.js          the pipeline: clarify → outline → cover → chapters(+edit+art) → recap
+    classify.js           BISAC audience/format classification (Picture Book … Adult)
     json.js               extractJson (tolerant of fences/prose)
     errors.js             classifyError / isResumable / shouldFallback / describe
-    images.js             Openverse stock-photo sourcing + marker resolution
-    aiArt.js              SVG extract + sanitize + data-uri
+    images.js             Openverse stock-photo sourcing (retired from UI; kept for old books)
+    aiArt.js              SVG + HTML/CSS art extract & sanitize → data-uri
+    nanoBanana.js         Gemini image API (referenceImages for character likeness)
   export/
     html.js               shared book HTML + reader/print CSS + cover/art figures
     epub.js               hand-rolled EPUB3 writer (images, AI art, cover, credits)
@@ -128,8 +132,16 @@ Key spec flags: `size` (small|medium|large), `research`, `polish`,
   filenames and the stored mimetype are visible in raw bytes; unzip to inspect
   the OPF.
 - **IPC contract:** every `ipcMain.handle` returns `{ok:true,data}` or
-  `{ok:false,error}` (see the `wrap` helper); `preload.js invoke()` unwraps it.
-  Keep that shape.
+  `{ok:false,error}` (see the `wrap` helper); `preload.js invoke(channel,
+  ...args)` is **variadic** — forward all args (a single-arg version once silently
+  dropped extras and broke model verification). Keep that shape.
+- **Cross-platform (Windows):** the app builds an NSIS `.exe` (`npm run dist:win`,
+  not signed yet). `spawn.js resolveCommand()` resolves bare CLI names to their
+  `.cmd`/`.exe` shim via PATH+PATHEXT on win32 (npm globals aren't directly
+  spawnable with `shell:false`). Login opens `cmd /k`; the Mail hand-off falls
+  back to revealing the file off macOS; the Windows icon is auto-converted from
+  `build/icon.png`. Don't add macOS-only calls (osascript, `open -a`) without a
+  `process.platform` guard + a Windows/Linux branch.
 
 ## Testing
 

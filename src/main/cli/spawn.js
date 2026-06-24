@@ -1,6 +1,27 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * On Windows, globally-installed npm CLIs are `.cmd`/`.bat`/`.exe` shims, so a
+ * bare `spawn('claude')` with shell:false can't find them. Resolve a bare command
+ * name to its full path via PATH + PATHEXT so we can keep shell:false (safe with
+ * arbitrary prompt args, no shell escaping). No-op on macOS/Linux / absolute paths.
+ */
+function resolveCommand(command, env) {
+  if (process.platform !== 'win32') return command;
+  if (!command || command.includes('\\') || command.includes('/') || path.extname(command)) return command;
+  const exts = (env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  for (const dir of (env.PATH || env.Path || '').split(path.delimiter).filter(Boolean)) {
+    for (const ext of exts) {
+      const full = path.join(dir, command + ext);
+      try { if (fs.existsSync(full)) return full; } catch (_) { /* skip */ }
+    }
+  }
+  return command; // fall back to the bare name (spawn may still find it)
+}
 
 /**
  * Run a command, optionally feeding `input` on stdin, and resolve with the
@@ -42,7 +63,7 @@ function run(command, args = [], opts = {}) {
 
     let child;
     try {
-      child = spawn(command, args, {
+      child = spawn(resolveCommand(command, childEnv), args, {
         cwd,
         env: childEnv,
         stdio: ['pipe', 'pipe', 'pipe'],

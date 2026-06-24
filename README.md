@@ -38,22 +38,25 @@ calls you explicitly enable.
 **[→ Download the latest macOS release](https://github.com/npandeya/bookwriter/releases/latest)**
 
 - **macOS** — universal `.dmg` (Apple Silicon + Intel), **signed & notarized** (no Gatekeeper warning). Double-click → drag to Applications → open.
-- **Windows** — planned for a future release. For now, [build from source](#-build-from-source).
+- **Windows** — an NSIS installer (`.exe`, x64 + arm64, per-user, no admin) builds from this repo with `npm run dist:win`. It isn't code-signed yet, so SmartScreen shows a "More info → Run anyway" prompt on first launch. Prebuilt Windows downloads are planned for a future release.
 
 You also need one AI CLI installed and signed in — see [Requirements](#-requirements).
 
 ## ✨ Features
 
 - 📖 **Writes complete books** — fiction, non-fiction, or **kids' books**, from a vague idea. A planner outlines it, a research-grounded writer drafts each chapter, and an editor pass polishes it to bestseller quality.
-- 🧒 **Kids' mode** — age bands (1–2 … 17–18) automatically drive vocabulary, length, reading level, safety, font size, and illustration density. Add custom characters named after real people.
-- 🔀 **Three engines + automatic fallback** — Claude Code, Codex, or Gemini, each on your own subscription and each with its own model. Build an ordered chain so writing continues on the next engine if one hits a quota mid-book.
-- 🔎 **Research-grounded** — uses each CLI's own web tools (Claude WebSearch/WebFetch, Codex `--search`, Gemini Google Search) to ground real facts, names, and dates. Read-only web access only — never file or shell access.
-- 🎨 **AI illustrations** — bespoke vector covers and chapter art designed by the engine (sanitized SVG → rasterized PNG), or photorealistic illustrations via **Nano Banana** (your own Gemini image key), or royalty-free [Openverse](https://openverse.org) stock photos with a full credits page.
+- 🧒 **Kids' mode** — age bands (1–2 … 17–18) automatically drive vocabulary, length, reading level, safety, font size, and illustration density. Add custom characters named after real people, and **upload a photo per character** so Nano Banana draws the art to resemble them.
+- 🔀 **Four engines + automatic fallback** — **Claude Code, Codex, Gemini, and Grok**, each on your own subscription and each with its own model. Build an ordered chain so writing continues on the next engine if one hits a quota mid-book — and a transient network blip is **retried** rather than failing the book.
+- ⚡ **One-click model presets** — **Fast / Pro / Default** buttons set the right model on *every* engine in your chain at once (Fast → Haiku / GPT-5.4-mini / Flash-Lite / Composer 2.5; Pro → Opus / GPT-5.5 / Gemini 3.1 Pro / Grok Build). Or type a **custom model id** with live ✓/✗ verification against the real provider.
+- 🔎 **Research-grounded** — uses each CLI's own web tools (Claude WebSearch/WebFetch, Codex web search, Gemini Google Search, Grok bounded web search on the author-study step) to ground real facts, names, and dates. Read-only web access only — never file or shell access.
+- 🎨 **AI illustrations** — bespoke **HTML/CSS + inline-SVG scene illustrations** of each chapter, designed by your engine and rendered to PNG (free, on your subscription), or photorealistic art via **Nano Banana** (your own Gemini image key, with optional per-character reference photos).
+- 📖 **Read while it writes** — open the reader the moment chapter 1 lands; new chapters appear as they're written, with a live banner and a tap to load them — generation keeps running in the background.
+- 🗂️ **Library that scales** — **Tiles / List** views (uncropped full covers; Finder-style list with a Created date), and every book auto-labelled by the publishing-standard **audience tier** (Board Book · Ages 1–2 … Young Adult … Adult · Fiction/Nonfiction).
 - 🎧 **Audiobooks (ElevenLabs)** — narrate per chapter or the **whole book**, with saved playback position. Pick from top audiobook voices, or **clone your own voice** and have it read to you. On-demand, cached, and exportable to MP3.
 - 📚 **Premium built-in EPUB reader** — distraction-free, with a contents drawer, Page/Scroll modes, adjustable type, Light/Sepia/Night themes, a progress bar, and remembered position.
 - 📨 **Export & deliver** — reflowable EPUB and PDF export, plus **Send to Kindle** (Mail hand-off with no setup, or one-click SMTP).
-- ⏯️ **Resumable & loss-proof** — progress is saved after every chapter and every narrated chapter, so a crash, cancel, or lapsed subscription always leaves a resumable draft.
-- 🔒 **Subscription, not API key** — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` are stripped from the CLI's environment so it always authenticates with your plan login.
+- ⏯️ **Resumable, cancellable & loss-proof** — progress is saved after every chapter; **Pause/Cancel** stops promptly at any time, and a crash or lapsed subscription always leaves a resumable draft.
+- 🔒 **Subscription, not API key** — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY` are stripped from the CLI's environment so it always authenticates with your plan login.
 - 🧹 **Your data, your control** — everything is stored locally; a **Clear all my data** control wipes every artifact (books, art, audio, exports, keys) with a type-to-confirm gate.
 
 ## 🧩 Requirements
@@ -65,7 +68,12 @@ subscription** (the app can install and sign you in for you):
 | --- | --- | --- |
 | **[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)** | `npm i -g @anthropic-ai/claude-code` | `claude /login` — authorize your Claude Pro/Max plan |
 | **[Codex](https://developers.openai.com/codex/cli)** | `npm i -g @openai/codex` | `codex login` — sign in with ChatGPT |
-| **[Gemini](https://github.com/google-gemini/gemini-cli)** | `npm i -g @google/gemini-cli` | run `gemini`, choose **Login with Google** (Gemini AI Pro/Ultra) |
+| **[Gemini](https://github.com/google-gemini/gemini-cli)** | `npm i -g @google/gemini-cli`* | run `gemini`, choose **Login with Google** (Gemini AI Pro/Ultra) |
+| **[Grok](https://docs.x.ai/build/cli)** | `npm i -g @xai-official/grok` | `grok login` — sign in with xAI (SuperGrok / X Premium Plus) |
+
+> \* Gemini's CLI login was retired by Google for individuals — ChapterOne drives
+> Gemini through its REST API with a **Gemini API key** instead (no subscription
+> CLI). The other three use your subscription login, no API key.
 
 > 💡 You don't have to use a terminal — ChapterOne can **install a CLI and walk
 > you through sign-in** from **Settings**, and shows which engines are ready.

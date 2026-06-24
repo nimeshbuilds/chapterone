@@ -8,14 +8,53 @@ All notable changes to ChapterOne are documented here. This project adheres to
 
 ### Added
 
+- **Grok engine** — xAI's Grok Build CLI as a fourth subscription engine
+  (`grok -p`, OAuth on SuperGrok / X Premium Plus). Defaults to **Composer 2.5
+  Fast** (benchmarked ~3–5× faster and more reliable than grok-build for prose);
+  grok-build also selectable.
+- **One-click model presets** — Fast / Pro / Default buttons set the right model
+  on every engine in the chain at once (Claude, Codex, Gemini, Grok).
+- **Custom model verification** — typing a custom model id verifies it live
+  against the real provider (Grok/Gemini model lists; Claude/Codex probe) and
+  shows ✓ valid / ✗ invalid / ⚠ can't-verify.
+- **Hybrid HTML/CSS + inline-SVG chapter illustrations** — the engine designs a
+  scene illustration per chapter, rendered to PNG via an offscreen Chromium
+  window (free, on your subscription). Pure SVG remains a fallback.
+- **Read while it writes** — a "Start reading" button opens the reader for an
+  in-progress book; new chapters appear live and generation keeps running.
+- **Library Tiles / List views** — uncropped full covers, a Finder-style list
+  with a Created date, and an **audience classification** badge on every book
+  (BISAC-aligned: Board Book / Picture Book / Early Reader / Middle Grade /
+  Young Adult / Adult · Fiction/Nonfiction).
+- **Kids character photos** — upload a photo per character; with Nano Banana they
+  are passed as reference images so the cover and chapter art resemble them.
 - Real app icon (the ChapterOne "1" brand mark) embedded in the macOS build,
   generated from `build/icon.svg` via `npm run icon`.
 
 ### Changed
 
-- Open-source documentation pass: README, SIGNING, and community docs updated;
-  CLI install/sign-in commands corrected to the exact packages
-  (`@anthropic-ai/claude-code`, `@openai/codex`, `@google/gemini-cli`).
+- **Stock photos removed** — the small Creative-Commons pool was rarely relevant;
+  AI vector art (free) and Nano Banana (paid) are the image options now.
+- **Engine resilience** — the fallback chain now retries transient network /
+  rate-limit / server errors with kind-aware backoff before giving up, so a
+  cloud-CLI blip no longer ends a book; **Pause/Cancel** is responsive even
+  mid-retry.
+- **Codex** — replaced the removed `--search` flag with `-c tools.web_search=true`
+  and defaulted reasoning to `medium` (xhigh burned the ChatGPT quota).
+- **Grok** — web search is enabled only on the (bounded) author-study step and
+  off elsewhere so chapters are fast; agentic "I'll verify… then write…"
+  narration is stripped from output.
+
+### Fixed
+
+- IPC bridge dropped extra arguments, which made custom-model verification
+  always pass green; it now forwards all arguments.
+- A user cancel mid-request no longer resolves as a partial/short success — it
+  rejects cleanly as "cancelled" and stops without retrying.
+
+- **Docs** — README, CHANGELOG, and architecture docs updated for the four
+  engines, hybrid illustrations, read-while-writing, model presets/verification,
+  library views + audience classification, and Windows build readiness.
 
 ### Security
 
