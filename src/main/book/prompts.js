@@ -90,6 +90,26 @@ function sceneImagePrompt(book, chapter, sceneHint) {
 }
 
 /**
+ * One quiet finishing call: back-cover blurb + dedication, the matter that
+ * makes an AI book feel like a real book instead of an export.
+ */
+function backMatterPrompt(book) {
+  const kids = !!book.isKids;
+  return [
+    `You wrote the book below. Now write its back matter.`,
+    `TITLE: ${book.title}${book.subtitle ? ` — ${book.subtitle}` : ''}`,
+    `GENRE: ${book.genre || ''} | AUDIENCE: ${book.audience || ''}`,
+    `PREMISE: ${book.premise || ''}`,
+    `CHAPTERS: ${(book.outline || []).map((c) => c.title).join('; ')}`,
+    ``,
+    `1. "blurb": a back-cover blurb that SELLS the book — ${kids ? '2-3 warm sentences a parent would read aloud in a bookstore' : '3-5 sentences with a hook, stakes, and an irresistible final line'}. No spoilers past the midpoint.`,
+    `2. "dedication": one short, heartfelt dedication line (max 15 words)${(book.characters || []).length ? ` — it may nod to ${(book.characters || []).map((c) => c.name).join(' and ')}` : ''}. No quotation marks.`,
+    ``,
+    `Respond with ONLY this JSON: {"blurb": "...", "dedication": "..."}`,
+  ].filter(Boolean).join('\n');
+}
+
+/**
  * Derive ONE royalty-free stock-photo search query for a chapter. Used in stock
  * mode as a reliable fallback when the writing model didn't embed an inline
  * `image-search:` marker itself (models are inconsistent about that). The reply
@@ -546,6 +566,7 @@ module.exports = {
   coverImagePrompt,
   sceneImagePrompt,
   stockQueryPrompt,
+  backMatterPrompt,
   artStyleFor,
   mastersPrompt,
   influenceDirective,

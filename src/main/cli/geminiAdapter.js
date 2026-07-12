@@ -93,6 +93,15 @@ class GeminiAdapter {
         host: HOST, path, method: 'POST',
         headers: { 'x-goog-api-key': this.apiKey, 'Content-Type': 'application/json', 'Content-Length': payload.length },
       }, (res) => {
+        // If the peer drops the socket mid-body (network blip, proxy reset),
+        // Node emits 'close'/'aborted' on the response but NOT 'end', and the
+        // request 'error' handler does not fire once a response has started —
+        // without this, the promise never settles and generation hangs forever.
+        // The extra reject after a normal resolve is a harmless no-op.
+        res.on('close', () => {
+          if (!res.complete) reject(new Error('Gemini connection lost mid-stream — network hiccup, retrying is safe.'));
+        });
+        res.on('error', (e) => reject(new Error(`Gemini stream error: ${e.message}`)));
         if (res.statusCode !== 200) {
           let errBody = '';
           res.on('data', (c) => { errBody += c; });

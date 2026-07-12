@@ -17,6 +17,7 @@ const {
   sceneImagePrompt,
   characterReferencePhotos,
   stockQueryPrompt,
+  backMatterPrompt,
   mastersPrompt,
   targetWordsForLength,
   kindOf,
@@ -203,16 +204,92 @@ class BookGenerator {
     emit('outline:done', { title: book.title, chapters: book.outline.length, book });
     if (onChapter) await onChapter(book);
 
+    // Outline review gate: the single highest-leverage moment to steer a book
+    // is after the plan and before 12 chapters are written. When requested,
+    // pause here and let the reader approve / retitle / cut chapters.
+    if (spec.reviewOutline && hooks.onOutlineReview) {
+      emit('outline:review', { book });
+      const edited = await hooks.onOutlineReview(book); // resolves on approval (null = keep as planned)
+      if (Array.isArray(edited) && edited.length) {
+        book.outline = edited.map((c, i) => ({
+          number: i + 1,
+          title: tidyText(c.title || `Chapter ${i + 1}`),
+          summary: c.summary || '',
+          beats: c.beats || [],
+        }));
+        book.updatedAt = new Date().toISOString();
+        if (onChapter) await onChapter(book);
+      }
+      emit('outline:approved', { chapters: book.outline.length, book });
+    }
+
     await this._maybeCover(book, hooks);
 
-    return this._writeChapters(book, 0, '', hooks);
+    const done = await this._writeChapters(book, 0, '', hooks);
+    await this._backMatter(done, hooks);
+    return done;
+  }
+
+  /**
+   * One quiet call for the finishing touches real books have: a back-cover
+   * blurb and a short dedication. Never blocks completion — a book without a
+   * blurb is fine.
+   */
+  async _backMatter(book, hooks = {}) {
+    const { onProgress = () => {}, onChapter, signal } = hooks;
+    if (book.blurb || !book.chapters || !book.chapters.length) return book;
+    try {
+      onProgress({ phase: 'backmatter:start', message: 'Writing the back-cover blurb…' });
+      const text = await this.engine.complete(backMatterPrompt(book), {
+        system: 'You output only valid JSON. No markdown, no commentary.',
+        timeoutMs: 120000, signal, quiet: true,
+      });
+      const json = extractJson(text);
+      if (json && (json.blurb || json.dedication)) {
+        book.blurb = tidyText(json.blurb || '');
+        book.dedication = tidyText(json.dedication || '');
+        book.updatedAt = new Date().toISOString();
+        if (onChapter) await onChapter(book);
+      }
+    } catch (_) { /* optional flourish — never blocks the book */ }
+    return book;
+  }
+
+  /**
+   * Rewrite ONE chapter, optionally steered by a reader's "director's note".
+   * Reuses the chapter prompt with the current draft attached so the model
+   * keeps continuity, then applies the same typography pipeline.
+   */
+  async rewriteChapter(book, index, note, hooks = {}) {
+    const { onProgress = () => {}, signal } = hooks;
+    const planned = (book.outline || [])[index];
+    const current = (book.chapters || [])[index];
+    if (!planned || !current) throw new Error('No such chapter to rewrite.');
+    const spec = book.spec || {};
+    const band = bandOf(book);
+    const targetWords = band ? band.wordsPerUnit : targetWordsForLength(spec);
+    const minWords = band ? Math.max(8, Math.round(band.wordsPerUnit * 0.5)) : 200;
+    onProgress({ phase: 'chapter:start', index, number: planned.number, title: planned.title, message: `Rewriting Chapter ${planned.number}…` });
+    const direction = note && note.trim()
+      ? `\n\nDIRECTOR'S NOTE — the reader asked for this rewrite; it OVERRIDES anything conflicting: ${note.trim()}`
+      : '\n\nRewrite this chapter to be meaningfully better: tighter pacing, more vivid detail, stronger voice.';
+    const prompt = `${chapterPrompt(book, planned, '', targetWords, { research: false, polish: false })}${direction}\n\nCURRENT DRAFT (rewrite it, keep what works):\n${current.content}`;
+    const prose = await this.engine.complete(prompt, {
+      system: 'You are writing publishable prose for a bestselling book. Output only the rewritten chapter in Markdown.',
+      timeoutMs: 900000, minWords, signal,
+    });
+    current.content = tidyProse(cleanChapter(prose, planned.title));
+    current.words = (current.content.match(/\S+/g) || []).length;
+    book.updatedAt = new Date().toISOString();
+    onProgress({ phase: 'chapter:done', index, number: planned.number, title: planned.title, words: current.words, book });
+    return book;
   }
 
   /** Generate a cover: a real Nano Banana image, or an AI-designed SVG. */
   async _maybeCover(book, hooks = {}) {
     const { onProgress = () => {}, onChapter, signal } = hooks;
     const mode = imageModeOf(book.spec);
-    if (book.coverSvg || book.coverPng) return;
+    if (book.coverSvg || book.coverPng || book.coverHtml) return; // any cover form counts — don't regenerate on resume
     // A cover is ALWAYS generated. Nano Banana makes a real image when selected;
     // otherwise we design a vector cover and rasterize it to PNG (the default).
 

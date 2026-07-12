@@ -21,6 +21,9 @@ const BAND_CATEGORIES = {
   '17-18': { category: 'Young Adult',  ages: '17–18', audience: 'Young Adult', emoji: '📕' },
 };
 
+// Order matters: an explicit FICTION signal wins first, so "science fiction",
+// "historical fiction", or "financial thriller" never classify as nonfiction.
+const FICTION_RE = /fiction|thriller|mystery|romance|fantasy|horror|novel|adventure|drama/i;
 const NONFICTION_RE = /non-?fiction|self[\s-]?help|business|technolog|memoir|biograph|history|guide|reference|cookbook|science|finance|health/i;
 
 /**
@@ -35,8 +38,11 @@ function classifyBook(book) {
     const c = BAND_CATEGORIES[band];
     return { ...c, label: `${c.category} · Ages ${c.ages}`, short: c.category, kids: true };
   }
-  // Adult: distinguish fiction vs nonfiction from the spec or genre.
-  const nonfiction = spec.kind === 'nonfiction' || NONFICTION_RE.test(b.genre || spec.genre || '');
+  // Adult: distinguish fiction vs nonfiction. The explicit spec.kind wins; else
+  // a fiction keyword in the genre beats a nonfiction keyword ("science fiction").
+  const genre = b.genre || spec.genre || '';
+  const nonfiction = spec.kind === 'nonfiction'
+    || (spec.kind !== 'fiction' && !FICTION_RE.test(genre) && NONFICTION_RE.test(genre));
   return nonfiction
     ? { category: 'Adult Nonfiction', ages: '18+', audience: 'Adult', emoji: '📙', label: 'Adult · Nonfiction', short: 'Adult', kids: false }
     : { category: 'Adult Fiction', ages: '18+', audience: 'Adult', emoji: '📖', label: 'Adult · Fiction', short: 'Adult', kids: false };

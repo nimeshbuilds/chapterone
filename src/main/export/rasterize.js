@@ -51,13 +51,25 @@ async function renderInWindow(win, svg, maxWidth) {
 }
 
 function makeWindow() {
-  const { BrowserWindow } = require('electron');
+  const { BrowserWindow, session } = require('electron');
+  // Model-authored art renders in an isolated, NETWORK-DEAD session: even if a
+  // crafted fragment slips past the sanitizer (unquoted attrs, CSS escapes,
+  // srcset…), no request can leave the machine. data:/file: (our own inputs)
+  // still work; everything else is cancelled at the network layer.
+  const s = session.fromPartition('art-rasterizer');
+  if (!s._chapterOneBlocked) {
+    s._chapterOneBlocked = true;
+    s.webRequest.onBeforeRequest((details, callback) => {
+      const ok = /^(data|file|about|blob|chrome):/i.test(details.url);
+      callback({ cancel: !ok });
+    });
+  }
   return new BrowserWindow({
     show: false,
     width: 16,
     height: 16,
     useContentSize: true,
-    webPreferences: { offscreen: true, javascript: false },
+    webPreferences: { offscreen: true, javascript: false, session: s },
   });
 }
 

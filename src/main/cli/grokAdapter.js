@@ -128,7 +128,15 @@ class GrokAdapter {
     const NO_NARRATION = 'CRITICAL OUTPUT RULE: Respond with ONLY the requested content itself. Do NOT narrate your process, plans, verification, or steps. No preamble, no "I\'ll…", no meta-commentary. Begin immediately with the content.';
     const system = opts.system ? `${opts.system}\n\n${NO_NARRATION}` : NO_NARRATION;
     // Grok has no separate system-prompt flag in headless mode, so fold it in.
-    const full = `${system}\n\n${prompt}`;
+    let full = `${system}\n\n${prompt}`;
+    // Grok's -p only accepts the prompt as an argument (no stdin mode), and
+    // Windows caps the whole command line at ~32K chars. If a huge prompt (the
+    // edit pass embeds an entire chapter) would blow that, trim the MIDDLE of
+    // the prompt — the instructions live at both ends.
+    if (process.platform === 'win32' && full.length > 30000) {
+      const keep = 14800;
+      full = `${full.slice(0, keep)}\n\n[…middle of the draft omitted for length — keep continuity with what you can see…]\n\n${full.slice(-keep)}`;
+    }
     args.push('-p', full);
     return args;
   }
@@ -161,13 +169,17 @@ class GrokAdapter {
       return true;
     });
     // Drop leading "I'll verify the facts, then write the chapter…"-style preamble
-    // the agentic model emits before the real content. Conservative: a line must
-    // both START like planning AND mention a planning/meta keyword, so genuine
-    // prose ("First, the sun rose.") is never stripped.
+    // the agentic model emits before the real content. Bounded and conservative:
+    // only the first THREE non-empty lines are candidates, each must be short
+    // (<220 chars — narration is a sentence, prose paragraphs are long), never a
+    // heading, and must BOTH start like planning AND contain a meta keyword — so
+    // genuine openers ("First, the sun rose.") and chapter titles survive.
     let i = 0;
-    while (i < lines.length) {
+    let candidates = 0;
+    while (i < lines.length && candidates < 3) {
       const t = lines[i].trim();
       if (!t) { i++; continue; }
+      candidates++;
       if (isNarration(t)) { i++; continue; }
       break;
     }
@@ -177,9 +189,12 @@ class GrokAdapter {
 
 /** True if a line is agentic narration/preamble (planning start + meta keyword). */
 function isNarration(line) {
-  const t = String(line).trim().replace(/^#+\s*/, '').replace(/^[*_>\s]+/, '');
+  const raw = String(line).trim();
+  if (/^#{1,6}\s/.test(raw)) return false;   // never strip a Markdown heading
+  if (raw.length > 220) return false;        // narration is one short sentence
+  const t = raw.replace(/^[*_>\s]+/, '');
   if (!t) return false;
-  const startsLikePlan = /^(i['’]?ll|i will|i['’]?m|i am|let me|let['’]s|first[,\s]|now[,\s]|next[,\s]|okay[,\s]|sure[,\s]|alright[,\s]|here(?:'s| is)|the draft|verifying|writing|producing|drafting|checking|let me)\b/i.test(t);
+  const startsLikePlan = /^(i['’]?ll|i will|i['’]?m|i am|let me|let['’]s|now i|okay[,\s]|sure[,\s]|alright[,\s]|here(?:'s| is) (the|your)|the draft|verifying|writing the|producing|drafting|checking)\b/i.test(t);
   const hasMeta = /\b(verif(y|ying|ied)|writ(e|ing)|produc(e|ing)|draft|drafting|revised|brief|facts|setting details|the full (chapter|poem|book|story|page)|then (write|produce|draft|verify)|sixteen-page|editorial notes)\b/i.test(t);
   return startsLikePlan && hasMeta;
 }

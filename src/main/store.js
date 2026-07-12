@@ -22,6 +22,31 @@ class Store {
     fs.mkdirSync(this.audioDir, { recursive: true });
   }
 
+  /**
+   * Write JSON atomically: serialize, write + fsync a temp file in the same
+   * directory, then rename over the target (atomic on the same filesystem on
+   * both macOS and Windows). A crash or power loss mid-write can therefore
+   * never truncate a book or settings.json — saveBook runs after EVERY chapter
+   * of a multi-hour generation, so this window used to be wide open.
+   */
+  _writeJsonAtomic(finalPath, obj) {
+    const tmp = `${finalPath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    const data = JSON.stringify(obj, null, 2);
+    let fd = null;
+    try {
+      fd = fs.openSync(tmp, 'w');
+      fs.writeSync(fd, data);
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = null;
+      fs.renameSync(tmp, finalPath);
+    } catch (err) {
+      if (fd != null) { try { fs.closeSync(fd); } catch (_) { /* ignore */ } }
+      try { fs.unlinkSync(tmp); } catch (_) { /* ignore */ }
+      throw err;
+    }
+  }
+
   // ---- settings ----
 
   defaultSettings() {
@@ -70,34 +95,42 @@ class Store {
   }
 
   getSettings() {
-    try {
-      const raw = fs.readFileSync(this.settingsPath, 'utf8');
-      const s = deepMerge(this.defaultSettings(), JSON.parse(raw));
-      // Stock photos retired (a small CC pool, rarely relevant for book scenes).
-      // Fall back to the always-relevant, free AI vector art instead.
-      if (s.imageMode === 'stock') s.imageMode = 'ai';
-      if (s.illustrate) s.illustrate = false;
-      return s;
-    } catch (_) {
-      return this.defaultSettings();
+    // Settings hold the user's API keys and SMTP credentials — never let a
+    // corrupt file silently reset them. Try the live file, then the .bak.
+    for (const p of [this.settingsPath, this.settingsPath + '.bak']) {
+      try {
+        const raw = fs.readFileSync(p, 'utf8');
+        const s = deepMerge(this.defaultSettings(), JSON.parse(raw));
+        // Stock photos retired (a small CC pool, rarely relevant for book scenes).
+        // Fall back to the always-relevant, free AI vector art instead.
+        if (s.imageMode === 'stock') s.imageMode = 'ai';
+        if (s.illustrate) s.illustrate = false;
+        return s;
+      } catch (_) { /* try the backup */ }
     }
+    return this.defaultSettings();
   }
 
   saveSettings(partial) {
     const merged = deepMerge(this.getSettings(), partial || {});
-    fs.writeFileSync(this.settingsPath, JSON.stringify(merged, null, 2));
+    // Keep the previous good file as a fallback before replacing it.
+    try { fs.copyFileSync(this.settingsPath, this.settingsPath + '.bak'); } catch (_) { /* first save */ }
+    this._writeJsonAtomic(this.settingsPath, merged);
     return merged;
   }
 
   // ---- books ----
 
   bookPath(id) {
+    // ids are UUIDs we minted; reject anything else so a compromised renderer
+    // can't traverse paths (e.g. id = "../../settings") via the IPC surface.
+    if (!/^[\w-]+$/.test(String(id || ''))) throw new Error('Invalid book id');
     return path.join(this.booksDir, `${id}.json`);
   }
 
   saveBook(book) {
     book.updatedAt = new Date().toISOString();
-    fs.writeFileSync(this.bookPath(book.id), JSON.stringify(book, null, 2));
+    this._writeJsonAtomic(this.bookPath(book.id), book);
     return book;
   }
 
@@ -149,7 +182,7 @@ class Store {
           b.pausedReason = { ...reason, message: reason.detail, resumable: true, at: new Date().toISOString() };
           b.words = (b.chapters || []).reduce((n, c) => n + ((c && c.words) || 0), 0);
           b.updatedAt = new Date().toISOString();
-          fs.writeFileSync(p, JSON.stringify(b, null, 2));
+          this._writeJsonAtomic(p, b);
         }
       } catch (_) { /* skip corrupt */ }
     }

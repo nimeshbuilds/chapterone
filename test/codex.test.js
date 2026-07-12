@@ -3,16 +3,24 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { CodexAdapter } = require('../src/main/cli/codexAdapter');
 
-test('buildArgs uses exec + skip-git-repo-check and appends the prompt', () => {
+test('buildArgs uses exec + skip-git-repo-check and reads the prompt from stdin', () => {
   const args = new CodexAdapter({}).buildArgs('write a chapter', {});
   assert.strictEqual(args[0], 'exec');
   assert.ok(args.includes('--skip-git-repo-check'));
-  assert.strictEqual(args[args.length - 1], 'write a chapter');
+  // '-' = stdin: the prompt must NOT be an argv element (Windows caps the
+  // command line at ~32K chars; stdin is unbounded and cross-platform).
+  assert.strictEqual(args[args.length - 1], '-');
+  assert.ok(!args.includes('write a chapter'));
 });
 
-test('buildArgs folds the system prompt into the prompt text', () => {
-  const args = new CodexAdapter({}).buildArgs('BODY', { system: 'SYS' });
-  assert.strictEqual(args[args.length - 1], 'SYS\n\nBODY');
+test('extractFinal slices between the codex marker and the tokens-used trailer', () => {
+  const a = new CodexAdapter({});
+  const raw = 'OpenAI Codex v0.139.0\n--------\nmodel: gpt-5.5\nuser\nwrite it\ncodex\n# Chapter 1\n\n---\n\n2024-01-01 was the day.\ntokens used\n2,917';
+  const out = a.extractFinal(raw);
+  assert.match(out, /# Chapter 1/);
+  assert.match(out, /^---$/m);                 // scene breaks survive
+  assert.match(out, /2024-01-01 was the day/); // ISO-date prose survives
+  assert.doesNotMatch(out, /tokens used|model:/);
 });
 
 test('research grounding uses the config tool toggle, NOT the removed --search flag', () => {

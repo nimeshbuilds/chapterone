@@ -20,6 +20,11 @@ const isDev = process.argv.includes('--dev');
 function createWindow() {
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
+  // Mica exists only on Windows 11 22H2+ (build 22621). On older Windows an
+  // alpha backgroundColor renders as OPAQUE BLACK behind the translucent
+  // renderer panels — so gate the material and fall back to a solid backdrop.
+  const winBuild = isWin ? parseInt((require('os').release().split('.')[2] || '0'), 10) : 0;
+  const micaOk = isWin && winBuild >= 22621;
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 820,
@@ -29,7 +34,7 @@ function createWindow() {
     // The renderer paints semi-transparent panels so the material shows through.
     ...(isMac
       ? { vibrancy: 'under-window', visualEffectState: 'active', backgroundColor: '#00000000' }
-      : isWin
+      : micaOk
         ? { backgroundMaterial: 'mica', backgroundColor: '#00000000' }
         : { backgroundColor: '#1a1726' }),
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
@@ -50,6 +55,8 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Null the reference so menu handlers can't touch a destroyed window.
+  mainWindow.on('closed', () => { mainWindow = null; });
 
   // Open external links in the user's browser, not inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

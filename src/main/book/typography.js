@@ -14,9 +14,12 @@
 
 const CODE = ''; // private-use sentinel (never in prose) to shield code spans
 
-/** Replace em/en dashes (and `--`) with commas; keep word-joining hyphens. */
+/** Replace em/en dashes (and `--`) with commas; keep word-joining hyphens AND
+ *  en dashes inside numeric ranges (1914–1918, pages 12–15, 3–5). */
 function stripDashes(s) {
   return String(s == null ? '' : s)
+    // protect digit–digit ranges before the clause-break pass
+    .replace(/(\d)\s*–\s*(\d)/g, `$1${CODE}NDASH${CODE}$2`)
     // " — " / "—" / " – " / "--" used as a clause break → comma
     .replace(/\s*[—–]\s*/g, ', ')
     .replace(/\s*--\s*/g, ', ')
@@ -24,7 +27,8 @@ function stripDashes(s) {
     .replace(/,\s*,/g, ',')
     .replace(/\s+,/g, ',')
     .replace(/,(?=\S)/g, ', ')
-    .replace(/[ \t]{2,}/g, ' ');
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(new RegExp(`${CODE}NDASH${CODE}`, 'g'), '–');
 }
 
 /** Straight quotes/apostrophes → curly, without touching code or URLs. */
@@ -73,9 +77,11 @@ function tidyProse(markdown) {
     if (isRuleLine(raw)) { out.push(''); continue; }          // remove dash/star rules
     if (isImageLine(raw)) { out.push(raw.trim()); continue; } // keep image markers verbatim
 
-    const headingMatch = raw.match(/^(\s{0,3}#{1,6}\s+)(.*)$/);
+    const headingMatch = raw.match(/^\s{0,3}(#{1,6})\s+(.*)$/);
     if (headingMatch) {
-      out.push('# ' + tidyText(headingMatch[2])); // normalize to a clean heading, no stray symbols
+      // Clean the text but PRESERVE the heading level — flattening ##/### to #
+      // destroyed the document structure of nonfiction books.
+      out.push(`${headingMatch[1]} ${tidyText(headingMatch[2])}`);
       continue;
     }
     const listMatch = raw.match(/^(\s*(?:[-*+]|\d+\.)\s+)(.*)$/);
@@ -90,16 +96,20 @@ function tidyProse(markdown) {
 
 /** Inline cleanup for a normal prose line. */
 function cleanInline(line) {
-  // Shield inline `code` spans with a private-use sentinel so dash/quote tidying
-  // never touches them and the backticks survive for the Markdown renderer —
-  // inline code still renders.
+  // Shield inline `code` spans, markdown link targets `](…)`, and bare URLs with
+  // a private-use sentinel so dash/quote tidying never mangles them
+  // (example.com/a--b and (https://…) must survive verbatim).
   const spans = [];
-  let s = String(line).replace(/`[^`]+`/g, (m) => { spans.push(m); return CODE + (spans.length - 1) + CODE; });
+  const shield = (m) => { spans.push(m); return CODE + (spans.length - 1) + CODE; };
+  let s = String(line)
+    .replace(/`[^`]+`/g, shield)
+    .replace(/\]\([^)\s]+\)/g, shield)
+    .replace(/https?:\/\/[^\s)\]]+/g, shield);
   s = stripDashes(s);
   s = s.replace(/\*{3,}/g, '');                   // stray *** decoration
   // (balanced **bold**/*italic* are left for the Markdown renderer)
   s = curlyQuotes(s);
-  s = s.replace(new RegExp(CODE + '(\\d+)' + CODE, 'g'), (_, i) => spans[+i]); // restore code spans
+  s = s.replace(new RegExp(CODE + '(\\d+)' + CODE, 'g'), (_, i) => spans[+i]); // restore shielded spans
   return s.replace(/[ \t]+$/g, '');
 }
 

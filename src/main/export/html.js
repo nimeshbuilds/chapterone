@@ -111,6 +111,9 @@ const BOOK_CSS = `
   .titlepage .title { font-size: 2.6rem; font-weight: 700; line-height: 1.1; }
   .titlepage .subtitle { font-size: 1.3rem; color: #5a5a5a; margin-top: 1rem; font-style: italic; }
   .titlepage .author { margin-top: 3rem; font-size: 1.1rem; letter-spacing: .12em; text-transform: uppercase; }
+  .titlepage .dedication { margin-top: 4rem; font-style: italic; color: #6a6a6a; font-size: 1.02rem; }
+  .backpage { page-break-before: always; }
+  .backpage .blurb { max-width: 32rem; margin: 1.4rem auto 0; font-size: 1.05rem; line-height: 1.7; text-align: center; font-style: italic; }
   .chapter { page-break-before: always; }
   .cover-page { page-break-after: always; text-align: center; margin: 0; padding: 0; }
   .cover-art img, .cover-page img { max-width: 100%; max-height: 100vh; border-radius: 4px; }
@@ -144,7 +147,9 @@ function creditsHtml(book) {
  */
 function bookToHtml(book, opts = {}) {
   const resolveImage = opts.resolveImage || defaultResolver(book);
-  const chapterArt = (c) => (c.artSvg ? svgFigure(c.artSvg) : c.artFile ? rasterFigure(c.artFile) : '');
+  // Prefer the rasterized PNG (covers artHtml chapters too, whose only
+  // renderable form is the PNG), then fall back to inline SVG.
+  const chapterArt = (c) => (c.artFile ? rasterFigure(c.artFile) : c.artSvg ? svgFigure(c.artSvg) : '');
   const chapters = (book.chapters || [])
     .filter(Boolean)
     .map(
@@ -164,7 +169,13 @@ function bookToHtml(book, opts = {}) {
       <div class="title">${escapeHtml(book.title)}</div>
       ${book.subtitle ? `<div class="subtitle">${escapeHtml(book.subtitle)}</div>` : ''}
       <div class="author">by ${escapeHtml(book.author || 'Anonymous')}</div>
+      ${book.dedication ? `<div class="dedication">${escapeHtml(book.dedication)}</div>` : ''}
     </section>`;
+  const backPage = book.blurb ? `
+    <section class="titlepage backpage">
+      <div class="subtitle" style="text-transform:uppercase;letter-spacing:.14em;font-size:.85rem">About this book</div>
+      <p class="blurb">${escapeHtml(book.blurb)}</p>
+    </section>` : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -179,6 +190,7 @@ function bookToHtml(book, opts = {}) {
 ${coverPage}
 ${opts.includeTitlePage === false ? '' : titlePage}
 ${chapters}
+${backPage}
 ${opts.includeCredits === false ? '' : creditsHtml(book)}
 </div>
 </body>

@@ -76,6 +76,13 @@ contextBridge.exposeInMainWorld('api', {
   generate: (spec, answers, jobId) => invoke('book:generate', { spec, answers, jobId }),
   resumeBook: (id, jobId) => invoke('book:resume', { id, jobId }),
   cancelGeneration: (jobId) => invoke('book:cancel', jobId),
+  approveOutline: (jobId, outline) => invoke('outline:approve', { jobId, outline }),
+
+  // author tools
+  updateChapter: (id, index, content) => invoke('book:updateChapter', { id, index, content }),
+  rewriteChapter: (id, index, note, jobId) => invoke('book:rewriteChapter', { id, index, note, jobId }),
+  updateBook: (id, fields) => invoke('book:update', { id, ...fields }),
+  bookStats: (id) => invoke('book:stats', id),
   onProgress: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('book:progress', listener);

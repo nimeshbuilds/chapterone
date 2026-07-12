@@ -11,11 +11,20 @@ function openLoginTerminal(cmd) {
     if (process.platform === 'darwin') {
       const esc = cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       execFile('osascript', ['-e', `tell application "Terminal"\nactivate\ndo script "${esc}"\nend tell`], (err) => resolve(!err));
-    } else if (process.platform === 'win32') {
-      try { execFile('cmd', ['/c', 'start', 'cmd', '/k', cmd]); resolve(true); } catch (_) { resolve(false); }
     } else {
-      const term = process.env.TERMINAL || 'x-terminal-emulator';
-      try { execFile(term, ['-e', cmd]); resolve(true); } catch (_) { resolve(false); }
+      // The error callback matters: without it an async spawn failure becomes an
+      // unhandled 'error' event that takes down the whole main process. Resolve
+      // optimistically after a beat — the opened terminal may outlive us.
+      const argv = process.platform === 'win32'
+        ? ['cmd', ['/c', 'start', 'cmd', '/k', cmd]]
+        : [process.env.TERMINAL || 'x-terminal-emulator', ['-e', cmd]];
+      let settled = false;
+      const done = (ok) => { if (!settled) { settled = true; resolve(ok); } };
+      try {
+        const child = execFile(argv[0], argv[1], () => {});
+        child.on('error', () => done(false));
+        setTimeout(() => done(true), 500);
+      } catch (_) { done(false); }
     }
   });
 }
@@ -27,12 +36,14 @@ const { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, verifyKey, priceFor, modelLabel } = r
 const { bandOf, plannedImageCount, readerVarsForBand } = require('./book/ageBands');
 const { classifyBook } = require('./book/classify');
 const elevenlabs = require('./book/elevenlabs');
-const { markdownToSpeech, tidyText } = require('./book/typography');
+const { markdownToSpeech, tidyText, tidyProse } = require('./book/typography');
+const { bookStats } = require('./book/stats');
 const { AuthSessionManager } = require('./cli/authSession');
 const { BookGenerator } = require('./book/generator');
 const { resolveImagesForBook } = require('./book/images');
 const { generateEpub } = require('./export/epub');
-const { generatePdf } = require('./export/pdf');
+const { generatePdf, generatePrintPdf } = require('./export/pdf');
+const { exportDocx } = require('./export/docx');
 const { rasterizeBookArt } = require('./export/rasterize');
 const { bookToMarkdown } = require('./export/markdown');
 const { bookToHtml, chapterToHtml, svgFigure } = require('./export/html');
@@ -367,7 +378,12 @@ function registerIpc(store) {
   }));
 
   // ---- generate ----
+  // Outline-review gate: jobId -> resolve(editedOutlineOrNull). The generator
+  // pauses after planning; the renderer approves (optionally with edits).
+  const outlineGates = new Map();
+
   ipcMain.handle('book:generate', wrap(async (event, { spec, answers, jobId }) => {
+    if (jobs.size > 0) throw new Error('A book is already being written — open it from the Library, or cancel it first.');
     const settings = store.getSettings();
     const controller = new AbortController();
     jobs.set(jobId, controller);
@@ -383,6 +399,14 @@ function registerIpc(store) {
         onProgress,
         onChapter: (b) => store.saveBook(b),
         signal: controller.signal,
+        onOutlineReview: (b) => new Promise((resolve, reject) => {
+          outlineGates.set(jobId, resolve);
+          // A cancel while waiting at the gate must release the pipeline.
+          controller.signal.addEventListener('abort', () => {
+            outlineGates.delete(jobId);
+            reject(new Error('Generation cancelled by user'));
+          }, { once: true });
+        }),
       });
       await maybeIllustrate(book, sender, jobId, controller.signal);
       onProgress({ phase: 'rasterize', message: 'Finalizing artwork…' });
@@ -391,7 +415,17 @@ function registerIpc(store) {
       return { id: book.id };
     } finally {
       jobs.delete(jobId);
+      outlineGates.delete(jobId);
     }
+  }));
+
+  // Approve the plan (optionally edited): outline = [{title, summary}] or null to keep.
+  ipcMain.handle('outline:approve', wrap(async (_e, { jobId, outline }) => {
+    const release = outlineGates.get(jobId);
+    if (!release) return { approved: false };
+    outlineGates.delete(jobId);
+    release(Array.isArray(outline) && outline.length ? outline : null);
+    return { approved: true };
   }));
 
   // ---- resume a paused / interrupted book ----
@@ -431,6 +465,53 @@ function registerIpc(store) {
   // ---- library ----
   ipcMain.handle('book:list', wrap(async () => store.listBooks()));
   ipcMain.handle('book:get', wrap(async (_e, id) => store.getBook(id)));
+
+  // ---- author tools: edit / rewrite / rename / stats ----
+  ipcMain.handle('book:updateChapter', wrap(async (_e, { id, index, content }) => {
+    const book = store.getBook(id);
+    const ch = (book.chapters || [])[index];
+    if (!ch) throw new Error('No such chapter.');
+    ch.content = tidyProse(String(content || ''));
+    ch.words = (ch.content.match(/\S+/g) || []).length;
+    book.words = (book.chapters || []).reduce((n, c) => n + ((c && c.words) || 0), 0);
+    store.saveBook(book);
+    return { id, index, words: ch.words };
+  }));
+
+  ipcMain.handle('book:rewriteChapter', wrap(async (event, { id, index, note, jobId }) => {
+    const settings = store.getSettings();
+    const book = store.getBook(id);
+    const controller = new AbortController();
+    jobs.set(jobId, controller);
+    const sender = event.sender;
+    const onProgress = (e) => { if (!sender.isDestroyed()) sender.send('book:progress', { jobId, ...e }); };
+    const engine = createChainEngine(settings, {
+      onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
+    });
+    try {
+      const gen = new BookGenerator(engine, { imageConfig: imageConfigFrom(settings) });
+      await gen.rewriteChapter(book, index, note, { onProgress, signal: controller.signal });
+      book.words = (book.chapters || []).reduce((n, c) => n + ((c && c.words) || 0), 0);
+      store.saveBook(book);
+      return { id, index };
+    } finally {
+      jobs.delete(jobId);
+    }
+  }));
+
+  ipcMain.handle('book:update', wrap(async (_e, { id, title, subtitle, author }) => {
+    const book = store.getBook(id);
+    if (title != null && String(title).trim()) book.title = tidyText(String(title).trim());
+    if (subtitle != null) book.subtitle = tidyText(String(subtitle).trim());
+    if (author != null && String(author).trim()) book.author = String(author).trim();
+    store.saveBook(book);
+    return { id, title: book.title, subtitle: book.subtitle, author: book.author };
+  }));
+
+  ipcMain.handle('book:stats', wrap(async (_e, id) => {
+    const book = store.getBook(id);
+    return { ...bookStats(book), classification: classifyBook(book) };
+  }));
   ipcMain.handle('book:delete', wrap(async (_e, id) => { store.deleteBook(id); return { deleted: true }; }));
   ipcMain.handle('book:html', wrap(async (_e, id) => {
     const book = store.getBook(id);
@@ -451,6 +532,8 @@ function registerIpc(store) {
       ageBand: book.ageBand || '',
       isKids: !!book.isKids,
       classification: classifyBook(book),
+      dedication: book.dedication || '',
+      blurb: book.blurb || '',
       readerFontPx: (readerVarsForBand(book.ageBand) || {}).fontPx || null,
       pausedReason: book.pausedReason || null,
       words: book.words || 0,
@@ -472,8 +555,16 @@ function registerIpc(store) {
   // ---- export ----
   ipcMain.handle('book:export', wrap(async (_e, { id, format, saveAs }) => {
     const book = store.getBook(id);
+    // Make sure HTML/SVG art has been rendered to PNG before exporting —
+    // otherwise chapters whose rasterization hadn't run yet silently lose
+    // their illustrations in EPUB/PDF/HTML output.
+    await maybeRasterize(book);
     const base = safeFilename(book.title, 'book');
-    const ext = format === 'pdf' ? 'pdf' : format === 'markdown' ? 'md' : 'epub';
+    const ext = format === 'pdf' || format === 'pdf-print' ? 'pdf'
+      : format === 'markdown' ? 'md'
+      : format === 'docx' ? 'docx'
+      : format === 'html' ? 'html'
+      : 'epub';
     let outPath;
     if (saveAs) {
       const win = BrowserWindow.getFocusedWindow();
@@ -488,7 +579,10 @@ function registerIpc(store) {
       outPath = path.join(store.exportsDir, `${base}.${ext}`);
     }
     if (ext === 'epub') await generateEpub(book, outPath);
+    else if (format === 'pdf-print') await generatePrintPdf(book, outPath); // 6×9 KDP-ready interior
     else if (ext === 'pdf') await generatePdf(book, outPath);
+    else if (ext === 'docx') await exportDocx(book, outPath);
+    else if (ext === 'html') fs.writeFileSync(outPath, bookToHtml(book)); // single-file web page, share anywhere
     else fs.writeFileSync(outPath, bookToMarkdown(book));
     return { path: outPath };
   }));

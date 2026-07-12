@@ -56,14 +56,18 @@ class CodexAdapter {
     // '--search'", which was failing every research-enabled call.
     if (opts.research) args.push('-c', 'tools.web_search=true');
     if (this.extraArgs.length) args.push(...this.extraArgs);
-    const full = opts.system ? `${opts.system}\n\n${prompt}` : prompt;
-    args.push(full);
+    // '-' = read the prompt from stdin. Passing the full multi-KB prompt as an
+    // argv element broke on Windows (32K command-line limit) and pollutes `ps`;
+    // stdin is unbounded and identical on every platform.
+    args.push('-');
     return args;
   }
 
   async complete(prompt, opts = {}) {
     const args = this.buildArgs(prompt, opts);
+    const full = opts.system ? `${opts.system}\n\n${prompt}` : prompt;
     const { code, stdout, stderr } = await run(this.command, args, {
+      input: full,
       scrubEnv: this.scrub(),
       timeoutMs: opts.timeoutMs || 0,
       signal: opts.signal,
@@ -79,18 +83,34 @@ class CodexAdapter {
     return out;
   }
 
+  /**
+   * Codex prints a banner (model/provider/session), echoes the user prompt,
+   * then a bare `codex` line, THE MESSAGE, and a `tokens used` trailer. Slice
+   * between the last `codex` marker and the trailer instead of pattern-
+   * filtering every line — the old filter deleted legitimate book content
+   * ('---' scene breaks, timeline lines starting with an ISO date).
+   */
   extractFinal(raw) {
     if (!raw) return '';
     const lines = raw.split('\n');
-    const cleaned = lines.filter((l) => {
+    let start = -1;
+    let end = lines.length;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^codex$/i.test(lines[i].trim())) start = i + 1;
+    }
+    if (start >= 0) {
+      for (let i = start; i < lines.length; i++) {
+        if (/^tokens used\b/i.test(lines[i].trim())) { end = i; break; }
+      }
+      return lines.slice(start, end).join('\n');
+    }
+    // Fallback (unexpected format): strip only the known banner lines.
+    return lines.filter((l) => {
       const t = l.trim();
-      if (!t) return true;
-      if (/^\[?\d{4}-\d{2}-\d{2}/.test(t)) return false;
-      if (/^(codex|model|provider|reasoning|workdir|sandbox|tokens used)\s*[:=]/i.test(t)) return false;
-      if (/^-{3,}$/.test(t)) return false;
-      return true;
-    });
-    return cleaned.join('\n');
+      return !/^(model|provider|reasoning|workdir|sandbox|approval|session id|tokens used)\s*:/i.test(t)
+        && !/^-{8,}$/.test(t)
+        && !/^Reading additional input from stdin/i.test(t);
+    }).join('\n');
   }
 }
 

@@ -74,6 +74,7 @@ function generateEpub(book, outPath) {
     const output = fs.createWriteStream(outPath);
     const archive = archiver('zip', { zlib: { level: 9 } });
     output.on('close', () => resolve(outPath));
+    output.on('error', reject); // disk-full/permission errors must reject, not crash the process
     archive.on('error', reject);
     archive.pipe(output);
 

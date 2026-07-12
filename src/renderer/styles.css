@@ -618,3 +618,100 @@ select { -webkit-appearance: none; appearance: none; cursor: pointer; }
 .front-matter .fm-preface { margin: 3rem auto 0; max-width: 34rem; text-align: left; }
 .front-matter .fm-preface-label { text-transform: uppercase; letter-spacing: .1em; font-size: .8em; opacity: .6; margin-bottom: .6rem; }
 .front-matter .fm-preface p { text-indent: 0; }
+
+/* ---- platform: the traffic-light padding is macOS-only; Windows/Linux use a
+   normal titlebar, so reclaim the space (body gets .platform-win/.platform-linux
+   from app.js at boot). ---- */
+body.platform-win .app, body.platform-linux .app { padding-top: 12px; }
+body.platform-win .reader-bar, body.platform-linux .reader-bar { padding-left: 16px; }
+
+/* ---- selects: appearance:none needs a real affordance ---- */
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 55%, calc(100% - 11px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+
+/* ---- create screen: idea sparks ---- */
+.spark-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 14px; }
+.spark {
+  font-size: 12px; padding: 6px 12px; border-radius: 20px; cursor: pointer;
+  border: 1px solid var(--border-soft); background: var(--field); color: var(--text);
+  transition: transform .12s, border-color .12s;
+}
+.spark:hover { transform: translateY(-1px); border-color: var(--accent); }
+.spark.surprise { border-style: dashed; }
+.checkline { flex-direction: row; align-items: center; gap: 10px; }
+.checkline input[type="checkbox"] { width: auto; }
+
+/* ---- outline review gate ---- */
+.outline-review-list { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.outline-review-row { display: flex; gap: 10px; align-items: flex-start; }
+.orn {
+  flex: 0 0 24px; height: 24px; margin-top: 6px; display: inline-grid; place-items: center;
+  border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+}
+.orfields { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.or-title { font-weight: 600; }
+.or-summary { font-size: 12px; color: var(--text-dim); }
+
+/* ---- the book-is-born reveal ---- */
+.reveal-overlay { z-index: 300; overflow: hidden; }
+.confetti { position: absolute; inset: 0; pointer-events: none; }
+.confetti i {
+  position: absolute; top: -12px; width: 8px; height: 14px; border-radius: 2px; opacity: .95;
+  animation: confetti-fall linear forwards;
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(-10vh) rotate(0deg); }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: .7; }
+}
+.reveal-card {
+  display: flex; gap: 26px; align-items: center; max-width: 620px; padding: 30px;
+  background: var(--panel-solid, var(--panel)); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); box-shadow: var(--shadow); animation: reveal-pop .5s cubic-bezier(.2,1.4,.4,1);
+}
+@keyframes reveal-pop { 0% { transform: scale(.7) rotate(-2deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+.reveal-cover { width: 180px; aspect-ratio: 2 / 3; object-fit: contain; border-radius: 8px; box-shadow: 0 18px 44px rgba(0,0,0,.4); animation: cover-flip .8s cubic-bezier(.2,1.2,.4,1); background: rgba(0,0,0,.2); }
+.reveal-cover-ph { display: flex; align-items: flex-end; padding: 14px; color: #fff; }
+.reveal-cover-ph h3 { font-family: 'New York', Georgia, serif; font-size: 15px; }
+@keyframes cover-flip { 0% { transform: perspective(900px) rotateY(-85deg); opacity: 0; } 100% { transform: perspective(900px) rotateY(0); opacity: 1; } }
+.reveal-kicker { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-2); font-weight: 700; }
+.reveal-meta h2 { margin: 6px 0 0; font-size: 24px; font-family: 'New York', Georgia, serif; }
+.reveal-sub { margin: 4px 0 0; color: var(--text-dim); font-style: italic; }
+.reveal-by { margin: 8px 0 0; color: var(--text-dim); font-size: 13px; }
+
+/* ---- library search ---- */
+.lib-search {
+  flex: 1; max-width: 320px; margin: 0 auto; padding: 8px 14px; border-radius: 20px;
+  border: 1px solid var(--border-soft); background: var(--field); color: var(--text); font-size: 13px;
+}
+.lib-search:focus { outline: none; border-color: var(--accent); }
+
+/* ---- reader: export menu, modals, edit ---- */
+.export-menu { position: relative; display: inline-block; }
+.export-list {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 230px;
+  background: var(--panel-solid, var(--panel)); border: 1px solid var(--border-soft);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column;
+}
+.export-item {
+  text-align: left; padding: 9px 12px; border-radius: 8px; border: none; background: none;
+  color: var(--text); font-size: 13px;
+}
+.export-item:hover { background: var(--field); }
+.stats-modal .stat-line { display: flex; justify-content: space-between; gap: 30px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-size: 14px; }
+.stats-modal .stat-line:last-of-type { border-bottom: none; }
+.bible-modal { max-width: 640px; max-height: 78vh; overflow-y: auto; }
+.bible-sec { margin-top: 14px; }
+.bible-sec h3 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); }
+.bible-sec p, .bible-sec li { font-size: 14px; line-height: 1.55; }
+.bible-sec ul, .bible-sec ol { padding-left: 20px; }
+.edit-modal { max-width: 720px; width: 90vw; }
+.edit-chapter-ta { width: 100%; min-height: 46vh; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.6; }
+.rewrite-note { width: 100%; min-height: 110px; resize: vertical; }
+.front-matter .fm-dedication { margin-top: 3rem; font-style: italic; opacity: .75; }
+.front-matter .fm-blurb { max-width: 30rem; margin: 1.2rem auto 0; font-style: italic; line-height: 1.7; text-align: center; text-indent: 0; }
