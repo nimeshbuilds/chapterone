@@ -20,17 +20,25 @@ We'll acknowledge your report as quickly as we can and keep you updated on a fix
 
 ChapterOne is a **local-first** desktop app. It is designed so that:
 
-- **Your subscription, not API keys.** The app strips `ANTHROPIC_API_KEY`,
-  `OPENAI_API_KEY`, and `GEMINI_API_KEY` from the CLI's child-process
-  environment so text generation always uses your interactive subscription
-  login.
+- **Your subscription, not API keys (for subscription engines).** The app strips
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`,
+  `OPENAI_API_BASE`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `XAI_API_KEY`, and
+  `GROK_CODE_XAI_API_KEY` from each CLI's child-process environment so Claude
+  Code, Codex, and Grok always use your interactive subscription login. The
+  exception is Gemini, whose CLI login Google retired: it runs on a Gemini API
+  key you provide, used only for Gemini calls.
 - **No backend.** There is no ChapterOne server. Your books, settings, and keys
   live only on your machine (under the app's user-data directory).
 - **Least privilege to the model.** When research is enabled, only the CLI's
   read-only web tools are allowed — never file-editing or shell access.
-- **SVG is sanitized.** Any model-produced SVG is stripped of scripts, event
-  handlers, `foreignObject`, and external references before it is embedded or
-  rasterized.
+- **Model-authored art is contained twice.** Generated SVG/HTML art is stripped
+  of scripts, event handlers, frames, and external references, and is then
+  rendered in an offscreen window whose session **cancels every network
+  request** (only `data:`/`file:` are allowed) with JavaScript disabled — so
+  even a sanitizer bypass cannot phone home.
+- **Atomic local writes.** Books and settings are written via
+  write-temp-then-rename, so a crash can never truncate your library or your
+  keys; `settings.json` keeps a `.bak` fallback.
 - **Explicit outbound network only.** Network calls happen for research web
   search (via the CLI), opt-in image generation/lookups, opt-in audiobook
   narration, and the Send-to-Kindle email you trigger.

@@ -1,7 +1,7 @@
 {
   "name": "chapterone",
   "version": "0.1.0",
-  "description": "ChapterOne — Your Personal Book Writer. Generate professional, bestseller-quality books with the Claude Code, Codex, or Gemini CLI on your own subscription, research-grounded with royalty-free images, read them in-app, export to Kindle (EPUB/PDF), and send to your Kindle.",
+  "description": "ChapterOne — Your Personal Book Writer. Turn one idea into a finished book with Claude Code, Codex, Grok (your subscriptions) or Gemini (API key): planned, research-grounded, written, illustrated with AI art, narrated, and delivered to Kindle, EPUB, PDF, DOCX, or the web.",
   "author": {
     "name": "Modulagent"
   },

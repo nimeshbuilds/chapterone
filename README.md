@@ -6,7 +6,7 @@
 
 ### Your Personal Book Writer
 
-**A privacy-first desktop app that ghost-writes complete, professional-quality books — using your own Claude Code, Codex, or Gemini CLI subscription. No servers, no API keys, your machine.**
+**A privacy-first desktop app that ghost-writes complete, professional-quality books — on your own Claude Code, Codex, or Grok subscription (or a Gemini API key). No servers, no accounts, your machine.**
 
 [![Download](https://img.shields.io/badge/download-macOS%20DMG-111?logo=apple&logoColor=white)](https://github.com/npandeya/bookwriter/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -27,11 +27,12 @@ and edits it chapter by chapter, optionally illustrates and narrates it, and
 hands you a manuscript you can **read in the app**, **listen to as an audiobook**,
 **export to EPUB/PDF**, or **send straight to your Kindle**.
 
-It runs entirely on **your own AI subscription** by driving a CLI you already
-have — **Claude Code**, **Codex**, or **Gemini** — locally. There is **no
-backend and no text API key**: your subscription login does the work, and your
-book never leaves your machine except for the research, image, and delivery
-calls you explicitly enable.
+It runs entirely on **your own AI plan** by driving a CLI you already have —
+**Claude Code**, **Codex**, or **Grok** on their subscription logins, or
+**Gemini** via your API key (Google retired its CLI login). There is **no
+backend and no ChapterOne account**: your plan does the work, and your book
+never leaves your machine except for the research, image, and delivery calls
+you explicitly enable.
 
 ## ⬇️ Download
 
@@ -50,11 +51,15 @@ You also need one AI CLI installed and signed in — see [Requirements](#-requir
 - ⚡ **One-click model presets** — **Fast / Pro / Default** buttons set the right model on *every* engine in your chain at once (Fast → Haiku / GPT-5.4-mini / Flash-Lite / Composer 2.5; Pro → Opus / GPT-5.5 / Gemini 3.1 Pro / Grok Build). Or type a **custom model id** with live ✓/✗ verification against the real provider.
 - 🔎 **Research-grounded** — uses each CLI's own web tools (Claude WebSearch/WebFetch, Codex web search, Gemini Google Search, Grok bounded web search on the author-study step) to ground real facts, names, and dates. Read-only web access only — never file or shell access.
 - 🎨 **AI illustrations** — bespoke **HTML/CSS + inline-SVG scene illustrations** of each chapter, designed by your engine and rendered to PNG (free, on your subscription), or photorealistic art via **Nano Banana** (your own Gemini image key, with optional per-character reference photos).
+- 📋 **Outline review gate** — approve the chapter plan *before* a word is written: retitle chapters, rewrite what happens, or cut chapters, then hit "Approve & start writing".
 - 📖 **Read while it writes** — open the reader the moment chapter 1 lands; new chapters appear as they're written, with a live banner and a tap to load them — generation keeps running in the background.
+- ✍️ **Author tools** — **rewrite any chapter with a director's note** ("slower pacing, end on a cliffhanger"), or **edit the Markdown by hand**; rename the book and put your own name on it. A **story bible** shows the premise, style guide, cast, and chapter map; **book stats** show words, pages, reading time, and reading level.
+- 📚 **Write the sequel** — one click on any finished book prefills a sequel brief with the same world, cast (and their photos), and voice.
+- 🎁 **Finishing touches** — every book gets a back-cover **blurb** and a **dedication**, a title page, and a **book-is-born reveal** (cover flip + confetti) when it finishes. The blank-page problem is solved with tappable **idea sparks** and a 🎲 Surprise me.
 - 🗂️ **Library that scales** — **Tiles / List** views (uncropped full covers; Finder-style list with a Created date), and every book auto-labelled by the publishing-standard **audience tier** (Board Book · Ages 1–2 … Young Adult … Adult · Fiction/Nonfiction).
 - 🎧 **Audiobooks (ElevenLabs)** — narrate per chapter or the **whole book**, with saved playback position. Pick from top audiobook voices, or **clone your own voice** and have it read to you. On-demand, cached, and exportable to MP3.
 - 📚 **Premium built-in EPUB reader** — distraction-free, with a contents drawer, Page/Scroll modes, adjustable type, Light/Sepia/Night themes, a progress bar, and remembered position.
-- 📨 **Export & deliver** — reflowable EPUB and PDF export, plus **Send to Kindle** (Mail hand-off with no setup, or one-click SMTP).
+- 📨 **Export & deliver everywhere** — EPUB, PDF, **print-ready 6×9 PDF (KDP interior)**, **Word (.docx)** for human editors, a **single-file web page** to share with anyone, and Markdown — plus **Send to Kindle** (Mail hand-off with no setup, or one-click SMTP).
 - ⏯️ **Resumable, cancellable & loss-proof** — progress is saved after every chapter; **Pause/Cancel** stops promptly at any time, and a crash or lapsed subscription always leaves a resumable draft.
 - 🔒 **Subscription, not API key** — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY` are stripped from the CLI's environment so it always authenticates with your plan login.
 - 🧹 **Your data, your control** — everything is stored locally; a **Clear all my data** control wipes every artifact (books, art, audio, exports, keys) with a type-to-confirm gate.

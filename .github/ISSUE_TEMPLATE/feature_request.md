@@ -1,18 +1,11 @@
 ---
 name: Feature request
-about: Suggest an idea or improvement
-title: "[idea] "
+about: Suggest an idea to make ChapterOne better
 labels: enhancement
 ---
 
-**What problem would this solve?**
-The use case or pain point behind the idea.
+**What would you like to be able to do?**
 
-**Proposed solution**
-What you'd like to see.
+**Why does it matter?** (what does it unblock for you)
 
-**Alternatives considered**
-Other approaches you thought about, if any.
-
-**Additional context**
-Anything else — mockups, examples, related tools.
+**Any prior art?** (apps that do this well)

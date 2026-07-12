@@ -85,6 +85,16 @@ test/                     node:test specs for the pure-logic modules
      `chapter:stream`), optional **editor polish** pass, optional **AI chapter
      art** (SVG), then a compact **continuity recap** for the next chapter.
 3. `resume(book, hooks)` continues a paused book from `book.chapters.length`.
+4. Optional stops: when `spec.reviewOutline` is set, the pipeline pauses at
+   `hooks.onOutlineReview(book)` (ipc resolves it via the `outline:approve`
+   channel) so the user can edit the plan; `_backMatter` writes a blurb +
+   dedication after the last chapter (quiet, non-blocking).
+5. Author tools: `rewriteChapter(book, index, note, hooks)` regenerates ONE
+   chapter (optionally steered by a director's note); `book:updateChapter` /
+   `book:update` IPC handle hand-edits and rename. `book:stats` returns
+   words/pages/reading-time/FK-grade from `book/stats.js`. Exports include
+   docx (`export/docx.js`), single-file html, and a 6×9 print PDF
+   (`generatePrintPdf`).
 
 Progress is emitted via `hooks.onProgress({phase, ...})` and the book is saved
 after **every** chapter via `hooks.onChapter` — so cancel/crash/quota-loss

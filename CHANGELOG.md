@@ -8,6 +8,49 @@ All notable changes to ChapterOne are documented here. This project adheres to
 
 ### Added
 
+- **Outline review gate** — approve, retitle, rewrite, or cut chapters after
+  planning and before any prose is written.
+- **Author tools** — rewrite any chapter with a director's note, or hand-edit
+  its Markdown; rename the book / set your author name; a **story bible**
+  (premise, style guide, cast, chapter map) and **book stats** (words, pages,
+  reading time, Flesch-Kincaid level).
+- **Write the sequel** — one click prefills a sequel brief with the finished
+  book's world, cast (incl. photos), and voice.
+- **New export formats** — Word (.docx), single-file web page (.html), and a
+  print-ready 6×9 PDF interior (KDP trim), alongside EPUB/PDF/Markdown, all in
+  a new Export menu.
+- **Finishing touches** — back-cover blurb + dedication written for every book;
+  a book-is-born reveal (cover flip + confetti); idea sparks + Surprise-me on
+  the Create screen; library search.
+
+### Fixed (final audit pass)
+
+- **Windows CLI execution** — npm `.cmd` shims can't be spawned by modern
+  Node/Electron (CVE-2024-27980 hardening); CLIs now run via their real JS entry
+  with the bundled runtime. Codex prompts moved to stdin (32K command-line cap);
+  cancel now kills the full process tree; Mica is gated to Windows 11 22H2+ with
+  a solid-background fallback; macOS-only titlebar padding removed off-Mac.
+- **Data safety** — all book/settings writes are atomic (temp + rename) with a
+  settings backup; a crash mid-write can no longer corrupt the library or lose
+  API keys. Book ids are validated against path traversal.
+- **Streams & processes** — a dropped Gemini connection mid-stream now errors
+  (and retries) instead of hanging forever; a child that dies before reading
+  stdin no longer crashes the app; UTF-8 characters split across pipe chunks no
+  longer corrupt prose.
+- **Typography** — heading levels (##–######) are preserved (they were flattened
+  to #); en dashes survive in numeric ranges (1914–1918); URLs and link targets
+  are no longer dash/quote-mangled.
+- **Exports** — illustrated books no longer fail PDF export (2MB data-URL cap);
+  HTML-art chapters are rasterized before export instead of silently losing
+  their illustrations; EPUB write errors reject cleanly.
+- **UI** — leaving the reader stops narration; the live-draft stream no longer
+  rebuilds the whole progress screen every chunk; background auth checks no
+  longer wipe half-filled forms; reader arrow keys ignore form controls;
+  duplicate simultaneous generations are prevented; codex/grok output parsing
+  no longer eats scene breaks, dates, or opening lines.
+- **Art security** — rasterization runs in a network-dead session (all non-
+  data:/file: requests cancelled) on top of a hardened sanitizer.
+
 - **Grok engine** — xAI's Grok Build CLI as a fourth subscription engine
   (`grok -p`, OAuth on SuperGrok / X Premium Plus). Defaults to **Composer 2.5
   Fast** (benchmarked ~3–5× faster and more reliable than grok-build for prose);
