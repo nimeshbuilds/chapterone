@@ -44,7 +44,10 @@
     },
     "mac": {
       "category": "public.app-category.productivity",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
@@ -56,13 +59,27 @@
     "dmg": {
       "title": "${productName} ${version}",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64", "arm64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -74,8 +91,30 @@
       "shortcutName": "ChapterOne"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Office"
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/npandeya/bookwriter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/npandeya/bookwriter/issues"
+  },
+  "homepage": "https://github.com/npandeya/bookwriter#readme",
+  "keywords": [
+    "electron",
+    "book",
+    "writer",
+    "ai",
+    "epub",
+    "kindle",
+    "audiobook",
+    "claude",
+    "codex",
+    "gemini"
+  ]
 }

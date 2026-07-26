@@ -1,8 +1,8 @@
 # CLAUDE.md — Working in this repo
 
-Guidance for any Claude session contributing to **Modulagent's Book Writer**.
-Read this first; it captures the architecture, conventions, and the non-obvious
-gotchas that will save you time.
+Guidance for any Claude session contributing to **ChapterOne — Your Personal
+Book Writer** (by Modulagent). Read this first; it captures the architecture,
+conventions, and the non-obvious gotchas that will save you time.
 
 ## What this is
 
@@ -10,12 +10,17 @@ A cross-platform **Electron** desktop app (macOS `.dmg` + Windows NSIS `.exe`)
 that ghost-writes professional, bestseller-quality books by driving the user's
 own AI **CLI** on their **subscription** — Claude Code (`claude`), Codex
 (`codex`), or Gemini (`gemini`). It plans, researches, writes, edits, and
-illustrates a book; reads it in a built-in EPUB reader; exports EPUB/PDF; and
-emails to Kindle or any address.
+illustrates books (including a dedicated **Kids Books** flow with age bands);
+reads them in a built-in EPUB reader; narrates them as **audiobooks**
+(ElevenLabs, incl. voice cloning); exports EPUB/PDF/Markdown/MP3; and emails to
+Kindle or any address (SMTP or macOS Mail.app hand-off).
 
-There is **no server and no API keys** — everything runs locally through the
-user's CLI. The only outbound network is the CLI's own web search, Openverse
-image lookups, and the email the user explicitly sends.
+There is **no server and no API keys for the writing** — it runs locally
+through the user's CLI. Two opt-in features use keys the user supplies in
+Settings, scoped to that feature only: Gemini image API (`nanoBanana.js`) for
+photorealistic illustrations, and ElevenLabs (`elevenlabs.js`) for narration.
+Other outbound network: the CLI's own web search, Openverse image lookups, and
+emails the user explicitly sends.
 
 ## Run / test / build
 
@@ -40,20 +45,25 @@ src/main/                 Electron MAIN process (Node)
   store.js                JSON persistence: settings + books + images/exports dirs
   util.js                 safeFilename, etc.
   cli/
-    spawn.js              child_process runner: stdin feed, abort, timeout, env scrub
-    models.js             provider catalog (PROVIDERS), model lists, login metadata, scrub vars
+    spawn.js              child_process runner: stdin feed, abort, timeout, env scrub, enforceMinWords
+    envPath.js            login-shell PATH reconstruction (Finder-launched apps get a bare PATH)
+    models.js             provider catalog (PROVIDERS), model lists, npm packages, login metadata, scrub vars
     claudeAdapter.js      drives `claude -p` (web tools via --allowedTools)
     codexAdapter.js       drives `codex exec` (--search)
     geminiAdapter.js      drives `gemini -p`
     chainEngine.js        ChainEngine: ordered fallback across adapters
     authSession.js        AuthSessionManager: interactive login streaming + stdin
-    index.js              buildAdapter / createEngine / createChainEngine / checkPrerequisites
+    index.js              buildAdapter / createEngine / createChainEngine / checkPrerequisites / installProviderCli
   book/
     prompts.js            ALL prompt text + SIZES + size helpers
     generator.js          the pipeline: clarify → outline → cover → chapters(+edit+art) → recap
+    ageBands.js           kids age bands → vocabulary/length/safety/illustration density
+    typography.js         book-grade text cleanup (quotes/dashes/markdown) + speech text
     json.js               extractJson (tolerant of fences/prose)
     errors.js             classifyError / isResumable / shouldFallback / describe
     images.js             Openverse stock-photo sourcing + marker resolution
+    nanoBanana.js         OPT-IN Gemini image API illustrations (user-supplied key)
+    elevenlabs.js         OPT-IN audiobook narration + voice cloning (user-supplied key)
     aiArt.js              SVG extract + sanitize + data-uri
   export/
     html.js               shared book HTML + reader/print CSS + cover/art figures
@@ -62,7 +72,7 @@ src/main/                 Electron MAIN process (Node)
     rasterize.js          SVG→PNG via offscreen BrowserWindow (Electron-only)
     markdown.js           full-manuscript Markdown
   kindle/
-    sendToKindle.js       nodemailer: sendEmailWithAttachment / sendToKindle / verifySmtp
+    sendToKindle.js       nodemailer SMTP + macOS Mail.app hand-off (composeInMail)
 src/renderer/             UI (vanilla JS, no framework, no build)
   index.html, styles.css, app.js
 test/                     node:test specs for the pure-logic modules
@@ -95,8 +105,19 @@ Key spec flags: `size` (small|medium|large), `research`, `polish`,
 - **Subscription, not API key.** Adapters strip `ANTHROPIC_API_KEY` /
   `OPENAI_API_KEY` / `GEMINI_API_KEY` etc. from the child env (`spawn.js`
   `scrubEnv`, list in `models.js SUBSCRIPTION_SCRUB`) so the CLI uses the
-  interactive login. Do NOT reintroduce API-key handling. The login flow
-  (`authSession.js`) deliberately does NOT scrub, so the CLI can write creds.
+  interactive login. Do NOT reintroduce API-key handling for the writing path.
+  The login flow (`authSession.js`) deliberately does NOT scrub, so the CLI can
+  write creds. The ONLY sanctioned key usage is the two opt-in feature keys the
+  user enters in Settings (`nanoBanana.js` images, `elevenlabs.js` audio) —
+  keep those scoped to their feature and never let them leak into the CLI env.
+- **PATH is rebuilt via `envPath.js`.** A Finder/Dock-launched Electron app
+  gets a bare PATH and won't find `claude`/`codex`/`gemini`/`npm`. Anything
+  that spawns a CLI must go through the resolved PATH — don't spawn with the
+  raw `process.env.PATH`.
+- **Never accept stub chapters.** Adapters call `enforceMinWords` so a
+  usage-limit one-liner ("usage limit reached") throws instead of being saved
+  as a "chapter", which is what triggers chain fallback. Don't bypass it when
+  adding a provider.
 - **Renderer is wrapped in an IIFE.** `app.js` is `(function(){ const api =
   window.api; ... })()`. This is required: `contextBridge` exposes `api` as a
   non-configurable global, so a top-level `const api` would throw
