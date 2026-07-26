@@ -20,13 +20,13 @@
     "dist:all": "npm run dist:mac && npm run dist:win"
   },
   "dependencies": {
-    "archiver": "^6.0.1",
+    "archiver": "^7.0.1",
     "marked": "^4.3.0",
-    "nodemailer": "^6.9.13"
+    "nodemailer": "^9.0.3"
   },
   "devDependencies": {
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.modulagent.chapterone",
@@ -116,5 +116,12 @@
     "claude",
     "codex",
     "gemini"
-  ]
+  ],
+  "overrides": {
+    "brace-expansion@1": "1.1.16",
+    "brace-expansion@2": "2.1.2",
+    "brace-expansion@3": "3.0.2",
+    "brace-expansion@4": "4.0.1",
+    "brace-expansion@5": "5.0.8"
+  }
 }
