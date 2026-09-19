@@ -24,8 +24,9 @@ const hasAppleCreds = !!(
 );
 
 if (process.env.CHAPTERONE_RELEASE === 'true' && process.platform === 'darwin'
+  && process.env.CHAPTERONE_ALLOW_UNSIGNED_RELEASE !== 'true'
   && (!hasAppleCreds || !process.env.CSC_LINK)) {
-  throw new Error('Tagged macOS releases require MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD and Apple notarization secrets. See SIGNING.md.');
+  throw new Error('Tagged macOS releases require signing/notarization secrets or an explicit unsigned release opt-in. See SIGNING.md.');
 }
 
 module.exports = {

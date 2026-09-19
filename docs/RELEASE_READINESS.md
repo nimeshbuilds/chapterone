@@ -6,7 +6,7 @@ Assessment of the 0.2.0 candidate prepared on the `release-readiness` branch in 
 
 The repository has the core product features for an initial open-source release: planning/review, resumable writing, editing, reading, illustration, narration and six export formats. The main gaps were security, data reliability, accurate privacy/billing information, and a release process that produced Windows installers. Those are addressed in this branch.
 
-**Public launch still needs signing credentials, the manual acceptance checks, and the owner's visibility/publication decision.** No public release or repository-visibility change was made during this review. CI artifacts are test installers and are unsigned.
+**Public launch still needs signing credentials, the manual acceptance checks, and the owner's visibility decision.** Version 0.2.0 is prepared for publication in the private repository with explicitly labeled unsigned installers; its Mac app is not notarized. Publishing a release does not change repository visibility. CI artifacts remain separate unsigned test builds.
 
 ## Scope and architecture
 
@@ -27,7 +27,7 @@ The app is deliberately small: CommonJS main-process modules, a vanilla JavaScri
 | Print PDF passed microns to an API expecting inches | Six-by-nine dimensions checked in actual exported PDFs |
 | CLI nonzero exits/Windows command paths and provider stream failures were insufficiently handled | Adapter, quoting, npm-shim, native PATH, UTF-8 and stream truncation regressions |
 | Connection checks could spend image/text credits | Metadata GET requests for Gemini/Nano Banana, with explicit inconclusive model-alias results |
-| Windows packages were advertised but missing from releases | Native x64/ARM64 builds and packaged smoke tests; all-platform draft assembly with checksums |
+| Windows packages were advertised but missing from releases | Native x64/ARM64 builds and packaged smoke tests; all-platform publication with uploaded SHA256 verification and explicit signing status |
 | Reader controls were squeezed beside the sidebar; briefs were lost on navigation; dialogs lacked keyboard handling | Responsive reader/library/forms, preserved briefs, native modal dialogs, keyboard controls, and 12 real-UI interaction groups; see [UI testing](UI_TESTING.md) |
 | Presets used retired subscription models and opening saved custom models could trigger billed probes | September 2026 [model catalog](MODELS.md), retirement notices, explicit checks, preserved settings, media request compatibility tests and real-UI coverage |
 | Documentation implied offline AI, retired Gemini login, free art and print-platform compliance | README, security guide, setup UI and release notes corrected |
@@ -48,7 +48,7 @@ Native CI proves that source and packaged application code runs on those hosted 
 2. Complete [manual acceptance](RELEASING.md#manual-acceptance-before-public-launch), especially real CLI login, one small book, paid-feature consent, Mac automation/microphone permissions, upgrade safety and install/uninstall on both Windows architectures.
 3. Confirm third-party account/model availability and realistic quota/cost descriptions with actual authorized accounts. The review did not generate paid books, send mail, upload voice samples or change provider accounts.
 4. Add a private conduct-reporting contact, enable private security reporting and secret scanning/push protection, and require passing native CI before merge. MIT license, contributing guide, conduct policy and issue templates are already present.
-5. Merge the reviewed branch, run the signed release pipeline for the exact version, review all four assets/checksums and release notes, then choose public visibility and publish the draft.
+5. Merge the reviewed branch and complete the acceptance checks. For signed distribution, prepare a new version and use the signed release pipeline; do not replace published unsigned binaries. Review all assets/checksums and release notes before choosing public repository visibility.
 
 ## Missing features: priority and rationale
 

@@ -1,6 +1,6 @@
 # Signing and notarization
 
-The [Release workflow](.github/workflows/release.yml) builds a universal Mac DMG/ZIP and separate Windows x64/ARM64 NSIS installers. A version tag creates a **draft** after all platforms pass. It never publishes automatically. See [RELEASING.md](docs/RELEASING.md) for the complete procedure.
+The [Release workflow](.github/workflows/release.yml) builds a universal Mac DMG/ZIP and separate Windows x64/ARM64 NSIS installers. A version tag **publishes** the release after all platform checks pass and all uploaded assets match their expected sizes and SHA256 digests. See [RELEASING.md](docs/RELEASING.md) for the complete procedure.
 
 ## macOS signing in GitHub Actions
 
@@ -16,9 +16,11 @@ Use an Apple **Developer ID Application** certificate with its private key, expo
 
 Do not commit certificates, passwords, or exported environment files. Use the GitHub secrets UI or `gh secret set` interactively; avoid credentials in shell history. The workflow supplies Mac credentials only to the Mac builder. See [electron-builder's signing guide](https://www.electron.build/code-signing-mac.html) and [Apple's notarization documentation](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
-`electron-builder.config.js` enables notarization when the Apple credentials are present. Tagged Mac builds fail when signing/notarization configuration is missing. The workflow verifies the app signature, Gatekeeper assessment, and stapled tickets before assembling the release. A certificate's presence alone does not prove successful signing.
+`electron-builder.config.js` enables notarization when the Apple credentials are present. The workflow verifies the app signature, Gatekeeper assessment, and stapled tickets before assembling a signed release. A certificate's presence alone does not prove successful signing.
 
-Manual workflow dispatch can rehearse a configured signed build without creating a release. Normal CI has signing disabled and produces test artifacts only.
+Without Apple secrets, releases fail unless a maintainer explicitly sets the repository Actions variable **`RELEASE_ALLOW_UNSIGNED=true`**. That opt-in disables certificate discovery, permits an unsigned Mac release, and generates release notes stating that the app is unsigned and not notarized. Gatekeeper may block launch. Partial Apple or Windows signing configuration always fails; the workflow never silently downgrades a failed signing attempt. Remove the variable when signed distribution becomes required. Version 0.2.0 uses this unsigned release option.
+
+Manual workflow dispatch on a branch rehearses the configured build policy without creating a release. Normal CI has signing disabled and produces test artifacts only.
 
 ## Local Mac builds
 
@@ -44,8 +46,8 @@ Test an actual downloaded, quarantined installer on a clean account. A locally b
 
 Add `WIN_CSC_LINK` (base64 `.pfx` certificate with private key) and `WIN_CSC_KEY_PASSWORD` to enable electron-builder Authenticode signing for both architectures. The workflow validates installer signatures when a certificate is configured. Hardware-backed or hosted signing services require their own builder integration; a certificate that cannot be exported is not interchangeable with a `.pfx` secret.
 
-Windows packages can be built without these secrets. They must then be explicitly labeled **unsigned** in the draft notes; users may see an unknown-publisher/SmartScreen warning. Signing identifies the publisher but does not guarantee that all reputation warnings disappear immediately.
+Windows packages can be built without these secrets. The workflow then labels them **unsigned** in the release notes; users may see an unknown-publisher/SmartScreen warning. Signing identifies the publisher but does not guarantee that all reputation warnings disappear immediately.
 
 ## Before publishing
 
-Follow the manual acceptance checks in [RELEASING.md](docs/RELEASING.md), confirm the Windows signing status in the release notes, and verify that every installer plus `SHA256SUMS.txt` is present. Never reuse a published version for different binaries.
+Follow the manual acceptance checks in [RELEASING.md](docs/RELEASING.md) and review the notes before pushing a version tag, which authorizes automatic publication. Verify that every installer plus `SHA256SUMS.txt` is present. Never reuse a published version for different binaries.

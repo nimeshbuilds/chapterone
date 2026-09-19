@@ -13,8 +13,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: Validate version and signing policy
+    runs-on: ubuntu-latest
+    outputs:
+      mac_signing: ${{ steps.signing.outputs.mac_signing }}
+      windows_signing: ${{ steps.signing.outputs.windows_signing }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Validate release version and explicit signing policy
+        id: signing
+        run: node scripts/release-check.cjs --signing
+        env:
+          ALLOW_UNSIGNED: ${{ vars.RELEASE_ALLOW_UNSIGNED }}
+          MAC_CSC_LINK_PRESENT: ${{ secrets.MAC_CSC_LINK != '' }}
+          MAC_CSC_KEY_PASSWORD_PRESENT: ${{ secrets.MAC_CSC_KEY_PASSWORD != '' }}
+          APPLE_ID_PRESENT: ${{ secrets.APPLE_ID != '' }}
+          APPLE_APP_SPECIFIC_PASSWORD_PRESENT: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
+          APPLE_TEAM_ID_PRESENT: ${{ secrets.APPLE_TEAM_ID != '' }}
+          WIN_CSC_LINK_PRESENT: ${{ secrets.WIN_CSC_LINK != '' }}
+          WIN_CSC_KEY_PASSWORD_PRESENT: ${{ secrets.WIN_CSC_KEY_PASSWORD != '' }}
+
   build:
     name: Release build (${{ matrix.name }})
+    needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -48,10 +75,12 @@ jobs:
       - name: Verify smoke runner failure detection
         run: npm run test:smoke -- --self-test
       - run: npm run test:smoke
-      - name: Build and sign
+      - name: Build installers with the selected signing policy
         run: ${{ matrix.build }}
         env:
           CHAPTERONE_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
+          CHAPTERONE_ALLOW_UNSIGNED_RELEASE: ${{ needs.prepare.outputs.mac_signing == 'unsigned' && 'true' || 'false' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ needs.prepare.outputs.mac_signing == 'unsigned' && 'false' || 'true' }}
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
@@ -62,7 +91,7 @@ jobs:
       - name: Smoke test packaged application code
         run: npm run test:smoke -- --app-root=${{ matrix.app }}
       - name: Verify macOS signature and notarization
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+        if: runner.os == 'macOS' && needs.prepare.outputs.mac_signing == 'signed'
         run: |
           codesign --verify --deep --strict --verbose=2 release/mac-universal/ChapterOne.app
           spctl --assess --type execute --verbose=2 release/mac-universal/ChapterOne.app
@@ -80,7 +109,7 @@ jobs:
               if ($signature.Status -ne 'Valid') { throw "Invalid installer signature: $($_.Name) ($($signature.Status))" }
             }
           } else {
-            Write-Output 'Unsigned Windows build: disclose this in the draft release notes.'
+            Write-Output 'Unsigned Windows build: release notes will disclose this.'
           }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -91,10 +120,10 @@ jobs:
             release/*.zip
             release/*.exe
 
-  draft:
-    name: Assemble draft release
+  publish:
+    name: Publish verified installers
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -110,10 +139,25 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-      - name: Check asset completeness and generate checksums
-        run: node scripts/release-check.cjs --assets
+      - name: Check asset completeness and generate checksums and release notes
+        run: node scripts/release-check.cjs --assets --notes
+        env:
+          MAC_SIGNING: ${{ needs.prepare.outputs.mac_signing }}
+          WINDOWS_SIGNING: ${{ needs.prepare.outputs.windows_signing }}
       - name: Create draft with every installer
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" release/*.dmg release/*.zip release/*.exe release/SHA256SUMS.txt --verify-tag --draft --title "ChapterOne $RELEASE_TAG" --notes-file .github/RELEASE_NOTES.md
+        run: gh release create "$RELEASE_TAG" release/*.dmg release/*.zip release/*.exe release/SHA256SUMS.txt --verify-tag --draft --title "ChapterOne $RELEASE_TAG" --notes-file release/RELEASE_NOTES.md
+      - name: Verify uploaded assets and publish the complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release/uploaded-release.json
+          node scripts/release-check.cjs --uploaded-assets
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+          fi

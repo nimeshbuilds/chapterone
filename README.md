@@ -43,7 +43,7 @@ The release workflow builds the following assets. Download only assets actually 
 
 On macOS, open the DMG and drag the app to Applications. On Windows, run the installer; it installs for the current user and provides shortcuts and an uninstaller. The app includes its own runtime.
 
-Tagged macOS releases require Developer ID signing and notarization. Windows signing is optional and the release notes must state its status; unsigned installers may trigger SmartScreen. CI artifacts are unsigned test builds. Verify downloads against the release's `SHA256SUMS.txt` (`shasum -a 256 <file>` on macOS; `Get-FileHash <file> -Algorithm SHA256` in PowerShell).
+Read each release's signing status before installing. **Version 0.2.0 is unsigned, and its Mac app is not notarized**; Gatekeeper may block Mac launch and Windows may show an unknown-publisher/SmartScreen warning. CI artifacts are unsigned test builds. Verify downloads against the release's `SHA256SUMS.txt` (`shasum -a 256 <file>` on macOS; `Get-FileHash <file> -Algorithm SHA256` in PowerShell).
 
 Older macOS releases, Windows 7/8, and 32-bit processors are unsupported. This follows the [Electron runtime baseline](https://www.electronjs.org/docs/latest/breaking-changes#removed-macos-12-support). Provider CLIs may have additional requirements. Linux source development is possible, but Linux installers are not part of the supported release matrix.
 
