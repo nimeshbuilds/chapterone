@@ -6,13 +6,13 @@
     "name": "Modulagent"
   },
   "license": "MIT",
-  "homepage": "https://github.com/nimeshbuilds/chaperone#readme",
+  "homepage": "https://github.com/nimeshbuilds/chapterone#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nimeshbuilds/chaperone.git"
+    "url": "git+https://github.com/nimeshbuilds/chapterone.git"
   },
   "bugs": {
-    "url": "https://github.com/nimeshbuilds/chaperone/issues"
+    "url": "https://github.com/nimeshbuilds/chapterone/issues"
   },
   "keywords": [
     "book-writer",
@@ -140,7 +140,7 @@
       {
         "provider": "github",
         "owner": "nimeshbuilds",
-        "repo": "chaperone",
+        "repo": "chapterone",
         "releaseType": "draft"
       }
     ]

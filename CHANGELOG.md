@@ -76,5 +76,5 @@ Initial release. Historical notes below describe that version; current platform,
 - **Subscription-not-API-key** enforcement; local-only storage; signed +
   notarized universal macOS build.
 
-[0.1.0]: https://github.com/nimeshbuilds/chaperone/releases/tag/v0.1.0
-[0.2.0]: https://github.com/nimeshbuilds/chaperone/releases/tag/v0.2.0
+[0.1.0]: https://github.com/nimeshbuilds/chapterone/releases/tag/v0.1.0
+[0.2.0]: https://github.com/nimeshbuilds/chapterone/releases/tag/v0.2.0

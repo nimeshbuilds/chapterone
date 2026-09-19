@@ -30,7 +30,7 @@ The 0.2.0 release-readiness branch includes a focused UI review, not a claim of 
 
 The surrounding smoke suite also checks six export formats, actual 6×9 PDF dimensions, SVG rasterization, sandbox configuration, and rejected untrusted IPC/file opening. Node unit tests cover lower-level provider/network, security, persistence, cancellation/resume, art/audio, and export behavior.
 
-CI runs the suite on Mac Intel, Mac Apple Silicon, Windows x64, and Windows ARM64, both from source and against the packaged `app.asar`. Reports and screenshots are uploaded in each job's `smoke-*` artifact. See the [latest branch runs](https://github.com/nimeshbuilds/chaperone/actions/workflows/ci.yml?query=branch%3Arelease-readiness). Check that every job passed for the exact commit being released.
+CI runs the suite on Mac Intel, Mac Apple Silicon, Windows x64, and Windows ARM64, both from source and against the packaged `app.asar`. Reports and screenshots are uploaded in each job's `smoke-*` artifact. See the [latest branch runs](https://github.com/nimeshbuilds/chapterone/actions/workflows/ci.yml?query=branch%3Arelease-readiness). Check that every job passed for the exact commit being released.
 
 Local artifacts are under `artifacts/ui-<platform>-<arch>-source/` or `-packaged/`, with a `report.json` containing completed groups and actual screenshot viewport sizes. The desktop can limit the requested larger window size; the report records the resulting viewport. A failed assertion makes the parent smoke command fail and saves a failure screenshot.
 

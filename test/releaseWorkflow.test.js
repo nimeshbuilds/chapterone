@@ -55,7 +55,7 @@ test('publication requires every signing credential and ignores obsolete unsigne
 test('release notes reject unsigned platforms and pin the exact source and build', (t) => {
   const cwd = fixture(t);
   assert.notEqual(check(['--notes'], {}, cwd).status, 0);
-  const env = { MAC_SIGNING: 'signed', WINDOWS_SIGNING: 'signed', GITHUB_REPOSITORY: 'example/chaperone',
+  const env = { MAC_SIGNING: 'signed', WINDOWS_SIGNING: 'signed', GITHUB_REPOSITORY: 'example/chapterone',
     GITHUB_SHA: 'a'.repeat(40), GITHUB_RUN_ID: '123' };
   for (const platform of ['MAC_SIGNING', 'WINDOWS_SIGNING']) {
     assert.notEqual(check(['--notes'], { ...env, [platform]: 'unsigned' }, cwd).status, 0);
@@ -65,8 +65,8 @@ test('release notes reject unsigned platforms and pin the exact source and build
   const notes = fs.readFileSync(path.join(cwd, 'release/RELEASE_NOTES.md'), 'utf8');
   assert.match(notes, /\*\*macOS signing:\*\* Developer ID signed and notarized/);
   assert.match(notes, /\*\*Windows signing:\*\* Authenticode signed and timestamped/);
-  assert.match(notes, /example\/chaperone\/actions\/runs\/123/);
-  assert.ok(notes.includes(`example/chaperone/commit/${env.GITHUB_SHA}`));
+  assert.match(notes, /example\/chapterone\/actions\/runs\/123/);
+  assert.ok(notes.includes(`example/chapterone/commit/${env.GITHUB_SHA}`));
   assert.doesNotMatch(notes, /\{\{/);
 });
 

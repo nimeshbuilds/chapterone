@@ -1,4 +1,4 @@
-ChapterOne {{VERSION}} includes the security, reliability, interface, and provider updates developed in the open-source readiness review. The repository now lives at **nimeshbuilds/chaperone**; the installed app is still named **ChapterOne**.
+ChapterOne {{VERSION}} includes the security, reliability, interface, and provider updates developed in the open-source readiness review. The repository lives at **nimeshbuilds/chapterone**.
 
 This signed release replaces the withdrawn unsigned 0.2.0 release. Both platforms now require verified signatures before publication.
 

@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please use [GitHub private vulnerability reporting](https://github.com/nimeshbuilds/chaperone/security/advisories/new). Do not include credentials or private manuscripts in a public issue. Include the app version, operating system, steps to reproduce, and expected impact. Maintainers must enable private reporting before public launch.
+Please use [GitHub private vulnerability reporting](https://github.com/nimeshbuilds/chapterone/security/advisories/new). Do not include credentials or private manuscripts in a public issue. Include the app version, operating system, steps to reproduce, and expected impact. Maintainers must enable private reporting before public launch.
 
 Security fixes target the latest released version. The old 0.1.x runtime and dependencies should not be used as the basis of new distributions. No response-time SLA is promised.
 

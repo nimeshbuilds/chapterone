@@ -13,8 +13,8 @@ dependency-light Electron app, and contributions of all sizes are welcome.
 ## Getting started
 
 ```bash
-git clone https://github.com/nimeshbuilds/chaperone.git
-cd chaperone
+git clone https://github.com/nimeshbuilds/chapterone.git
+cd chapterone
 npm ci
 npm start          # launch the app
 npm run dev        # launch with DevTools
@@ -48,7 +48,7 @@ See [the architecture guide](docs/ARCHITECTURE.md) for the module map and trust 
 
 ## Reporting bugs & ideas
 
-Use the [issue templates](https://github.com/nimeshbuilds/chaperone/issues/new/choose).
+Use the [issue templates](https://github.com/nimeshbuilds/chapterone/issues/new/choose).
 For anything security-related, please follow [`SECURITY.md`](SECURITY.md) instead
 of opening a public issue.
 
