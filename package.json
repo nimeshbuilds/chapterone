@@ -1,6 +1,6 @@
 {
   "name": "chapterone",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "ChapterOne — Your Personal Book Writer. Turn one idea into a finished book with Claude Code, Codex, Grok (your subscriptions) or Gemini (API key): planned, research-grounded, written, illustrated with AI art, narrated, and delivered to Kindle, EPUB, PDF, DOCX, or the web.",
   "author": {
     "name": "Modulagent"

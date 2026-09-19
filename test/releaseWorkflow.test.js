@@ -36,38 +36,61 @@ test('release refuses a tag for a different package version', () => {
   assert.match(wrong.stderr, /does not match package version/);
 });
 
-test('unsigned publication requires opt-in and partial signing never downgrades', () => {
+test('publication requires every signing credential and ignores obsolete unsigned overrides', () => {
   assert.notEqual(check(['--signing']).status, 0);
-  const unsigned = check(['--signing'], { ALLOW_UNSIGNED: 'true' });
-  assert.equal(unsigned.status, 0, unsigned.stderr);
-  assert.match(unsigned.stdout, /mac_signing=unsigned\nwindows_signing=unsigned/);
+  const unsigned = check(['--signing'], { ALLOW_UNSIGNED: 'true', RELEASE_ALLOW_UNSIGNED: 'true' });
+  assert.notEqual(unsigned.status, 0);
+  assert.match(unsigned.stderr, /Signed releases require all signing secrets/);
+  const configured = Object.fromEntries([...macSecrets, ...windowsSecrets].map((key) => [`${key}_PRESENT`, 'true']));
   for (const key of [...macSecrets, ...windowsSecrets]) {
-    const partial = check(['--signing'], { ALLOW_UNSIGNED: 'true', [`${key}_PRESENT`]: 'true' });
+    const partial = check(['--signing'], { ...configured, ALLOW_UNSIGNED: 'true', [`${key}_PRESENT`]: 'false' });
     assert.notEqual(partial.status, 0, key);
-    assert.match(partial.stderr, /partially configured/);
+    assert.ok(partial.stderr.includes(`Missing: ${key}.`));
   }
-  const signed = check(['--signing'], Object.fromEntries([...macSecrets, ...windowsSecrets].map((key) => [`${key}_PRESENT`, 'true'])));
+  const signed = check(['--signing'], configured);
   assert.equal(signed.status, 0, signed.stderr);
   assert.match(signed.stdout, /mac_signing=signed\nwindows_signing=signed/);
 });
 
-test('release notes disclose actual signing and pin the exact source and build', (t) => {
+test('release notes reject unsigned platforms and pin the exact source and build', (t) => {
   const cwd = fixture(t);
   assert.notEqual(check(['--notes'], {}, cwd).status, 0);
-  const env = { MAC_SIGNING: 'unsigned', WINDOWS_SIGNING: 'unsigned', GITHUB_REPOSITORY: 'example/chaperone',
+  const env = { MAC_SIGNING: 'signed', WINDOWS_SIGNING: 'signed', GITHUB_REPOSITORY: 'example/chaperone',
     GITHUB_SHA: 'a'.repeat(40), GITHUB_RUN_ID: '123' };
+  for (const platform of ['MAC_SIGNING', 'WINDOWS_SIGNING']) {
+    assert.notEqual(check(['--notes'], { ...env, [platform]: 'unsigned' }, cwd).status, 0);
+  }
   const result = check(['--notes'], env, cwd);
   assert.equal(result.status, 0, result.stderr);
   const notes = fs.readFileSync(path.join(cwd, 'release/RELEASE_NOTES.md'), 'utf8');
-  assert.match(notes, /\*\*macOS signing:\*\* \*\*Unsigned and not notarized/);
-  assert.match(notes, /\*\*Windows signing:\*\* \*\*Unsigned/);
+  assert.match(notes, /\*\*macOS signing:\*\* Developer ID signed and notarized/);
+  assert.match(notes, /\*\*Windows signing:\*\* Authenticode signed and timestamped/);
   assert.match(notes, /example\/chaperone\/actions\/runs\/123/);
   assert.ok(notes.includes(`example/chaperone/commit/${env.GITHUB_SHA}`));
-  assert.doesNotMatch(notes, /\{\{|Developer ID signed and notarized/);
-  assert.equal(check(['--notes'], { ...env, MAC_SIGNING: 'signed', WINDOWS_SIGNING: 'signed' }, cwd).status, 0);
-  const signed = fs.readFileSync(path.join(cwd, 'release/RELEASE_NOTES.md'), 'utf8');
-  assert.match(signed, /Developer ID signed and notarized/);
-  assert.match(signed, /Authenticode signed/);
+  assert.doesNotMatch(notes, /\{\{/);
+});
+
+test('release packaging cannot disable required signatures or Mac notarization', () => {
+  const vm = require('node:vm');
+  const source = fs.readFileSync(path.resolve(__dirname, '../electron-builder.config.js'), 'utf8');
+  const config = (env, platform) => {
+    const context = { module: { exports: {} }, process: { env, platform }, require: () => require('../package.json') };
+    vm.runInNewContext(source, context);
+    return context.module.exports;
+  };
+  for (const trigger of [{ CHAPTERONE_RELEASE: 'true' }, { GITHUB_REF_TYPE: 'tag' }]) {
+    assert.throws(() => config({ ...trigger, CHAPTERONE_ALLOW_UNSIGNED_RELEASE: 'true' }, 'darwin'), /notarization credentials/);
+    const mac = config({ ...trigger, APPLE_KEYCHAIN_PROFILE: 'synthetic-test-profile' }, 'darwin');
+    assert.equal(mac.forceCodeSigning, true);
+    assert.equal(mac.mac.forceCodeSigning, true);
+    assert.equal(mac.mac.notarize, true);
+    assert.equal(mac.dmg.sign, true);
+    const win = config(trigger, 'win32');
+    assert.equal(win.win.forceCodeSigning, true);
+    assert.equal(win.forceCodeSigning, true);
+  }
+  // Pull-request tests never need access to private signing credentials.
+  assert.equal(config({}, 'darwin').forceCodeSigning, false);
 });
 
 test('publication requires all installers and rejects corrupt or incomplete GitHub uploads', (t) => {

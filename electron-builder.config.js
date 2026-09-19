@@ -3,11 +3,8 @@
 /**
  * electron-builder configuration.
  *
- * The build settings live in package.json `build`; this wrapper only adds the
- * one thing that must be conditional: notarization. Notarization (and the
- * Developer ID signature it depends on) turn ON automatically when the Apple
- * credentials below are present in the environment, and stay OFF otherwise — so
- * the unsigned local/dev build keeps working with no changes.
+ * Release builds require signing on both platforms and notarization on macOS.
+ * Normal CI may still package unsigned test artifacts without release secrets.
  *
  * To produce a signed + notarized DMG that opens with NO Gatekeeper warning,
  * see SIGNING.md and export:
@@ -16,24 +13,26 @@
  */
 
 const pkg = require('./package.json');
+const isRelease = process.env.CHAPTERONE_RELEASE === 'true' || process.env.GITHUB_REF_TYPE === 'tag';
 
 const hasAppleCreds = !!(
-  process.env.APPLE_ID &&
-  process.env.APPLE_APP_SPECIFIC_PASSWORD &&
-  process.env.APPLE_TEAM_ID
+  (process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID)
+  || (process.env.APPLE_API_KEY && process.env.APPLE_API_KEY_ID && process.env.APPLE_API_ISSUER)
+  || process.env.APPLE_KEYCHAIN_PROFILE
 );
 
-if (process.env.CHAPTERONE_RELEASE === 'true' && process.platform === 'darwin'
-  && process.env.CHAPTERONE_ALLOW_UNSIGNED_RELEASE !== 'true'
-  && (!hasAppleCreds || !process.env.CSC_LINK)) {
-  throw new Error('Tagged macOS releases require signing/notarization secrets or an explicit unsigned release opt-in. See SIGNING.md.');
+if (isRelease && process.platform === 'darwin' && !hasAppleCreds) {
+  throw new Error('macOS releases require Apple notarization credentials. See SIGNING.md.');
 }
 
 module.exports = {
   ...pkg.build,
+  forceCodeSigning: isRelease,
   mac: {
     ...pkg.build.mac,
-    // notarytool credentials are read from the env; false = skip (unsigned build).
+    forceCodeSigning: isRelease,
     notarize: hasAppleCreds,
   },
+  win: { ...pkg.build.win, forceCodeSigning: isRelease },
+  dmg: { ...pkg.build.dmg, sign: isRelease },
 };

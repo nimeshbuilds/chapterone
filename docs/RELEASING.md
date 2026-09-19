@@ -15,7 +15,7 @@ Electron 44 sets the macOS 13 floor. Supporting older OS releases would require 
 1. Review the change and update `CHANGELOG.md`. Use `npm version <version> --no-git-tag-version` so package and lock versions agree.
 2. Run `npm ci`, `npm run verify`, and `npm run test:smoke`. Let CI complete on all four desktop targets.
 3. Read the artifact's platform name carefully. CI provides unsigned test installers; a passing unit test job alone is not evidence that an installer built.
-4. Configure signing as described in [SIGNING.md](../SIGNING.md), or explicitly enable unsigned distribution with the repository Actions variable `RELEASE_ALLOW_UNSIGNED=true`. Partial signing configuration fails rather than downgrading. Use GitHub secrets, not committed files, for certificates/passwords.
+4. Configure mandatory Apple and Windows signing as described in [SIGNING.md](../SIGNING.md). Missing or partial credentials fail before builds begin; there is no unsigned-release override. Use GitHub secrets, not committed files, for certificates/passwords.
 5. Check the manual acceptance list below, then commit the reviewed release revision. The tag must point to that exact revision.
 
 ## Build and assemble
@@ -25,12 +25,12 @@ Push `v<package.json version>` to trigger the Release workflow. It:
 1. Rejects a tag/package version mismatch.
 2. Runs tests, syntax checks, dependency audit, and real Electron smoke checks.
 3. Builds a universal Mac app and native x64/ARM64 Windows installers.
-4. Signs/notarizes and verifies the Mac app when all Apple secrets are configured. With no Apple secrets, unsigned distribution requires the explicit repository variable above. Optional Windows secrets enable verified Authenticode signing. Any partial signing configuration fails before builds begin.
+4. Requires Developer ID signing and notarization for the Mac app and DMG, verifies Gatekeeper/stapled tickets including the app extracted from the ZIP, and requires valid timestamped Authenticode signatures for both Windows installers and their app executables.
 5. Tests packaged application code and uploads installers only when the build succeeds.
 6. Waits for all platforms, checks all four expected installers, calculates SHA256 checksums, and generates version-specific notes with the selected signing status and exact source/build links.
 7. Uploads every installer and checksum to a temporary draft, verifies their GitHub sizes and SHA256 digests, and **publishes** the complete release. Stable version tags become Latest; tags containing a prerelease suffix become prereleases.
 
-Manual workflow dispatch on a branch builds artifacts without creating a release; use it to rehearse the configured signing policy. Dispatch on an existing version tag follows the same publication path as pushing that tag. If a draft already exists after a failed upload, inspect its assets before recovery: the workflow deliberately does not overwrite them or reuse a published release.
+Manual workflow dispatch on a branch builds signed artifacts without creating a release; use it to rehearse signing. Dispatch on an existing version tag follows the same publication path as pushing that tag. If a draft already exists after a failed upload, inspect its assets before recovery: the workflow deliberately does not overwrite them or reuse a published release. Version 0.2.0 was withdrawn because it was unsigned; never republish that draft or replace its binaries. Use the new 0.2.1 version for its signed replacement.
 
 Review `.github/RELEASE_NOTES.md` before tagging; the script fills its version, signing and provenance fields. Pushing a version tag authorizes publication once every check passes. Repository visibility is a separate owner action. Publishing a release in a private repository does not make it accessible to the public.
 

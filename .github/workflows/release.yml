@@ -30,7 +30,6 @@ jobs:
         id: signing
         run: node scripts/release-check.cjs --signing
         env:
-          ALLOW_UNSIGNED: ${{ vars.RELEASE_ALLOW_UNSIGNED }}
           MAC_CSC_LINK_PRESENT: ${{ secrets.MAC_CSC_LINK != '' }}
           MAC_CSC_KEY_PASSWORD_PRESENT: ${{ secrets.MAC_CSC_KEY_PASSWORD != '' }}
           APPLE_ID_PRESENT: ${{ secrets.APPLE_ID != '' }}
@@ -56,10 +55,12 @@ jobs:
             os: windows-latest
             build: npm run dist:win:x64 -- --publish never
             app: release/win-unpacked/resources/app.asar
+            executable: release/win-unpacked/ChapterOne.exe
           - name: windows-arm64
             os: windows-11-arm
             build: npm run dist:win:arm64 -- --publish never
             app: release/win-arm64-unpacked/resources/app.asar
+            executable: release/win-arm64-unpacked/ChapterOne.exe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,9 +86,8 @@ jobs:
           done
           ${{ matrix.build }}
         env:
-          CHAPTERONE_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
-          CHAPTERONE_ALLOW_UNSIGNED_RELEASE: ${{ needs.prepare.outputs.mac_signing == 'unsigned' && 'true' || 'false' }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ needs.prepare.outputs.mac_signing == 'unsigned' && 'false' || 'true' }}
+          CHAPTERONE_RELEASE: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
@@ -97,26 +97,34 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
       - name: Smoke test packaged application code
         run: npm run test:smoke -- --app-root=${{ matrix.app }}
-      - name: Verify macOS signature and notarization
-        if: runner.os == 'macOS' && needs.prepare.outputs.mac_signing == 'signed'
+      - name: Notarize DMG and verify macOS signatures
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          codesign --verify --deep --strict --verbose=2 release/mac-universal/ChapterOne.app
-          spctl --assess --type execute --verbose=2 release/mac-universal/ChapterOne.app
-          xcrun stapler validate release/mac-universal/ChapterOne.app
-          for dmg in release/*.dmg; do xcrun stapler staple "$dmg"; xcrun stapler validate "$dmg"; done
-      - name: Verify Windows signature when configured
+          xcrun notarytool store-credentials chaperone-release --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD"
+          bash scripts/notarize-release.sh chaperone-release
+      - name: Verify Windows app and installer signatures
         if: runner.os == 'Windows'
         env:
-          HAS_WINDOWS_CERT: ${{ secrets.WIN_CSC_LINK != '' }}
+          APP_EXECUTABLE: ${{ matrix.executable }}
         shell: pwsh
         run: |
-          if ($env:HAS_WINDOWS_CERT -eq 'true') {
-            Get-ChildItem release/*.exe | ForEach-Object {
-              $signature = Get-AuthenticodeSignature $_.FullName
-              if ($signature.Status -ne 'Valid') { throw "Invalid installer signature: $($_.Name) ($($signature.Status))" }
-            }
-          } else {
-            Write-Output 'Unsigned Windows build: release notes will disclose this.'
+          $files = @(Get-Item -LiteralPath $env:APP_EXECUTABLE -ErrorAction Stop)
+          $installers = @(Get-ChildItem release/*.exe -ErrorAction Stop)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one installer for this architecture.' }
+          $files += $installers
+          $publisher = $null
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if ($signature.Status -ne 'Valid') { throw "Invalid signature: $($file.Name) ($($signature.Status))" }
+            if (-not $signature.TimeStamperCertificate) { throw "Missing signature timestamp: $($file.Name)" }
+            $subject = $signature.SignerCertificate.Subject
+            if ($publisher -and $subject -ne $publisher) { throw 'App and installer publishers differ.' }
+            $publisher = $subject
+            Write-Output "Verified $($file.Name): $subject"
           }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

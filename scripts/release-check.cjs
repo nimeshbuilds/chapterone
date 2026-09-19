@@ -15,18 +15,12 @@ const files = [
 const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 
 if (process.argv.includes('--signing')) {
-  // Only presence flags reach this job; certificate contents and passwords stay
-  // in the platform build jobs. Partial configuration must never downgrade.
-  const mode = (platform, names, allowUnsigned) => {
-    const configured = names.filter((name) => process.env[`${name}_PRESENT`] === 'true').length;
-    if (configured === names.length) return 'signed';
-    if (configured > 0) throw new Error(`${platform} signing is partially configured; supply every signing secret.`);
-    if (!allowUnsigned) throw new Error(`${platform} signing is unconfigured; explicitly set RELEASE_ALLOW_UNSIGNED=true to publish unsigned installers.`);
-    return 'unsigned';
-  };
-  const mac = mode('macOS', ['MAC_CSC_LINK', 'MAC_CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'], process.env.ALLOW_UNSIGNED === 'true');
-  const windows = mode('Windows', ['WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD'], true);
-  const result = `mac_signing=${mac}\nwindows_signing=${windows}\n`;
+  // Only presence flags reach this job. Both platforms require signing; an old
+  // unsigned opt-in must never authorize a release again.
+  const required = ['MAC_CSC_LINK', 'MAC_CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID', 'WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD'];
+  const missing = required.filter((name) => process.env[`${name}_PRESENT`] !== 'true');
+  if (missing.length) throw new Error(`Signed releases require all signing secrets. Missing: ${missing.join(', ')}. See SIGNING.md.`);
+  const result = 'mac_signing=signed\nwindows_signing=signed\n';
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, result);
   console.log(result.trim());
 }
@@ -43,8 +37,8 @@ if (process.argv.includes('--assets')) {
 
 if (process.argv.includes('--notes')) {
   const { MAC_SIGNING, WINDOWS_SIGNING, GITHUB_REPOSITORY, GITHUB_SHA, GITHUB_RUN_ID } = process.env;
-  if (![MAC_SIGNING, WINDOWS_SIGNING].every((mode) => ['signed', 'unsigned'].includes(mode))) {
-    throw new Error('Release notes require explicit macOS and Windows signing status.');
+  if (MAC_SIGNING !== 'signed' || WINDOWS_SIGNING !== 'signed') {
+    throw new Error('Release publication requires signed macOS and Windows builds.');
   }
   if (!/^[\w.-]+\/[\w.-]+$/.test(GITHUB_REPOSITORY || '') || !/^[a-f0-9]{40}$/.test(GITHUB_SHA || '') || !/^\d+$/.test(GITHUB_RUN_ID || '')) {
     throw new Error('Release notes require the repository, exact commit, and build run.');
@@ -54,12 +48,8 @@ if (process.argv.includes('--notes')) {
     REPOSITORY: GITHUB_REPOSITORY,
     COMMIT: GITHUB_SHA,
     BUILD_URL: `https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
-    MAC_SIGNING: MAC_SIGNING === 'signed'
-      ? 'Developer ID signed and notarized. The workflow verified the app signature, Gatekeeper assessment, and stapled notarization tickets.'
-      : '**Unsigned and not notarized.** macOS Gatekeeper may block launch. This build does not have verified publisher identity.',
-    WINDOWS_SIGNING: WINDOWS_SIGNING === 'signed'
-      ? 'Authenticode signed. The workflow verified both installer signatures.'
-      : '**Unsigned.** Windows may display an unknown-publisher or SmartScreen warning.',
+    MAC_SIGNING: 'Developer ID signed and notarized. The workflow verified the app and DMG signatures, Gatekeeper assessments, and stapled notarization tickets, including the app extracted from the ZIP.',
+    WINDOWS_SIGNING: 'Authenticode signed and timestamped. The workflow verified each installer and its packaged app executable.',
   };
   const template = fs.readFileSync(path.join(__dirname, '../.github/RELEASE_NOTES.md'), 'utf8');
   const notes = template.replace(/\{\{(\w+)\}\}/g, (_, key) => {

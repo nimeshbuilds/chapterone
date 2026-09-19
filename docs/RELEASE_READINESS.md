@@ -6,7 +6,7 @@ Assessment of the 0.2.0 candidate prepared on the `release-readiness` branch in 
 
 The repository has the core product features for an initial open-source release: planning/review, resumable writing, editing, reading, illustration, narration and six export formats. The main gaps were security, data reliability, accurate privacy/billing information, and a release process that produced Windows installers. Those are addressed in this branch.
 
-**Public launch still needs signing credentials, the manual acceptance checks, and the owner's visibility decision.** Version 0.2.0 is prepared for publication in the private repository with explicitly labeled unsigned installers; its Mac app is not notarized. Publishing a release does not change repository visibility. CI artifacts remain separate unsigned test builds.
+**Public launch still needs signing credentials, the manual acceptance checks, and the owner's visibility decision.** The unsigned 0.2.0 release was withdrawn. Its 0.2.1 replacement requires signed/notarized Mac downloads and signed Windows installers before publication. Publishing a release does not change repository visibility. CI artifacts remain separate unsigned test builds.
 
 ## Scope and architecture
 

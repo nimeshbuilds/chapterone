@@ -1,12 +1,18 @@
 # Changelog
 
-## [0.2.0] — 2026-09-19
+## [0.2.1] — Unreleased
+
+- Require signed releases on both platforms; remove every unsigned-release opt-in and optional Windows signing path.
+- Enforce signing in electron-builder, notarize and verify the Mac app and DMG, verify the app extracted from the ZIP, and require valid timestamped Windows app/installer signatures.
+- Withdraw unsigned version 0.2.0. The replacement uses a new version; previously published binaries are not overwritten.
+
+## [0.2.0] — 2026-09-19 (withdrawn)
 
 ### Added
 
 - Refreshed text, image, and narration catalogs against September 2026 provider documentation, with current presets, a visible review date, model compatibility notes, and saved-pin retirement guidance. See [model support](docs/MODELS.md).
 - Native CI for Intel Mac, Apple Silicon, Windows x64 and Windows ARM64. Source and packaged Electron smoke tests exercise generation, the UI, six exports, print dimensions and IPC isolation.
-- A tagged release workflow that verifies all platforms and publishes universal DMG/ZIP, x64/ARM64 EXE installers and SHA256 checksums. It supports signing/notarization, explicitly opted-in unsigned Mac releases, and verifies uploaded file hashes before publication.
+- A tagged release workflow that verifies all platforms and publishes universal DMG/ZIP, x64/ARM64 EXE installers and SHA256 checksums. Its initial unsigned-release path was removed in 0.2.1.
 - Outline approval, chapter rewrites and manual editing, story bible and reading statistics, sequel briefs, library search/list views and read-while-writing.
 - DOCX, standalone HTML and 6×9 PDF interior export, alongside EPUB, reading PDF and Markdown. Print interiors still require publishing-platform review.
 - Grok provider support, model presets, hybrid HTML/SVG illustrations, character reference photos and audiobook tools from the previous development cycle.
@@ -41,7 +47,7 @@
 ### Compatibility
 
 - Requires macOS 13+ on Intel or Apple Silicon; Windows 10/11 x64 or Windows 11 ARM64. No 32-bit Windows package. Node.js 22.12+ is required only for source development and compatible CLI setup.
-- Signing depends on maintainer-provided credentials; this release is unsigned and the Mac app is not notarized. Automated builds do not replace clean-machine install/upgrade tests or live provider acceptance checks.
+- This version was published unsigned and then withdrawn. Version 0.2.1 requires signing and notarization before publication. Automated builds do not replace clean-machine install/upgrade tests or live provider acceptance checks.
 
 ## [0.1.0] — 2026-06-15
 
