@@ -6,7 +6,7 @@ Reviewed **September 19, 2026** against the provider documentation below. These 
 
 | Integration | Current selections | Presets and compatibility |
 | --- | --- | --- |
-| Claude Code | Fable, Opus, Sonnet, Haiku aliases; pinned Fable 5.1, Opus 5, Sonnet 5 | Fast = Haiku, Pro = Opus. Aliases follow provider configuration. Pinned Fable 5.1 needs CLI 2.1.257+, Opus 5 needs 2.1.219+, Sonnet 5 needs 2.1.197+. Fable may need usage credits and billing consent in Claude Code before headless generation. |
+| Claude Code | Fable, Opus, Sonnet, Haiku aliases; pinned Fable 5.1, Opus 5, Sonnet 5 | Fast = Haiku, Pro = Opus. Aliases follow provider configuration. Pinned Fable 5.1 needs CLI 2.1.257+, Opus 5 needs 2.1.219+, Sonnet 5 needs 2.1.197+. Depending on the plan, Fable can bill usage credits; headless calls do not show a billing confirmation prompt. |
 | Codex | GPT-6 Astra; GPT-5.6 Sol, Terra, Luna; legacy GPT-5.5 | Fast = Luna, Pro = Sol. Astra is an explicit choice because plan access and quota use differ. Default omits the model flag. |
 | Gemini REST API | Flash latest alias, stable 3.8 Flash, 3.5 Flash-Lite, 3.1 Pro preview; older pinned 3.5 Flash and 3.1 Flash-Lite | Fast = 3.5 Flash-Lite, Pro = 3.1 Pro preview. The Flash latest alias follows Google and may target stable, preview, or experimental models. API billing is separate from subscriptions. |
 | Grok Build CLI | CLI default and `grok-build` | Pro = Grok Build; Fast and Default use the CLI configuration. There is no separately verified fast subscription alias. API model names such as Grok 4.6 are not assumed to work with subscription login; check custom IDs with `grok models`. |

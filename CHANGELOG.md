@@ -15,6 +15,7 @@
 ### Fixed
 
 - Made custom-model checks explicit so loading or typing a saved model never triggers a quota-consuming probe. Preserved unknown image/audio pins in Settings.
+- Corrected the Claude catalog's billing note: headless requests can use account credits without an interactive confirmation, depending on the selected model and plan.
 - Excluded Gemini thinking-draft images from final artwork and used compatible voice settings for expressive narration.
 - Gave the reader a full-window layout, compact library cards, and responsive controls for smaller windows.
 - Put writing briefs before optional engine controls and preserve adult/kids briefs and characters during navigation.

@@ -11,11 +11,11 @@
 const CATALOG_REVIEWED_AT = '2026-09-19';
 const CLAUDE_MODELS = [
   { id: '', label: 'CLI default — uses your configuration' },
-  { id: 'fable', label: 'Claude Fable — latest alias', note: 'Requires a recent Claude Code and account access. Fable may require usage credits and billing consent in Claude Code before headless use.' },
+  { id: 'fable', label: 'Claude Fable — latest alias', note: 'Requires a recent Claude Code and account access. Depending on your plan, Fable can bill usage credits. ChapterOne uses headless mode, where Claude Code does not ask for billing confirmation.' },
   { id: 'opus', label: 'Claude Opus — latest alias, quality' },
   { id: 'sonnet', label: 'Claude Sonnet — latest alias, balanced' },
   { id: 'haiku', label: 'Claude Haiku — latest alias, fast' },
-  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 — pinned', note: 'Requires Claude Code 2.1.257 or later, account access, and any required billing consent in Claude Code.' },
+  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 — pinned', note: 'Requires Claude Code 2.1.257 or later and account access. Depending on your plan, headless requests can bill usage credits without a confirmation prompt.' },
   { id: 'claude-opus-5', label: 'Claude Opus 5 — pinned', note: 'Requires Claude Code 2.1.219 or later and provider/account access.' },
   { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 — pinned', note: 'Requires Claude Code 2.1.197 or later and provider/account access.' },
 ];
