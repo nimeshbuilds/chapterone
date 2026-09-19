@@ -161,7 +161,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release/uploaded-release.json
+          # The REST tag endpoint only finds published releases. The CLI also
+          # resolves drafts, then the numeric release endpoint exposes digests.
+          release_api_url=$(gh release view "$RELEASE_TAG" --json apiUrl --jq .apiUrl)
+          gh api "$release_api_url" > release/uploaded-release.json
           node scripts/release-check.cjs --uploaded-assets
           if [[ "$RELEASE_TAG" == *-* ]]; then
             gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
