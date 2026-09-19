@@ -13,6 +13,12 @@ test('resolveUserPath returns a non-empty, de-duplicated PATH', () => {
 
 test('commonDirs includes well-known CLI install locations', () => {
   const dirs = commonDirs();
-  assert.ok(dirs.some((d) => d.includes('.local/bin')));
+  assert.ok(dirs.some((d) => d.includes(path.join('.local', 'bin'))));
   assert.ok(dirs.some((d) => d.includes('homebrew') || d.includes('/usr/local/bin')));
+});
+
+test('Windows PATH includes the per-user npm and native CLI install directories', { skip: process.platform !== 'win32' }, () => {
+  const parts = resolveUserPath().split(path.delimiter);
+  if (process.env.APPDATA) assert.ok(parts.includes(path.join(process.env.APPDATA, 'npm')));
+  assert.ok(parts.includes(path.join(require('node:os').homedir(), '.local', 'bin')));
 });
