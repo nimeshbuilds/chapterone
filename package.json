@@ -6,13 +6,13 @@
     "name": "Modulagent"
   },
   "license": "MIT",
-  "homepage": "https://github.com/npandeya/bookwriter#readme",
+  "homepage": "https://github.com/nimeshbuilds/chaperone#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/npandeya/bookwriter.git"
+    "url": "git+https://github.com/nimeshbuilds/chaperone.git"
   },
   "bugs": {
-    "url": "https://github.com/npandeya/bookwriter/issues"
+    "url": "https://github.com/nimeshbuilds/chaperone/issues"
   },
   "keywords": [
     "book-writer",
@@ -139,8 +139,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "npandeya",
-        "repo": "bookwriter",
+        "owner": "nimeshbuilds",
+        "repo": "chaperone",
         "releaseType": "draft"
       }
     ]

@@ -70,4 +70,4 @@ Initial release. Historical notes below describe that version; current platform,
 - **Subscription-not-API-key** enforcement; local-only storage; signed +
   notarized universal macOS build.
 
-[0.1.0]: https://github.com/npandeya/bookwriter/releases/tag/v0.1.0
+[0.1.0]: https://github.com/nimeshbuilds/chaperone/releases/tag/v0.1.0

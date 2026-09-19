@@ -114,7 +114,7 @@ function httpGet(url, { json = false, maxBytes = 9_000_000, redirects = 4, timeo
     const lib = url.startsWith('https') ? https : http;
     // Wikimedia (a major Openverse source) 429s generic/bot User-Agents; its
     // policy wants "<client>/<version> (<contact>)". This compliant UA gets 200.
-    const ua = 'ChapterOne/1.0 (https://github.com/npandeya/bookwriter; book illustration sourcing)';
+    const ua = 'ChapterOne/1.0 (https://github.com/nimeshbuilds/chaperone; book illustration sourcing)';
     const req = lib.get(url, { headers: { 'User-Agent': ua, Accept: json ? 'application/json' : '*/*' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
         res.resume();

@@ -8,12 +8,12 @@
 
 **A desktop writing app for macOS and Windows. Plan, draft, illustrate, narrate, and export books using your own AI provider accounts. Your library is local; AI generation uses cloud services.**
 
-[![Download](https://img.shields.io/badge/download-macOS%20%2B%20Windows-111?logo=apple&logoColor=white)](https://github.com/npandeya/bookwriter/releases/latest)
+[![Download](https://img.shields.io/badge/download-macOS%20%2B%20Windows-111?logo=apple&logoColor=white)](https://github.com/nimeshbuilds/chaperone/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/macOS-universal-black?logo=apple)](https://github.com/npandeya/bookwriter/releases/latest)
+[![Platform](https://img.shields.io/badge/macOS-universal-black?logo=apple)](https://github.com/nimeshbuilds/chaperone/releases/latest)
 [![Built with Electron](https://img.shields.io/badge/built%20with-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Tests &amp; audit](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml)
+[![Tests &amp; audit](https://github.com/nimeshbuilds/chaperone/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nimeshbuilds/chaperone/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/nimeshbuilds/chaperone/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/nimeshbuilds/chaperone/actions/workflows/codeql.yml)
 
 [Download](#-download) · [Features](#-features) · [How it works](#-how-it-works) · [Security](#-security) · [Build from source](#-build-from-source) · [Contributing](CONTRIBUTING.md)
 
@@ -31,7 +31,7 @@ ChapterOne has no backend or separate account. It invokes **Claude Code**, **Cod
 
 ## ⬇️ Download
 
-**[Releases and installers](https://github.com/npandeya/bookwriter/releases)**
+**[Releases and installers](https://github.com/nimeshbuilds/chaperone/releases)**
 
 The release workflow builds the following assets. Download only assets actually attached to a published release; older releases may contain only the macOS build.
 
@@ -125,8 +125,8 @@ Library files remain in the OS app-data folder. AI prompts and relevant book con
 
 ## 🔒 Security
 
-[![Tests &amp; audit](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/npandeya/bookwriter/actions/workflows/codeql.yml)
+[![Tests &amp; audit](https://github.com/nimeshbuilds/chaperone/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nimeshbuilds/chaperone/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/nimeshbuilds/chaperone/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/nimeshbuilds/chaperone/actions/workflows/codeql.yml)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?logo=dependabot)](.github/dependabot.yml)
 
 > ℹ️ Live status badges populate once the repository is **public** (badge services can't read a private repo). They show as "no status" / not-found until then.
