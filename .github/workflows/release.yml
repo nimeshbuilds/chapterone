@@ -76,7 +76,14 @@ jobs:
         run: npm run test:smoke -- --self-test
       - run: npm run test:smoke
       - name: Build installers with the selected signing policy
-        run: ${{ matrix.build }}
+        shell: bash
+        run: |
+          # electron-builder treats an empty CSC_LINK as a certificate file path.
+          # Absent secrets must be absent environment variables, not empty ones.
+          for key in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            if [[ -z "${!key}" ]]; then unset "$key"; fi
+          done
+          ${{ matrix.build }}
         env:
           CHAPTERONE_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
           CHAPTERONE_ALLOW_UNSIGNED_RELEASE: ${{ needs.prepare.outputs.mac_signing == 'unsigned' && 'true' || 'false' }}
