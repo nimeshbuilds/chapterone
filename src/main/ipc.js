@@ -50,11 +50,33 @@ const { bookToHtml, chapterToHtml, svgFigure } = require('./export/html');
 const { svgToDataUri } = require('./book/aiArt');
 const { sendToKindle, sendEmailWithAttachment, verifySmtp, composeInMail, SIGNATURE } = require('./kindle/sendToKindle');
 const { safeFilename } = require('./util');
+const { isTrustedSender } = require('./security');
+const { audioCachePath } = require('./book/audioCache');
+const { loginCommand } = require('./cli/loginCommand');
 
 function registerIpc(store) {
   /** Active generation jobs: jobId -> AbortController */
   const jobs = new Map();
   const auth = new AuthSessionManager();
+  let activeWrites = 0;
+  const openedFiles = new Set();
+  const audioInFlight = new Map();
+  const writingChannels = new Set([
+    'audio:synth', 'audio:export', 'audio:generate-all', 'audio:full', 'audio:clone',
+    'book:export', 'kindle:send', 'email:pdf', 'book:generate', 'book:resume', 'book:rewriteChapter',
+  ]);
+  const handle = (channel, fn) => ipcMain.handle(channel, async (event, ...args) => {
+    const writing = writingChannels.has(channel);
+    if (writing) activeWrites++;
+    try {
+      const result = await fn(event, ...args);
+      if (writing && result?.ok && result.data?.path) openedFiles.add(path.resolve(result.data.path));
+      return result;
+    } finally { if (writing) activeWrites--; }
+  });
+  const ensureIdle = () => {
+    if (jobs.size) throw new Error('Finish or cancel the current writing job first.');
+  };
 
   /** Image (Nano Banana) config from settings, for the generator. */
   const imageConfigFrom = (settings) => {
@@ -64,6 +86,7 @@ function registerIpc(store) {
 
   const wrap = (fn) => async (event, ...args) => {
     try {
+      if (!isTrustedSender(event)) throw new Error('Untrusted IPC sender.');
       return { ok: true, data: await fn(event, ...args) };
     } catch (err) {
       return { ok: false, error: err.message || String(err) };
@@ -124,11 +147,17 @@ function registerIpc(store) {
   };
 
   // ---- settings & meta ----
-  ipcMain.handle('settings:get', wrap(async () => store.getSettings()));
-  ipcMain.handle('settings:save', wrap(async (_e, partial) => store.saveSettings(partial)));
+  handle('settings:get', wrap(async () => store.getSettings()));
+  handle('settings:save', wrap(async (_e, partial) => store.saveSettings(partial)));
   // Danger zone: erase every local artifact (books, images, audio, exports, keys).
-  ipcMain.handle('data:clear', wrap(async () => store.clearAllData()));
-  ipcMain.handle('meta:models', wrap(async () => ({
+  handle('data:clear', wrap(async () => {
+    ensureIdle();
+    if (activeWrites) throw new Error('Wait for audio, export, or delivery to finish before clearing data.');
+    const result = store.clearAllData();
+    openedFiles.clear();
+    return result;
+  }));
+  handle('meta:models', wrap(async () => ({
     claude: modelsFor('claude'),
     codex: modelsFor('codex'),
     gemini: modelsFor('gemini'),
@@ -141,12 +170,12 @@ function registerIpc(store) {
   })));
 
   // ---- Nano Banana images ----
-  ipcMain.handle('images:verify', wrap(async () => {
+  handle('images:verify', wrap(async () => {
     const imgs = store.getSettings().images || {};
     return verifyKey(imgs.geminiApiKey, imgs.model || DEFAULT_IMAGE_MODEL);
   }));
   // Estimate image count + USD cost for a spec, BEFORE generation starts.
-  ipcMain.handle('images:estimate', wrap(async (_e, spec = {}) => {
+  handle('images:estimate', wrap(async (_e, spec = {}) => {
     const model = (store.getSettings().images || {}).model || DEFAULT_IMAGE_MODEL;
     const band = bandOf(spec);
     let count = 1; // cover
@@ -160,7 +189,7 @@ function registerIpc(store) {
   }));
 
   // ---- Audiobook (ElevenLabs) ----
-  ipcMain.handle('audio:voices', wrap(async () => {
+  handle('audio:voices', wrap(async () => {
     const a = store.getSettings().audio || {};
     const voices = await elevenlabs.listVoices(a.elevenApiKey);
     const adult = elevenlabs.RECOMMENDED.adults.map((n) => n.toLowerCase());
@@ -171,7 +200,7 @@ function registerIpc(store) {
       recKids: kids.some((n) => (v.name || '').toLowerCase().includes(n)),
     }));
   }));
-  ipcMain.handle('audio:verify', wrap(async () => elevenlabs.verifyKey((store.getSettings().audio || {}).elevenApiKey)));
+  handle('audio:verify', wrap(async () => elevenlabs.verifyKey((store.getSettings().audio || {}).elevenApiKey)));
 
   // Synthesize a chapter to an on-disk MP3 (cached), returning its path. The
   // cache key includes voice + model, so the API is called only once per
@@ -188,20 +217,29 @@ function registerIpc(store) {
     const model = a.model || elevenlabs.DEFAULT_MODEL;
     const dir = path.join(store.audioDir, id);
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, `ch${ch.number}-${voiceId}-${model}.mp3`);
-    if (opts.force && fs.existsSync(file)) { try { fs.unlinkSync(file); } catch (_) { /* ignore */ } }
-    const cached = fs.existsSync(file);
+    const file = audioCachePath(dir, ch, voiceId, model);
+    const cached = fs.existsSync(file) && !opts.force;
     if (!cached) {
-      const { buffer } = await elevenlabs.tts({
-        apiKey: a.elevenApiKey, voiceId, modelId: model,
-        text: markdownToSpeech(ch.content), signal: opts.signal, onProgress: opts.onProgress,
-      });
-      fs.writeFileSync(file, buffer);
+      if (!audioInFlight.has(file)) {
+        const pending = (async () => {
+          const { buffer } = await elevenlabs.tts({
+            apiKey: a.elevenApiKey, voiceId, modelId: model,
+            text: markdownToSpeech(ch.content), signal: opts.signal, onProgress: opts.onProgress,
+          });
+          const temporary = file + '.tmp';
+          try {
+            fs.writeFileSync(temporary, buffer);
+            fs.renameSync(temporary, file);
+          } finally { fs.rmSync(temporary, { force: true }); }
+        })().finally(() => audioInFlight.delete(file));
+        audioInFlight.set(file, pending);
+      }
+      await audioInFlight.get(file);
     }
     return { file, title: ch.title, number: ch.number, cached, voiceId };
   };
 
-  ipcMain.handle('audio:synth', wrap(async (event, { id, index, voiceId, force }) => {
+  handle('audio:synth', wrap(async (event, { id, index, voiceId, force }) => {
     const sender = event.sender;
     const onProgress = (p) => { if (!sender.isDestroyed()) sender.send('audio:progress', { id, index, ...p }); };
     const r = await synthChapterToFile(id, index, { onProgress, voiceId, force });
@@ -209,7 +247,7 @@ function registerIpc(store) {
   }));
 
   // Clone the user's own voice from recorded/uploaded samples.
-  ipcMain.handle('audio:clone', wrap(async (_e, { name, samples }) => {
+  handle('audio:clone', wrap(async (_e, { name, samples }) => {
     const a = store.getSettings().audio || {};
     const decoded = (samples || []).map((s, i) => {
       // MediaRecorder produces "data:audio/webm;codecs=opus;base64,…"; decodeDataUri
@@ -222,7 +260,7 @@ function registerIpc(store) {
     return voice;
   }));
 
-  ipcMain.handle('audio:export', wrap(async (_e, { id, index, voiceId }) => {
+  handle('audio:export', wrap(async (_e, { id, index, voiceId }) => {
     const { file, title } = await synthChapterToFile(id, index, { voiceId });
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showSaveDialog(win, {
@@ -245,19 +283,19 @@ function registerIpc(store) {
     const dir = path.join(store.audioDir, id);
     const list = chapters.map((ch, idx) => ({
       index: idx, number: ch.number, title: ch.title,
-      cached: !!(vid && fs.existsSync(path.join(dir, `ch${ch.number}-${vid}-${model}.mp3`))),
+      cached: !!(vid && fs.existsSync(audioCachePath(dir, ch, vid, model))),
     }));
     const have = list.filter((c) => c.cached).length;
     return { total: chapters.length, have, complete: chapters.length > 0 && have === chapters.length, voiceId: vid, model, chapters: list };
   };
-  ipcMain.handle('audio:status', wrap(async (_e, { id, voiceId }) => audiobookStatus(id, voiceId)));
+  handle('audio:status', wrap(async (_e, { id, voiceId }) => audiobookStatus(id, voiceId)));
 
   // Narrate the WHOLE book — every chapter, in order — caching each one
   // individually (so chapter-by-chapter listening still works and progress is
   // never lost). Cache-aware: already-narrated chapters are skipped for free.
   // Resumable: one chapter failing (e.g. a transient ElevenLabs error) is
   // retried once, then recorded and skipped so the rest still get done.
-  ipcMain.handle('audio:generate-all', wrap(async (event, { id, voiceId }) => {
+  handle('audio:generate-all', wrap(async (event, { id, voiceId }) => {
     const book = store.getBook(id);
     const chapters = (book.chapters || []).filter(Boolean);
     if (!chapters.length) throw new Error('This book has no chapters yet.');
@@ -287,7 +325,7 @@ function registerIpc(store) {
 
   // Optional: stitch the (already-cached) chapters into one MP3 file on disk —
   // for sideloading to a phone/Kindle. Narrates any missing chapters first.
-  ipcMain.handle('audio:full', wrap(async (event, { id, voiceId }) => {
+  handle('audio:full', wrap(async (event, { id, voiceId }) => {
     const book = store.getBook(id);
     const chapters = (book.chapters || []).filter(Boolean);
     if (!chapters.length) throw new Error('This book has no chapters yet.');
@@ -316,11 +354,11 @@ function registerIpc(store) {
   }));
 
   // ---- prerequisites ----
-  ipcMain.handle('prereq:check', wrap(async () => checkPrerequisites(store.getSettings())));
+  handle('prereq:check', wrap(async () => checkPrerequisites(store.getSettings())));
 
   // Sign-in status: probe each INSTALLED CLI (a tiny completion). This is the
   // ground truth for "is this provider actually logged in", shown in the UI.
-  ipcMain.handle('prereq:authStatus', wrap(async () => {
+  handle('prereq:authStatus', wrap(async () => {
     const settings = store.getSettings();
     const pre = await checkPrerequisites(settings);
     const { PROVIDER_IDS } = require('./cli/models');
@@ -338,17 +376,17 @@ function registerIpc(store) {
   }));
 
   // ---- one-click CLI install (npm -g), streamed to the renderer ----
-  ipcMain.handle('cli:install', wrap(async (event, provider) => {
+  handle('cli:install', wrap(async (event, provider) => {
     const settings = store.getSettings();
     const command = settings[`${provider}Command`];
     const sender = event.sender;
     const onLine = (text) => { if (!sender.isDestroyed()) sender.send('cli:install:output', { provider, text }); };
     return installProviderCli(provider, { command, onLine });
   }));
-  ipcMain.handle('model:verify', wrap(async (_e, provider, model) => {
+  handle('model:verify', wrap(async (_e, provider, model) => {
     return verifyModel(provider, model, store.getSettings());
   }));
-  ipcMain.handle('prereq:auth', wrap(async (_e, provider) => {
+  handle('prereq:auth', wrap(async (_e, provider) => {
     const settings = store.getSettings();
     const s = provider ? { ...settings, provider } : settings;
     return createEngine(s).checkAuth();
@@ -359,20 +397,21 @@ function registerIpc(store) {
   // which a piped child process can't provide. The user completes sign-in in
   // Terminal (writing creds to ~/.claude, ~/.gemini, ~/.codex) and clicks
   // "I've finished" to re-check — the same home dir the app reads.
-  ipcMain.handle('auth:start', wrap(async (_e, provider) => {
+  handle('auth:start', wrap(async (_e, provider) => {
     const settings = store.getSettings();
-    const meta = PROVIDERS[provider] || PROVIDERS.claude;
+    const meta = PROVIDERS[provider];
+    if (!meta || provider === 'gemini') throw new Error('This provider does not use terminal sign-in.');
     const command = settings[`${provider}Command`] || meta.command;
     const login = loginFor(provider);
-    const fullCmd = `${command} ${(login.args || []).join(' ')}`.trim();
+    const fullCmd = loginCommand(command, login.args || []);
     const opened = await openLoginTerminal(fullCmd);
     return { opened, command: fullCmd, hint: login.hint };
   }));
-  ipcMain.handle('auth:input', wrap(async () => ({ sent: false })));
-  ipcMain.handle('auth:cancel', wrap(async () => ({ cancelled: true })));
+  handle('auth:input', wrap(async () => ({ sent: false })));
+  handle('auth:cancel', wrap(async () => ({ cancelled: true })));
 
   // ---- clarify ----
-  ipcMain.handle('book:clarify', wrap(async (_e, spec) => {
+  handle('book:clarify', wrap(async (_e, spec) => {
     const engine = createEngine(store.getSettings(), { model: spec && spec.model });
     return new BookGenerator(engine).clarify(spec);
   }));
@@ -382,7 +421,7 @@ function registerIpc(store) {
   // pauses after planning; the renderer approves (optionally with edits).
   const outlineGates = new Map();
 
-  ipcMain.handle('book:generate', wrap(async (event, { spec, answers, jobId }) => {
+  handle('book:generate', wrap(async (event, { spec, answers, jobId }) => {
     if (jobs.size > 0) throw new Error('A book is already being written — open it from the Library, or cancel it first.');
     const settings = store.getSettings();
     const controller = new AbortController();
@@ -420,7 +459,7 @@ function registerIpc(store) {
   }));
 
   // Approve the plan (optionally edited): outline = [{title, summary}] or null to keep.
-  ipcMain.handle('outline:approve', wrap(async (_e, { jobId, outline }) => {
+  handle('outline:approve', wrap(async (_e, { jobId, outline }) => {
     const release = outlineGates.get(jobId);
     if (!release) return { approved: false };
     outlineGates.delete(jobId);
@@ -429,7 +468,8 @@ function registerIpc(store) {
   }));
 
   // ---- resume a paused / interrupted book ----
-  ipcMain.handle('book:resume', wrap(async (event, { id, jobId }) => {
+  handle('book:resume', wrap(async (event, { id, jobId }) => {
+    ensureIdle();
     const settings = store.getSettings();
     const book = store.getBook(id);
     const controller = new AbortController();
@@ -456,18 +496,19 @@ function registerIpc(store) {
     }
   }));
 
-  ipcMain.handle('book:cancel', wrap(async (_e, jobId) => {
+  handle('book:cancel', wrap(async (_e, jobId) => {
     const c = jobs.get(jobId);
     if (c) c.abort();
     return { cancelled: !!c };
   }));
 
   // ---- library ----
-  ipcMain.handle('book:list', wrap(async () => store.listBooks()));
-  ipcMain.handle('book:get', wrap(async (_e, id) => store.getBook(id)));
+  handle('book:list', wrap(async () => store.listBooks()));
+  handle('book:get', wrap(async (_e, id) => store.getBook(id)));
 
   // ---- author tools: edit / rewrite / rename / stats ----
-  ipcMain.handle('book:updateChapter', wrap(async (_e, { id, index, content }) => {
+  handle('book:updateChapter', wrap(async (_e, { id, index, content }) => {
+    ensureIdle();
     const book = store.getBook(id);
     const ch = (book.chapters || [])[index];
     if (!ch) throw new Error('No such chapter.');
@@ -478,7 +519,8 @@ function registerIpc(store) {
     return { id, index, words: ch.words };
   }));
 
-  ipcMain.handle('book:rewriteChapter', wrap(async (event, { id, index, note, jobId }) => {
+  handle('book:rewriteChapter', wrap(async (event, { id, index, note, jobId }) => {
+    ensureIdle();
     const settings = store.getSettings();
     const book = store.getBook(id);
     const controller = new AbortController();
@@ -499,7 +541,8 @@ function registerIpc(store) {
     }
   }));
 
-  ipcMain.handle('book:update', wrap(async (_e, { id, title, subtitle, author }) => {
+  handle('book:update', wrap(async (_e, { id, title, subtitle, author }) => {
+    ensureIdle();
     const book = store.getBook(id);
     if (title != null && String(title).trim()) book.title = tidyText(String(title).trim());
     if (subtitle != null) book.subtitle = tidyText(String(subtitle).trim());
@@ -508,18 +551,23 @@ function registerIpc(store) {
     return { id, title: book.title, subtitle: book.subtitle, author: book.author };
   }));
 
-  ipcMain.handle('book:stats', wrap(async (_e, id) => {
+  handle('book:stats', wrap(async (_e, id) => {
     const book = store.getBook(id);
     return { ...bookStats(book), classification: classifyBook(book) };
   }));
-  ipcMain.handle('book:delete', wrap(async (_e, id) => { store.deleteBook(id); return { deleted: true }; }));
-  ipcMain.handle('book:html', wrap(async (_e, id) => {
+  handle('book:delete', wrap(async (_e, id) => {
+    ensureIdle();
+    if (activeWrites) throw new Error('Wait for audio, export, or delivery to finish before deleting a book.');
+    store.deleteBook(id);
+    return { deleted: true };
+  }));
+  handle('book:html', wrap(async (_e, id) => {
     const book = store.getBook(id);
     return bookToHtml(book, { resolveImage: imageResolver(book) });
   }));
   // Structured content for the built-in EPUB reader: per-chapter HTML with
   // images resolved to data URLs, plus metadata.
-  ipcMain.handle('book:content', wrap(async (_e, id) => {
+  handle('book:content', wrap(async (_e, id) => {
     const book = store.getBook(id);
     const resolve = imageResolver(book);
     return {
@@ -553,7 +601,8 @@ function registerIpc(store) {
   }));
 
   // ---- export ----
-  ipcMain.handle('book:export', wrap(async (_e, { id, format, saveAs }) => {
+  handle('book:export', wrap(async (_e, { id, format, saveAs }) => {
+    ensureIdle();
     const book = store.getBook(id);
     // Make sure HTML/SVG art has been rendered to PNG before exporting —
     // otherwise chapters whose rasterization hadn't run yet silently lose
@@ -587,8 +636,19 @@ function registerIpc(store) {
     return { path: outPath };
   }));
 
-  ipcMain.handle('shell:open', wrap(async (_e, p) => { await shell.openPath(p); return { opened: true }; }));
-  ipcMain.handle('shell:reveal', wrap(async (_e, p) => { shell.showItemInFolder(p); return { revealed: true }; }));
+  const exportedPath = (p) => {
+    if (typeof p !== 'string' || !/\.(epub|pdf|docx|md|html|mp3)$/i.test(p)) throw new Error('Not an exported document.');
+    const resolved = fs.realpathSync(p);
+    const exportRoot = fs.realpathSync(store.exportsDir) + path.sep;
+    if (!openedFiles.has(path.resolve(p)) && !resolved.startsWith(exportRoot)) throw new Error('Choose a document exported by ChapterOne.');
+    return resolved;
+  };
+  handle('shell:open', wrap(async (_e, p) => {
+    const error = await shell.openPath(exportedPath(p));
+    if (error) throw new Error(error);
+    return { opened: true };
+  }));
+  handle('shell:reveal', wrap(async (_e, p) => { shell.showItemInFolder(exportedPath(p)); return { revealed: true }; }));
 
   // ---- delivery ----
   // SMTP is "ready" only when the user opted into it AND filled in credentials.
@@ -612,8 +672,8 @@ function registerIpc(store) {
   };
 
   // ---- kindle ----
-  ipcMain.handle('kindle:verify', wrap(async () => verifySmtp(store.getSettings().kindle.smtp)));
-  ipcMain.handle('kindle:send', wrap(async (_e, { id, format }) => {
+  handle('kindle:verify', wrap(async () => verifySmtp(store.getSettings().kindle.smtp)));
+  handle('kindle:send', wrap(async (_e, { id, format }) => {
     const k = store.getSettings().kindle || {};
     const book = store.getBook(id);
     const fmt = format || k.preferredFormat || 'epub';
@@ -632,7 +692,7 @@ function registerIpc(store) {
   }));
 
   // ---- export to PDF and email to any address ----
-  ipcMain.handle('email:pdf', wrap(async (_e, { id, to }) => {
+  handle('email:pdf', wrap(async (_e, { id, to }) => {
     const settings = store.getSettings();
     const k = settings.kindle || {};
     const book = store.getBook(id);

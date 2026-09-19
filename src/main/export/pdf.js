@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { bookToHtml } = require('./html');
+const { configureOfflineSession } = require('../security');
 
 /**
  * Render a book to PDF using an offscreen Electron BrowserWindow.
@@ -21,18 +22,21 @@ const { bookToHtml } = require('./html');
  */
 async function generatePdf(book, outPath, opts = {}) {
   // Lazy-require so non-Electron contexts (tests) can load this module.
-  const { BrowserWindow } = require('electron');
+  const { BrowserWindow, session } = require('electron');
 
   const html = bookToHtml(book, {
     extraCss: (opts.extraCss || '@page { margin: 2cm; }') + ' body { background: #fff; }',
   });
 
-  const tmp = path.join(os.tmpdir(), `chapterone-pdf-${process.pid}-${Date.now()}.html`);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chapterone-pdf-'));
+  const tmp = path.join(tmpDir, 'book.html');
   fs.writeFileSync(tmp, html);
 
+  const offline = session.fromPartition(`pdf-${require('crypto').randomUUID()}`);
+  configureOfflineSession(offline, tmp);
   const win = new BrowserWindow({
     show: false,
-    webPreferences: { offscreen: true, javascript: false },
+    webPreferences: { offscreen: true, javascript: false, sandbox: true, nodeIntegration: false, session: offline },
   });
 
   try {
@@ -40,13 +44,13 @@ async function generatePdf(book, outPath, opts = {}) {
     const data = await win.webContents.printToPDF({
       printBackground: true,
       pageSize: opts.pageSize || 'A4',
-      margins: { marginType: 'default' },
+      preferCSSPageSize: false,
     });
     fs.writeFileSync(outPath, data);
     return outPath;
   } finally {
     win.destroy();
-    try { fs.unlinkSync(tmp); } catch (_) { /* ignore */ }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
@@ -56,7 +60,7 @@ async function generatePdf(book, outPath, opts = {}) {
  */
 async function generatePrintPdf(book, outPath) {
   return generatePdf(book, outPath, {
-    pageSize: { width: 152400, height: 228600 }, // 6in × 9in in microns
+    pageSize: { width: 6, height: 9 }, // printToPDF uses inches, unlike webContents.print
     extraCss: '@page { margin: 1.9cm 1.6cm; } .page { max-width: none; padding: 0; }',
   });
 }

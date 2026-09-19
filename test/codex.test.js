@@ -3,6 +3,13 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { CodexAdapter } = require('../src/main/cli/codexAdapter');
 
+test('Codex uses a read-only sandbox with shell disabled and explicit research opt-in', () => {
+  const args = new CodexAdapter().buildArgs('write', {});
+  assert.equal(args[args.indexOf('--sandbox') + 1], 'read-only');
+  assert.ok(args.includes('features.shell_tool=false'));
+  assert.ok(args.includes('web_search="disabled"'));
+});
+
 test('buildArgs uses exec + skip-git-repo-check and reads the prompt from stdin', () => {
   const args = new CodexAdapter({}).buildArgs('write a chapter', {});
   assert.strictEqual(args[0], 'exec');
@@ -27,8 +34,8 @@ test('research grounding uses the config tool toggle, NOT the removed --search f
   const args = new CodexAdapter({}).buildArgs('x', { research: true });
   assert.ok(!args.includes('--search')); // --search errors on modern Codex
   const i = args.indexOf('-c');
-  assert.ok(args.includes('tools.web_search=true'));
-  assert.ok(args.indexOf('tools.web_search=true') > -1);
+  assert.ok(args.includes('web_search="live"'));
+  assert.ok(args.indexOf('web_search="live"') > -1);
 });
 
 test('reasoning effort defaults to medium (xhigh burns the quota), overridable via extraArgs', () => {

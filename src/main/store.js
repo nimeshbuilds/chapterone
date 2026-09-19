@@ -4,12 +4,18 @@ const fs = require('fs');
 const path = require('path');
 const { classifyBook } = require('./book/classify');
 
+const SECRET_PATHS = [
+  ['geminiApiKey'], ['images', 'geminiApiKey'], ['audio', 'elevenApiKey'],
+  ['kindle', 'smtp', 'pass'],
+];
+
 /**
  * Tiny JSON-file persistence for settings and the book library.
  * Avoids native/ESM dependencies so it works everywhere Electron does.
  */
 class Store {
-  constructor(baseDir) {
+  constructor(baseDir, { secretStorage } = {}) {
+    this.secretStorage = secretStorage;
     this.baseDir = baseDir;
     this.booksDir = path.join(baseDir, 'books');
     this.exportsDir = path.join(baseDir, 'exports');
@@ -34,7 +40,7 @@ class Store {
     const data = JSON.stringify(obj, null, 2);
     let fd = null;
     try {
-      fd = fs.openSync(tmp, 'w');
+      fd = fs.openSync(tmp, 'w', 0o600);
       fs.writeSync(fd, data);
       fs.fsyncSync(fd);
       fs.closeSync(fd);
@@ -97,26 +103,64 @@ class Store {
   getSettings() {
     // Settings hold the user's API keys and SMTP credentials — never let a
     // corrupt file silently reset them. Try the live file, then the .bak.
+    let failure;
     for (const p of [this.settingsPath, this.settingsPath + '.bak']) {
       try {
         const raw = fs.readFileSync(p, 'utf8');
-        const s = deepMerge(this.defaultSettings(), JSON.parse(raw));
+        const s = deepMerge(this.defaultSettings(), this._secrets(JSON.parse(raw), false));
         // Stock photos retired (a small CC pool, rarely relevant for book scenes).
         // Fall back to the always-relevant, free AI vector art instead.
         if (s.imageMode === 'stock') s.imageMode = 'ai';
         if (s.illustrate) s.illustrate = false;
         return s;
-      } catch (_) { /* try the backup */ }
+      } catch (error) { if (error.code !== 'ENOENT') failure = error; }
     }
+    if (failure) throw new Error(`Could not read saved settings. Your files have been preserved: ${failure.message}`);
     return this.defaultSettings();
   }
 
   saveSettings(partial) {
-    const merged = deepMerge(this.getSettings(), partial || {});
-    // Keep the previous good file as a fallback before replacing it.
-    try { fs.copyFileSync(this.settingsPath, this.settingsPath + '.bak'); } catch (_) { /* first save */ }
-    this._writeJsonAtomic(this.settingsPath, merged);
+    const previous = this.getSettings();
+    const merged = deepMerge(previous, partial || {});
+    const encoded = this._secrets(merged, true);
+    // Back up decoded, validated settings: never copy a corrupt primary over a
+    // good fallback, and never retain a legacy plaintext credential backup.
+    this._writeJsonAtomic(this.settingsPath + '.bak', this._secrets(previous, true));
+    this._writeJsonAtomic(this.settingsPath, encoded);
     return merged;
+  }
+
+  _secrets(settings, encrypt) {
+    const result = structuredClone(settings);
+    for (const keys of SECRET_PATHS) {
+      const parent = keys.slice(0, -1).reduce((v, k) => v && v[k], result);
+      const key = keys[keys.length - 1];
+      if (!parent || !parent[key]) continue;
+      const value = parent[key];
+      if (!encrypt && typeof value === 'object' && value.encrypted) {
+        if (!this.secretStorage?.isEncryptionAvailable()) throw new Error('Unlock the OS credential store to read saved keys.');
+        parent[key] = this.secretStorage.decryptString(Buffer.from(value.encrypted, 'base64'));
+      } else if (encrypt && typeof value === 'string' && this.secretStorage) {
+        if (!this.secretStorage.isEncryptionAvailable()
+          || this.secretStorage.getSelectedStorageBackend?.() === 'basic_text') {
+          throw new Error('Secure credential storage is unavailable. Unlock the OS credential store before saving keys.');
+        }
+        parent[key] = { encrypted: this.secretStorage.encryptString(value).toString('base64') };
+      }
+    }
+    return result;
+  }
+
+  /** Upgrade existing plaintext credentials in both files without changing values. */
+  migrateSecrets() {
+    if (!this.secretStorage) return;
+    for (const file of [this.settingsPath, this.settingsPath + '.bak']) {
+      if (!fs.existsSync(file)) continue;
+      let settings;
+      try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); }
+      catch (_) { continue; } // getSettings can recover from the other file
+      this._writeJsonAtomic(file, this._secrets(this._secrets(settings, false), true));
+    }
   }
 
   // ---- books ----
@@ -139,10 +183,9 @@ class Store {
   }
 
   deleteBook(id) {
-    try {
-      fs.unlinkSync(this.bookPath(id));
-    } catch (_) {
-      /* already gone */
+    fs.rmSync(this.bookPath(id), { force: true });
+    for (const dir of [this.imagesDir, this.audioDir]) {
+      fs.rmSync(path.join(dir, id), { recursive: true, force: true });
     }
   }
 
@@ -207,10 +250,15 @@ class Store {
       settings: fs.existsSync(this.settingsPath),
     };
     for (const dir of [this.booksDir, this.imagesDir, this.audioDir, this.exportsDir]) {
-      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
-      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { /* ignore */ }
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.mkdirSync(dir, { recursive: true });
     }
-    try { fs.rmSync(this.settingsPath, { force: true }); } catch (_) { /* ignore */ }
+    for (const name of fs.readdirSync(this.baseDir)) {
+      if (name === 'settings.json' || name === 'settings.json.bak'
+        || /^settings\.json\..*\.tmp$/.test(name)) {
+        fs.rmSync(path.join(this.baseDir, name), { force: true });
+      }
+    }
     return summary;
   }
 
@@ -266,6 +314,7 @@ function deepMerge(base, override) {
   if (override && typeof override === 'object') {
     const out = { ...base };
     for (const k of Object.keys(override)) {
+      if (['__proto__', 'prototype', 'constructor'].includes(k)) continue;
       if (
         override[k] &&
         typeof override[k] === 'object' &&

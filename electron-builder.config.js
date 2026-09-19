@@ -23,11 +23,16 @@ const hasAppleCreds = !!(
   process.env.APPLE_TEAM_ID
 );
 
+if (process.env.CHAPTERONE_RELEASE === 'true' && process.platform === 'darwin'
+  && (!hasAppleCreds || !process.env.CSC_LINK)) {
+  throw new Error('Tagged macOS releases require MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD and Apple notarization secrets. See SIGNING.md.');
+}
+
 module.exports = {
   ...pkg.build,
   mac: {
     ...pkg.build.mac,
     // notarytool credentials are read from the env; false = skip (unsigned build).
-    notarize: hasAppleCreds ? { teamId: process.env.APPLE_TEAM_ID } : false,
+    notarize: hasAppleCreds,
   },
 };

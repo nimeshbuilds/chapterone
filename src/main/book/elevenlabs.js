@@ -1,6 +1,6 @@
 'use strict';
 
-const https = require('https');
+const { requestBuffer } = require('../http');
 
 /**
  * ElevenLabs text-to-speech for the optional audiobook feature.
@@ -31,38 +31,17 @@ const RECOMMENDED = {
 
 const MAX_CHUNK = 2500; // characters per TTS request (safe across models)
 
-function httpGet(path, apiKey, signal) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({ host: HOST, path, method: 'GET', headers: { 'xi-api-key': apiKey, Accept: 'application/json' }, timeout: 30000 },
-      (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
-      });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('ElevenLabs request timed out')));
-    if (signal) signal.addEventListener('abort', () => req.destroy(new Error('Aborted')), { once: true });
-    req.end();
-  });
+async function httpGet(path, apiKey, signal) {
+  const result = await requestBuffer({ host: HOST, path, method: 'GET',
+    headers: { 'xi-api-key': apiKey, Accept: 'application/json' } }, { signal, timeoutMs: 30000 });
+  return { status: result.status, body: result.buffer.toString('utf8') };
 }
 
-function httpPostAudio(path, apiKey, body, signal) {
-  return new Promise((resolve, reject) => {
-    const payload = Buffer.from(JSON.stringify(body));
-    const req = https.request({
-      host: HOST, path, method: 'POST', timeout: 180000,
-      headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg', 'Content-Length': payload.length },
-    }, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode, buffer: Buffer.concat(chunks) }));
-    });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('ElevenLabs request timed out')));
-    if (signal) signal.addEventListener('abort', () => req.destroy(new Error('Aborted')), { once: true });
-    req.write(payload);
-    req.end();
-  });
+async function httpPostAudio(path, apiKey, body, signal) {
+  const payload = Buffer.from(JSON.stringify(body));
+  return requestBuffer({ host: HOST, path, method: 'POST',
+    headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg', 'Content-Length': payload.length },
+  }, { body: payload, signal, timeoutMs: 180000 });
 }
 
 function describeError(status, bodyText) {
@@ -129,7 +108,7 @@ async function tts(opts = {}) {
   onProgress({ done: 0, total: chunks.length });
   for (let i = 0; i < chunks.length; i++) {
     const { status, buffer } = await httpPostAudio(
-      `/v1/text-to-speech/${opts.voiceId}`,
+      `/v1/text-to-speech/${encodeURIComponent(opts.voiceId)}`,
       apiKey,
       { text: chunks[i], model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.0, use_speaker_boost: true } },
       opts.signal
@@ -156,7 +135,7 @@ function buildMultipart(fields, files, boundary) {
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`));
   }
   for (const f of files) {
-    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="${f.filename}"\r\nContent-Type: ${f.mime}\r\n\r\n`));
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="${String(f.filename).replace(/["\r\n\\]/g, "_")}"\r\nContent-Type: ${String(f.mime).replace(/[\r\n]/g, "")}\r\n\r\n`));
     parts.push(f.buffer);
     parts.push(Buffer.from('\r\n'));
   }
@@ -164,22 +143,11 @@ function buildMultipart(fields, files, boundary) {
   return Buffer.concat(parts);
 }
 
-function httpPostRaw(path, apiKey, body, contentType, signal) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      host: HOST, path, method: 'POST', timeout: 180000,
-      headers: { 'xi-api-key': apiKey, 'Content-Type': contentType, 'Content-Length': body.length, Accept: 'application/json' },
-    }, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
-    });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('ElevenLabs request timed out')));
-    if (signal) signal.addEventListener('abort', () => req.destroy(new Error('Aborted')), { once: true });
-    req.write(body);
-    req.end();
-  });
+async function httpPostRaw(path, apiKey, body, contentType, signal) {
+  const result = await requestBuffer({ host: HOST, path, method: 'POST',
+    headers: { 'xi-api-key': apiKey, 'Content-Type': contentType, 'Content-Length': body.length, Accept: 'application/json' },
+  }, { body, signal, timeoutMs: 180000 });
+  return { status: result.status, body: result.buffer.toString('utf8') };
 }
 
 /**

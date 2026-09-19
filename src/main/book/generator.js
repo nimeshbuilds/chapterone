@@ -192,7 +192,7 @@ class BookGenerator {
       styleGuide: outline.styleGuide || '',
       influences: influences || null,
       outline: (outline.chapters || []).map((c, i) => ({
-        number: c.number || i + 1,
+        number: i + 1,
         title: tidyText(c.title || `Chapter ${i + 1}`),
         summary: c.summary || '',
         beats: c.beats || [],
@@ -204,30 +204,36 @@ class BookGenerator {
     emit('outline:done', { title: book.title, chapters: book.outline.length, book });
     if (onChapter) await onChapter(book);
 
-    // Outline review gate: the single highest-leverage moment to steer a book
-    // is after the plan and before 12 chapters are written. When requested,
-    // pause here and let the reader approve / retitle / cut chapters.
-    if (spec.reviewOutline && hooks.onOutlineReview) {
-      emit('outline:review', { book });
-      const edited = await hooks.onOutlineReview(book); // resolves on approval (null = keep as planned)
-      if (Array.isArray(edited) && edited.length) {
-        book.outline = edited.map((c, i) => ({
-          number: i + 1,
-          title: tidyText(c.title || `Chapter ${i + 1}`),
-          summary: c.summary || '',
-          beats: c.beats || [],
-        }));
-        book.updatedAt = new Date().toISOString();
-        if (onChapter) await onChapter(book);
+    try {
+      // Outline review gate: the single highest-leverage moment to steer a book
+      // is after the plan and before 12 chapters are written. When requested,
+      // pause here and let the reader approve / retitle / cut chapters.
+      if (spec.reviewOutline && hooks.onOutlineReview) {
+        emit('outline:review', { book });
+        const edited = await hooks.onOutlineReview(book); // resolves on approval (null = keep as planned)
+        if (Array.isArray(edited) && edited.length) {
+          book.outline = edited.map((c, i) => ({
+            number: i + 1,
+            title: tidyText(c.title || `Chapter ${i + 1}`),
+            summary: c.summary || '',
+            beats: c.beats || [],
+          }));
+          book.updatedAt = new Date().toISOString();
+          if (onChapter) await onChapter(book);
+        }
+        emit('outline:approved', { chapters: book.outline.length, book });
       }
-      emit('outline:approved', { chapters: book.outline.length, book });
+
+      await this._maybeCover(book, hooks);
+
+      const done = await this._writeChapters(book, 0, '', hooks);
+      await this._backMatter(done, hooks);
+      return done;
+    } catch (error) {
+      if (book.status !== 'paused') this._markPaused(book, error.message);
+      if (onChapter) await onChapter(book);
+      throw error;
     }
-
-    await this._maybeCover(book, hooks);
-
-    const done = await this._writeChapters(book, 0, '', hooks);
-    await this._backMatter(done, hooks);
-    return done;
   }
 
   /**
@@ -405,8 +411,16 @@ class BookGenerator {
     if (hooks.onProgress) {
       hooks.onProgress({ phase: 'resume', startIndex, total: book.outline.length, book });
     }
-    await this._maybeCover(book, hooks);
-    return this._writeChapters(book, startIndex, prevRecap, hooks);
+    try {
+      await this._maybeCover(book, hooks);
+      const done = await this._writeChapters(book, startIndex, prevRecap, hooks);
+      await this._backMatter(done, hooks);
+      return done;
+    } catch (error) {
+      if (book.status !== 'paused') this._markPaused(book, error.message);
+      if (hooks.onChapter) await hooks.onChapter(book);
+      throw error;
+    }
   }
 
   /** Shared chapter-writing loop used by both generate() and resume(). */
@@ -516,6 +530,10 @@ class BookGenerator {
       };
       book.chapters[i] = chapter;
       book.updatedAt = new Date().toISOString();
+      book.words = book.chapters.reduce((n, c) => n + ((c && c.words) || 0), 0);
+      // Persist prose before optional paid art: cancellation or a failed image
+      // request must not discard a finished chapter.
+      if (onChapter) await onChapter(book);
 
       // Illustrations: real Nano Banana images, an AI-designed SVG vignette, or a
       // royalty-free stock photo. The progress message names the method so the
@@ -568,6 +586,7 @@ class BookGenerator {
       }
     }
 
+    if (signal && signal.aborted) throw new Error('Generation cancelled');
     book.status = 'complete';
     book.pausedReason = null;
     book.updatedAt = new Date().toISOString();
@@ -592,7 +611,8 @@ class BookGenerator {
       signal,
     });
     const json = extractJson(text);
-    if (!json.chapters || !json.chapters.length) {
+    if (!Array.isArray(json.chapters) || !json.chapters.length || json.chapters.length > 200
+      || json.chapters.some((c) => !c || typeof c !== 'object' || Array.isArray(c))) {
       throw new Error('The model did not return any chapters in the outline.');
     }
     return json;

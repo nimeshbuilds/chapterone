@@ -65,7 +65,18 @@ function commonDirs() {
 
 /** Build a de-duplicated PATH from the shell PATH, current PATH, and known dirs. */
 function resolveUserPath() {
-  if (process.platform === 'win32') return process.env.PATH || '';
+  if (process.platform === 'win32') {
+    const env = process.env;
+    const home = os.homedir();
+    return [...new Set([
+      ...(env.PATH || env.Path || '').split(path.delimiter),
+      env.APPDATA && path.join(env.APPDATA, 'npm'),
+      env.ProgramFiles && path.join(env.ProgramFiles, 'nodejs'),
+      env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'nodejs'),
+      path.join(home, '.local', 'bin'), path.join(home, '.bun', 'bin'),
+      env.NVM_SYMLINK,
+    ].filter(Boolean))].join(path.delimiter);
+  }
   const sep = path.delimiter;
   const parts = [
     ...shellPath().split(sep),

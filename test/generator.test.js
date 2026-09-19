@@ -162,3 +162,31 @@ test('a too-short chapter pauses the book instead of falsely completing', async 
   assert.strictEqual(last.pausedReason.kind, 'short-chapter');
   assert.strictEqual(last.chapters.filter(Boolean).length, 0); // the stub was NOT kept
 });
+
+test('cancelling at outline review persists a resumable draft immediately', async () => {
+  const gen = new BookGenerator(new FakeEngine());
+  let saved;
+  await assert.rejects(gen.generate({ request: 'x', reviewOutline: true }, {}, {
+    onChapter: (b) => { saved = structuredClone(b); },
+    onOutlineReview: () => { throw new Error('Generation cancelled'); },
+  }), /cancelled/);
+  assert.equal(saved.status, 'paused');
+  assert.equal(saved.chapters.length, 0);
+  assert.ok(saved.outline.length);
+});
+
+test('completed prose is saved before an optional illustration can fail', async () => {
+  const gen = new BookGenerator(new FakeEngine());
+  let saved;
+  gen._nanoReady = () => true;
+  gen._maybeCover = async () => {};
+  gen._nanoChapterArt = async () => {
+    assert.ok(saved.chapters[0].content.length > 200);
+    throw new Error('Image connection lost');
+  };
+  await assert.rejects(gen.generate({ request: 'x', imageMode: 'nano', polish: false }, {}, {
+    onChapter: (b) => { saved = structuredClone(b); },
+  }), /connection lost/);
+  assert.equal(saved.status, 'paused');
+  assert.ok(saved.chapters[0].content.length > 200);
+});

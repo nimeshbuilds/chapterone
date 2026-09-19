@@ -43,7 +43,8 @@ class CodexAdapter {
   }
 
   buildArgs(prompt, opts = {}) {
-    const args = ['exec', '--skip-git-repo-check'];
+    const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+      '-c', 'approval_policy="never"', '-c', 'features.shell_tool=false'];
     // Codex defaults to `xhigh` reasoning (built for hard coding/math): for prose
     // it is slow and burns the ChatGPT quota fast, so a full book hits usage/rate
     // limits and starts failing. `medium` keeps the writing quality while cutting
@@ -54,7 +55,7 @@ class CodexAdapter {
     // Web-search grounding. Newer Codex (>=0.x) replaced the `--search` flag with
     // a config tool toggle; the old flag now errors with "unexpected argument
     // '--search'", which was failing every research-enabled call.
-    if (opts.research) args.push('-c', 'tools.web_search=true');
+    args.push('-c', `web_search="${opts.research ? 'live' : 'disabled'}"`);
     if (this.extraArgs.length) args.push(...this.extraArgs);
     // '-' = read the prompt from stdin. Passing the full multi-KB prompt as an
     // argv element broke on Windows (32K command-line limit) and pollutes `ps`;
@@ -73,7 +74,7 @@ class CodexAdapter {
       signal: opts.signal,
       onStdout: opts.onStdout,
     });
-    if (code !== 0 && !stdout.trim()) {
+    if (code !== 0) {
       throw new Error(
         `Codex CLI exited with code ${code}: ${stderr.trim() || 'no output'}`
       );

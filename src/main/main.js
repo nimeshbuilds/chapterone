@@ -1,10 +1,15 @@
 'use strict';
 
 const path = require('path');
-const { app, BrowserWindow, Menu, shell, nativeTheme, session, systemPreferences } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeTheme, session, systemPreferences, safeStorage, dialog } = require('electron');
 const { applyUserPath } = require('./cli/envPath');
 const { Store } = require('./store');
 const { registerIpc } = require('./ipc');
+const { UI_URL, isExternalUrl } = require('./security');
+
+// Two instances must never concurrently rewrite the same library/settings.
+const hasLock = app.requestSingleInstanceLock();
+if (!hasLock) app.quit();
 
 // Critical: a GUI app launched from Finder/Dock gets a minimal PATH and can't
 // see CLIs in ~/.local/bin, Homebrew, nvm, etc. Reconstruct the real shell PATH
@@ -44,7 +49,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -60,9 +65,11 @@ function createWindow() {
 
   // Open external links in the user's browser, not inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) shell.openExternal(url);
+    if (isExternalUrl(url)) shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
+  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
 
   if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
 }
@@ -104,7 +111,14 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.whenReady().then(() => {
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
+if (hasLock) app.whenReady().then(() => {
   // Follow the system appearance for the in-app light/dark theme.
   nativeTheme.themeSource = 'system';
 
@@ -125,17 +139,22 @@ app.whenReady().then(() => {
   const isSpeaker = (p) => p === 'speaker-selection';
   const micStatus = () => {
     if (process.platform !== 'darwin') return 'granted';
-    try { return systemPreferences.getMediaAccessStatus('microphone'); } catch (_) { return 'granted'; }
+    try { return systemPreferences.getMediaAccessStatus('microphone'); } catch (_) { return 'denied'; }
   };
   let micAskInFlight = null; // collapse concurrent asks into one OS prompt
 
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+  const trusted = (wc, details) => wc && wc === mainWindow?.webContents && wc.getURL() === UI_URL
+    && details?.isMainFrame !== false
+    && (!details?.requestingUrl || details.requestingUrl === UI_URL);
+  session.defaultSession.setPermissionCheckHandler((wc, permission, _origin, details) => {
+    if (!trusted(wc, details) || details?.mediaType === 'video') return false;
     const ok = isSpeaker(permission) ? true : (isMic(permission) ? micStatus() === 'granted' : false);
     dbg('check', permission, 'osMic=', micStatus(), '->', ok);
     return ok;
   });
 
-  session.defaultSession.setPermissionRequestHandler(async (_wc, permission, cb) => {
+  session.defaultSession.setPermissionRequestHandler(async (wc, permission, cb, details) => {
+    if (!trusted(wc, details) || details?.mediaTypes?.includes('video')) return cb(false);
     dbg('request', permission, 'osMic=', micStatus());
     if (isSpeaker(permission)) return cb(true);
     if (!isMic(permission)) return cb(false);
@@ -148,10 +167,11 @@ app.whenReady().then(() => {
       micAskInFlight = null;
       dbg('askForMediaAccess ->', ok, 'osMicNow=', micStatus());
       cb(!!ok);
-    } catch (e) { micAskInFlight = null; dbg('ask error', e && e.message); cb(true); }
+    } catch (e) { micAskInFlight = null; dbg('ask error', e && e.message); cb(false); }
   });
 
-  store = new Store(app.getPath('userData'));
+  store = new Store(app.getPath('userData'), { secretStorage: safeStorage });
+  store.migrateSecrets();
   store.reconcileInterrupted(); // recover books left mid-write by a previous crash/close
   ipcController = registerIpc(store);
   buildMenu();
@@ -160,6 +180,9 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}).catch((error) => {
+  dialog.showErrorBox('ChapterOne could not start', error.message);
+  app.quit();
 });
 
 app.on('window-all-closed', () => {

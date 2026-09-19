@@ -15,3 +15,7 @@ coverage/
 *.mobi
 *.pdf
 !docs/**/*.pdf
+artifacts/
+*.p12
+*.pfx
+*.key

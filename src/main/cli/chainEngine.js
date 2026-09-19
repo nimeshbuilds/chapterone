@@ -34,6 +34,7 @@ class ChainEngine {
     this.adapters = adapters;
     this.index = 0;
     this.onSwitch = opts.onSwitch || (() => {});
+    this.delay = opts.delay || delay;
   }
 
   get active() { return this.adapters[this.index]; }
@@ -85,7 +86,7 @@ class ChainEngine {
           const aborted = opts.signal && opts.signal.aborted;
           if (transient && attempt < MAX_ATTEMPTS && !aborted) {
             announce({ type: 'retrying', id: adapter.id, kind, attempt, error: err.message });
-            await delay((BACKOFF[kind] || BACKOFF.network)[attempt - 1] || 15000, opts.signal);
+            await this.delay((BACKOFF[kind] || BACKOFF.network)[attempt - 1] || 15000, opts.signal);
             if (opts.signal && opts.signal.aborted) throw err; // user cancelled during backoff
             continue;
           }

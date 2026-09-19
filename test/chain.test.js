@@ -1,7 +1,10 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { ChainEngine } = require('../src/main/cli/chainEngine');
+const { ChainEngine: RealChainEngine } = require('../src/main/cli/chainEngine');
+class ChainEngine extends RealChainEngine {
+  constructor(adapters, opts = {}) { super(adapters, { delay: async () => {}, ...opts }); }
+}
 const { resolveChain } = require('../src/main/cli');
 
 function fake(id, behavior) {
@@ -62,7 +65,6 @@ test('resolveChain puts the primary first and de-dupes', () => {
 });
 
 test('a too-short completion (minWords) triggers fallback to the next engine', async () => {
-  const { ChainEngine } = require('../src/main/cli/chainEngine');
   const { enforceMinWords } = require('../src/main/cli/spawn');
   const limited = { id: 'a', model: '', async complete(p, o) { const out = 'usage limit reached'; enforceMinWords(out, o); return out; } };
   const good = { id: 'b', model: '', async complete() { return 'word '.repeat(300); } };
@@ -73,7 +75,6 @@ test('a too-short completion (minWords) triggers fallback to the next engine', a
 });
 
 test('quiet calls fall back silently (no exhausted/switch broadcast)', async () => {
-  const { ChainEngine } = require('../src/main/cli/chainEngine');
   const dead = { id: 'a', model: '', async complete() { throw new Error('rate limit exceeded'); } };
   const alsoDead = { id: 'b', model: '', async complete() { throw new Error('rate limit exceeded'); } };
   const events = [];
@@ -87,7 +88,6 @@ test('quiet calls fall back silently (no exhausted/switch broadcast)', async () 
 });
 
 test('a transient network error is retried on the same adapter, not failed', async () => {
-  const { ChainEngine } = require('../src/main/cli/chainEngine');
   let calls = 0;
   const flaky = { id: 'grok', model: 'grok-build', async complete() {
     calls++;

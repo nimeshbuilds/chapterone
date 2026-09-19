@@ -5,6 +5,7 @@ const { marked } = require('marked');
 const { svgToDataUri } = require('../book/aiArt');
 const { cssForBand } = require('../book/ageBands');
 const { tidyProse } = require('../book/typography');
+const { sanitizeBookHtml } = require('./sanitize');
 
 marked.setOptions({ mangle: false, headerIds: true, headerPrefix: 'h-' });
 
@@ -60,7 +61,7 @@ function applyImageSources(html, resolve) {
     if (!src) return ''; // unresolved → drop so nothing looks broken
     const altMatch = full.match(/\balt="([^"]*)"/i);
     const alt = altMatch ? altMatch[1] : '';
-    return `<figure class="figure"><img src="${src}" alt="${alt}" loading="lazy" />${
+    return `<figure class="figure"><img src="${escapeHtml(src)}" alt="${alt}" loading="lazy" />${
       alt ? `<figcaption>${alt}</figcaption>` : ''
     }</figure>`;
   });
@@ -76,7 +77,7 @@ function chapterToHtml(markdown, resolveImage, number) {
     md = md.replace(/^(\s{0,3})#[ \t]+(.+)$/m, (full, sp, title) =>
       /^chapter\b/i.test(title.trim()) ? `${sp}# ${title}` : `${sp}# Chapter ${number}: ${title}`);
   }
-  return applyImageSources(marked.parse(md), resolveImage);
+  return sanitizeBookHtml(applyImageSources(marked.parse(md), resolveImage));
 }
 
 const BOOK_CSS = `
@@ -137,7 +138,7 @@ function creditsHtml(book) {
       return `<li>${escapeHtml(im.caption || im.query)} — ${escapeHtml(im.attribution)} ${lic ? `(License: ${lic})` : ''} ${link}</li>`;
     })
     .join('\n');
-  return `<section class="credits"><h2>Image Credits</h2><p>The following images are used under open licenses:</p><ul>${items}</ul></section>`;
+  return sanitizeBookHtml(`<section class="credits"><h2>Image Credits</h2><p>The following images are used under open licenses:</p><ul>${items}</ul></section>`);
 }
 
 /**
@@ -181,6 +182,7 @@ function bookToHtml(book, opts = {}) {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none';" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${title}</title>
 <style>${BOOK_CSS}${cssForBand(book.ageBand)}${opts.extraCss || ''}</style>

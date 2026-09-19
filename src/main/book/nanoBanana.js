@@ -1,6 +1,6 @@
 'use strict';
 
-const https = require('https');
+const { requestBuffer } = require('../http');
 
 /**
  * Google "Nano Banana" image generation via the Gemini API.
@@ -32,34 +32,12 @@ function modelLabel(modelId) {
   return m ? m.label : modelId;
 }
 
-function postJson(path, apiKey, body, signal) {
-  return new Promise((resolve, reject) => {
-    if (signal && signal.aborted) return reject(new Error('Aborted before start'));
-    const payload = Buffer.from(JSON.stringify(body));
-    const req = https.request(
-      {
-        host: HOST,
-        path,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': payload.length,
-          'x-goog-api-key': apiKey,
-        },
-        timeout: 120000,
-      },
-      (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
-      }
-    );
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(new Error('Image request timed out')); });
-    if (signal) signal.addEventListener('abort', () => req.destroy(new Error('Aborted')), { once: true });
-    req.write(payload);
-    req.end();
-  });
+async function postJson(path, apiKey, body, signal) {
+  const payload = Buffer.from(JSON.stringify(body));
+  const result = await requestBuffer({ host: HOST, path, method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length, 'x-goog-api-key': apiKey },
+  }, { body: payload, signal });
+  return { status: result.status, body: result.buffer.toString('utf8') };
 }
 
 /** Turn an API error body into a friendly message. */
@@ -113,7 +91,7 @@ async function generateImage(opts = {}) {
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
   };
 
-  const { status, body: text } = await postJson(`/${API_VERSION}/models/${model}:generateContent`, apiKey, body, opts.signal);
+  const { status, body: text } = await postJson(`/${API_VERSION}/models/${encodeURIComponent(model)}:generateContent`, apiKey, body, opts.signal);
   if (status !== 200) throw new Error(describeError(status, text));
 
   let json;
@@ -124,9 +102,14 @@ async function generateImage(opts = {}) {
   return { ...img, ext };
 }
 
-/** Lightweight key check: try a tiny generation; resolve {ok} or throw. */
+/** Check model access without generating a billable image. */
 async function verifyKey(apiKey, model) {
-  await generateImage({ apiKey, model: model || DEFAULT_IMAGE_MODEL, prompt: 'A small flat-style smiling sun icon, minimal.', size: '512' });
+  if (!apiKey || !apiKey.trim()) throw new Error('Add a Gemini API key first.');
+  const { status, buffer } = await requestBuffer({ host: HOST,
+    path: `/${API_VERSION}/models/${encodeURIComponent(model || DEFAULT_IMAGE_MODEL)}`,
+    method: 'GET', headers: { 'x-goog-api-key': apiKey.trim() },
+  }, { timeoutMs: 30000 });
+  if (status !== 200) throw new Error(describeError(status, buffer.toString('utf8')));
   return { ok: true };
 }
 

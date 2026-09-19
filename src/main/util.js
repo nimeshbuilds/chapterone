@@ -9,7 +9,9 @@ function safeFilename(name, fallback = 'book') {
     .replace(/_+/g, '_')
     .replace(/^[._-]+|[._-]+$/g, '')
     .slice(0, 80);
-  return cleaned || fallback;
+  const result = cleaned || fallback;
+  // These device names are reserved even when followed by an extension.
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(result) ? `_${result}` : result;
 }
 
 module.exports = { safeFilename };

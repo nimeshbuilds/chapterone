@@ -1,6 +1,7 @@
 'use strict';
 
 const https = require('https');
+const { requestBuffer } = require('../http');
 const { enforceMinWords } = require('./spawn');
 
 const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest'; // alias → newest Flash the key can access
@@ -10,14 +11,9 @@ const HOST = 'generativelanguage.googleapis.com';
  * Adapter for Google's Gemini, talking to the **Gemini REST API directly** with
  * a Gemini API key.
  *
- * Why not the Gemini CLI? Google retired the CLI's free "Code Assist for
- * individuals" OAuth login, and the CLI now refuses to run even with
- * GEMINI_API_KEY set (it still forces the dead OAuth and throws
- * IneligibleTierError). So we bypass the CLI entirely and call
- * generativelanguage.googleapis.com ourselves — the same approach used for
- * Nano Banana images. Billing is per-token, so the model defaults to a cheap
- * Flash, and we use the "-latest" aliases so the model always resolves to the
- * newest one the key is entitled to.
+ * ChapterOne uses the API integration rather than the separate Gemini CLI.
+ * Google login is still supported by Gemini CLI; it is not used here.
+ * API usage is billed separately under the user's Google account.
  */
 class GeminiAdapter {
   constructor(config = {}) {
@@ -44,22 +40,13 @@ class GeminiAdapter {
       : { valid: false, detail: 'Not a model your key can use.' };
   }
 
-  _listModels() {
-    return new Promise((resolve) => {
-      const req = https.request({ host: HOST, path: `/v1beta/models?key=${encodeURIComponent(this.apiKey)}&pageSize=200`, method: 'GET' }, (res) => {
-        let body = '';
-        res.on('data', (c) => { body += c; });
-        res.on('end', () => {
-          try {
-            const j = JSON.parse(body);
-            resolve((j.models || []).map((m) => String(m.name || '').replace(/^models\//, '')));
-          } catch (_) { resolve([]); }
-        });
-      });
-      req.on('error', () => resolve([]));
-      req.setTimeout(15000, () => req.destroy());
-      req.end();
-    });
+  async _listModels() {
+    const { status, buffer } = await requestBuffer({ host: HOST, path: '/v1beta/models?pageSize=1000',
+      method: 'GET', headers: { 'x-goog-api-key': this.apiKey },
+    }, { timeoutMs: 15000 });
+    if (status !== 200) throw new Error(describeError(status, buffer.toString('utf8'), this.model));
+    const json = JSON.parse(buffer.toString('utf8'));
+    return (json.models || []).map((m) => String(m.name || '').replace(/^models\//, ''));
   }
 
   async checkAuth() {
@@ -67,8 +54,8 @@ class GeminiAdapter {
       return { ok: false, detail: 'Add a Gemini API key (aistudio.google.com/apikey) in Settings.' };
     }
     try {
-      const text = await this.complete('Reply with exactly the word: READY', { timeoutMs: 60000 });
-      return { ok: text.trim().length > 0, detail: text.trim().length ? 'Connected (Gemini API key)' : 'The API returned no text.' };
+      await this._listModels();
+      return { ok: true, detail: 'Connected (Gemini API key; no text generated)' };
     } catch (err) {
       return { ok: false, detail: err.message };
     }
@@ -78,6 +65,7 @@ class GeminiAdapter {
     if (!this.apiKey) throw new Error('No Gemini API key set. Add one in Settings.');
     const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }] };
     if (opts.system) body.systemInstruction = { parts: [{ text: opts.system }] };
+    if (opts.research) body.tools = [{ google_search: {} }];
 
     const out = (await this._stream(body, opts)).trim();
     enforceMinWords(out, opts); // throws on too-short → lets the chain fall back
@@ -90,7 +78,7 @@ class GeminiAdapter {
     const payload = Buffer.from(JSON.stringify(body));
     return new Promise((resolve, reject) => {
       const req = https.request({
-        host: HOST, path, method: 'POST',
+        host: HOST, path, method: 'POST', signal: opts.signal,
         headers: { 'x-goog-api-key': this.apiKey, 'Content-Type': 'application/json', 'Content-Length': payload.length },
       }, (res) => {
         // If the peer drops the socket mid-body (network blip, proxy reset),
@@ -108,10 +96,11 @@ class GeminiAdapter {
           res.on('end', () => reject(new Error(describeError(res.statusCode, errBody, this.model))));
           return;
         }
+        res.setEncoding('utf8');
         let buf = '';
         let full = '';
         res.on('data', (chunk) => {
-          buf += chunk.toString('utf8');
+          buf += chunk;
           let nl;
           while ((nl = buf.indexOf('\n')) >= 0) {
             const line = buf.slice(0, nl).trim();
@@ -122,7 +111,7 @@ class GeminiAdapter {
             try {
               const j = JSON.parse(data);
               const parts = ((((j.candidates || [])[0] || {}).content) || {}).parts || [];
-              const t = parts.map((p) => p.text || '').join('');
+              const t = parts.filter((p) => !p.thought).map((p) => p.text || '').join('');
               if (t) { full += t; if (opts.onStdout) opts.onStdout(t); }
             } catch (_) { /* ignore keep-alive / partial lines */ }
           }
@@ -131,10 +120,6 @@ class GeminiAdapter {
       });
       req.on('error', reject);
       if (opts.timeoutMs) req.setTimeout(opts.timeoutMs, () => req.destroy(new Error('Gemini request timed out')));
-      if (opts.signal) {
-        if (opts.signal.aborted) req.destroy(new Error('Aborted'));
-        else opts.signal.addEventListener('abort', () => req.destroy(new Error('Aborted')), { once: true });
-      }
       req.end(payload);
     });
   }

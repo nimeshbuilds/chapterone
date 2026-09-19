@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Release build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mac-universal
+            os: macos-15
+            build: npm run dist:mac -- --publish never
+            app: release/mac-universal/ChapterOne.app/Contents/Resources/app.asar
+          - name: windows-x64
+            os: windows-latest
+            build: npm run dist:win:x64 -- --publish never
+            app: release/win-unpacked/resources/app.asar
+          - name: windows-arm64
+            os: windows-11-arm
+            build: npm run dist:win:arm64 -- --publish never
+            app: release/win-arm64-unpacked/resources/app.asar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate release version
+        run: node scripts/release-check.cjs
+      - run: npm ci
+      - run: npm run verify
+      - run: npm run test:smoke
+      - name: Build and sign
+        run: ${{ matrix.build }}
+        env:
+          CHAPTERONE_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Smoke test packaged application code
+        run: npm run test:smoke -- --app-root=${{ matrix.app }}
+      - name: Verify macOS signature and notarization
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          codesign --verify --deep --strict --verbose=2 release/mac-universal/ChapterOne.app
+          spctl --assess --type execute --verbose=2 release/mac-universal/ChapterOne.app
+          xcrun stapler validate release/mac-universal/ChapterOne.app
+          for dmg in release/*.dmg; do xcrun stapler staple "$dmg"; xcrun stapler validate "$dmg"; done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+
+  draft:
+    name: Assemble draft release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Check asset completeness and generate checksums
+        run: node scripts/release-check.cjs --assets
+      - name: Create draft with every installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release/*.dmg release/*.zip release/*.exe release/SHA256SUMS.txt --verify-tag --draft --title "ChapterOne $RELEASE_TAG" --notes-file .github/RELEASE_NOTES.md

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { configureOfflineSession } = require('../security');
 
 /** Read width/height from an SVG's viewBox (or width/height attrs). */
 function svgSize(svg) {
@@ -59,17 +60,14 @@ function makeWindow() {
   const s = session.fromPartition('art-rasterizer');
   if (!s._chapterOneBlocked) {
     s._chapterOneBlocked = true;
-    s.webRequest.onBeforeRequest((details, callback) => {
-      const ok = /^(data|file|about|blob|chrome):/i.test(details.url);
-      callback({ cancel: !ok });
-    });
+    configureOfflineSession(s);
   }
   return new BrowserWindow({
     show: false,
     width: 16,
     height: 16,
     useContentSize: true,
-    webPreferences: { offscreen: true, javascript: false, session: s },
+    webPreferences: { offscreen: true, javascript: false, sandbox: true, nodeIntegration: false, session: s },
   });
 }
 

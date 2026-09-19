@@ -1,7 +1,7 @@
 {
   "name": "chapterone",
-  "version": "0.1.0",
-  "description": "ChapterOne — Your Personal Book Writer. Turn one idea into a finished book with Claude Code, Codex, Grok (your subscriptions) or Gemini (API key): planned, research-grounded, written, illustrated with AI art, narrated, and delivered to Kindle, EPUB, PDF, DOCX, or the web.",
+  "version": "0.2.0",
+  "description": "ChapterOne \u2014 Your Personal Book Writer. Turn one idea into a finished book with Claude Code, Codex, Grok (your subscriptions) or Gemini (API key): planned, research-grounded, written, illustrated with AI art, narrated, and delivered to Kindle, EPUB, PDF, DOCX, or the web.",
   "author": {
     "name": "Modulagent"
   },
@@ -31,7 +31,9 @@
     "writing",
     "publishing",
     "kids-books",
-    "macos"
+    "macos",
+    "windows",
+    "arm64"
   ],
   "main": "src/main/main.js",
   "scripts": {
@@ -45,26 +47,35 @@
     "dist:mac:arm64": "electron-builder --mac --arm64 --config electron-builder.config.js",
     "dist:mac:x64": "electron-builder --mac --x64 --config electron-builder.config.js",
     "dist:win": "electron-builder --win --x64 --arm64 --config electron-builder.config.js",
-    "dist:all": "npm run dist:mac && npm run dist:win"
+    "dist:all": "npm run dist:mac && npm run dist:win",
+    "check": "node scripts/check.js",
+    "test:smoke": "electron scripts/smoke.cjs",
+    "verify": "npm run check && npm test && npm audit --audit-level=high",
+    "dist:win:x64": "electron-builder --win --x64 --config electron-builder.config.js",
+    "dist:win:arm64": "electron-builder --win --arm64 --config electron-builder.config.js"
   },
   "dependencies": {
-    "archiver": "^6.0.1",
+    "archiver": "7.0.1",
     "marked": "^4.3.0",
-    "nodemailer": "^9.0.1"
+    "nodemailer": "10.0.10",
+    "sanitize-html": "2.17.7"
   },
   "devDependencies": {
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "44.4.3",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.modulagent.chapterone",
     "productName": "ChapterOne",
-    "copyright": "Copyright © 2026 Modulagent",
+    "copyright": "Copyright \u00a9 2026 Modulagent",
     "files": [
       "src/**/*",
       "assets/**/*",
       "!**/*.test.js",
-      "!**/__tests__/**"
+      "!**/__tests__/**",
+      "LICENSE",
+      "README.md",
+      "SECURITY.md"
     ],
     "directories": {
       "buildResources": "build",
@@ -82,7 +93,9 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "ChapterOne records short voice samples so you can narrate your books in your own cloned voice."
-      }
+      },
+      "minimumSystemVersion": "13.0.0",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     },
     "dmg": {
       "title": "${productName} ${version}",
@@ -109,7 +122,8 @@
             "arm64"
           ]
         }
-      ]
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -117,13 +131,25 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ChapterOne"
+      "shortcutName": "ChapterOne",
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "target": [
         "AppImage"
       ],
       "category": "Office"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "npandeya",
+        "repo": "bookwriter",
+        "releaseType": "draft"
+      }
+    ]
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

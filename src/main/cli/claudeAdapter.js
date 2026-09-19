@@ -47,6 +47,8 @@ class ClaudeAdapter {
     const args = ['-p', '--output-format', 'text'];
     if (this.model) args.push('--model', this.model);
 
+    // --allowedTools only pre-approves tools; --tools actually limits the set.
+    args.push('--tools', opts.research ? 'WebSearch,WebFetch' : '', '--strict-mcp-config');
     if (opts.research) {
       // Allow only the read-only web tools — never file edits or shell.
       args.push('--allowedTools', 'WebSearch,WebFetch');
@@ -78,7 +80,7 @@ class ClaudeAdapter {
       signal: opts.signal,
       onStdout: opts.onStdout,
     });
-    if (code !== 0 && !stdout.trim()) {
+    if (code !== 0) {
       throw new Error(
         `Claude CLI exited with code ${code}: ${stderr.trim() || 'no output'}`
       );

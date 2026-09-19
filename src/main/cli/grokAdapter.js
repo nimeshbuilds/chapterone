@@ -110,6 +110,9 @@ class GrokAdapter {
   buildArgs(prompt, opts = {}) {
     // `-p/--single` = headless single prompt; plain output is clean assistant text.
     const args = ['--no-auto-update', '--output-format', 'plain'];
+    args.push('--tools', opts.ground ? 'WebSearch,WebFetch' : '',
+      '--deny', 'Bash', '--deny', 'Edit', '--deny', 'Read', '--deny', 'Grep', '--deny', 'MCPTool',
+      '--no-subagents', '--no-memory');
     if (this.model) args.push('--model', this.model);
     // grok-build runs web search as a slow AGENTIC multi-search loop (minutes per
     // call). So we enable search ONLY for explicit grounding calls (opts.ground —
@@ -149,7 +152,7 @@ class GrokAdapter {
       signal: opts.signal,
       onStdout: opts.onStdout,
     });
-    if (code !== 0 && !stdout.trim()) {
+    if (code !== 0) {
       throw new Error(`Grok CLI exited with code ${code}: ${stderr.trim() || 'no output'}`);
     }
     const out = this.extractFinal(stdout).trim();

@@ -110,6 +110,8 @@ function run(command, args = [], opts = {}) {
         env: r.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
+        windowsHide: true,
+        detached: process.platform !== 'win32',
       });
     } catch (err) {
       reject(err);
@@ -134,8 +136,10 @@ function run(command, args = [], opts = {}) {
         try { execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {}); } catch (_) { /* ignore */ }
         return;
       }
-      try { child.kill('SIGTERM'); } catch (_) { /* ignore */ }
-      setTimeout(() => { try { child.kill('SIGKILL'); } catch (_) { /* ignore */ } }, 2000);
+      try { process.kill(-child.pid, 'SIGTERM'); } catch (_) { /* already exited */ }
+      const forceKill = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch (_) { /* already exited */ } }, 2000);
+      forceKill.unref();
+      child.once('close', () => clearTimeout(forceKill));
     };
 
     const onAbort = () => {
@@ -208,7 +212,7 @@ async function probeVersion(command, versionArgs = ['--version'], timeoutMs = 80
   try {
     const { code, stdout, stderr } = await run(command, versionArgs, { timeoutMs });
     const out = (stdout || stderr || '').trim();
-    if (code === 0 || out) {
+    if (code === 0) {
       return { found: true, version: out.split('\n')[0] || null, error: null };
     }
     return { found: false, version: null, error: out || `exit ${code}` };

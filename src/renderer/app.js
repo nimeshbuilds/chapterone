@@ -251,7 +251,7 @@ async function refreshPrereq() {
     banner.innerHTML = '';
     const msg = others.length
       ? `${name} isn’t set up. Sign in below, or use an engine you already have:`
-      : `No AI engine is ready yet. Install any one of Claude Code, Codex, Grok, or Gemini and sign in with your own subscription — ChapterOne uses whichever you pick.`;
+      : `No AI engine is ready yet. Install and sign in to Claude Code, Codex, or Grok, or add a Gemini API key in Settings — ChapterOne uses whichever you pick.`;
     banner.append(h('span', { class: 'grow' }, `⚠️ ${msg}`));
     for (const id of others) {
       banner.append(h('button', { class: 'btn btn-gold btn-sm', onClick: () => switchProvider(id) }, `Use ${providerLabel(id)}`));
@@ -421,7 +421,7 @@ function chainBuilder() {
     wrap.append(row);
   });
 
-  // Gemini has no subscription login (Google retired it) — make that explicit.
+  // This Gemini integration uses an API key — make that explicit.
   if (chain.includes('gemini')) {
     const set = hasImageKey();
     wrap.append(set
@@ -541,7 +541,7 @@ async function switchProvider(p) {
 function openAuthModal(provider) {
   const name = providerLabel(provider);
 
-  // Gemini no longer uses a CLI/OAuth login (Google retired it). It runs on a
+  // This Gemini integration uses the REST API. It runs on a
   // Gemini API key, so route the user to the key instead of opening a Terminal.
   if (provider === 'gemini') {
     const s = state.settings || {};
@@ -550,7 +550,7 @@ function openAuthModal(provider) {
       h('div', { class: 'modal', style: 'max-width:480px' },
         h('h2', { style: 'margin:0 0 6px' }, 'Connect Gemini'),
         h('p', { class: 'hint', style: 'margin-bottom:10px' },
-          'Google retired the Gemini CLI’s individual sign-in, so Gemini now runs on a Gemini API key (billed per token — its default model is the cheap Flash).'),
+          'ChapterOne uses the Gemini API with your API key. Text and image generation are billed by Google separately from CLI subscriptions.'),
         h('p', { class: 'hint', style: 'margin-bottom:14px' },
           hasKey ? '✅ A Gemini API key is set, so Gemini is ready to use.'
                  : 'Get a key at aistudio.google.com/apikey, then paste it into the Gemini API key field in Settings.'),
@@ -2091,7 +2091,7 @@ function exportMenu(id) {
   menu.append(
     item('📕 EPUB', 'Reflowable ebook for Kindle/Apple Books/Kobo', () => api.exportBook(id, 'epub', true)),
     item('📄 PDF', 'A4 PDF for screens & printing', () => api.exportBook(id, 'pdf', true)),
-    item('🖨️ Print PDF (6×9)', 'KDP-ready trade-paperback interior', () => api.exportBook(id, 'pdf-print', true)),
+    item('🖨️ Print PDF (6×9)', '6×9 interior; review margins and layout before printing', () => api.exportBook(id, 'pdf-print', true)),
     item('📝 Word (.docx)', 'For human editors and beta readers', () => api.exportBook(id, 'docx', true)),
     item('🌐 Web page (.html)', 'A single file you can share with anyone', () => api.exportBook(id, 'html', true)),
     item('⬇︎ Markdown', 'The full manuscript as plain Markdown', () => api.exportBook(id, 'markdown', true)),
@@ -2265,7 +2265,7 @@ function renderSettings() {
 
   const engineCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'AI engines, models & fallback chain'),
-    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'ChapterOne drives your locally installed CLIs on your own subscriptions (Claude Code, Codex, Grok) — with “Use subscription” on, API-key env vars are stripped so billing always uses your plan login. Gemini is the exception: Google retired its CLI login, so it runs on your Gemini API key. Research uses each engine’s own web tools. Nothing is sent to any third-party server.'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'ChapterOne drives your locally installed CLIs on your own subscriptions (Claude Code, Codex, Grok) — with “Use subscription” on, API-key env vars are stripped so billing always uses your plan login. Gemini is the exception: This app connects to Gemini through its API with your Gemini API key. Research uses each engine’s own web tools. Prompts and manuscript context are sent to the providers in your chain. ChapterOne has no backend.'),
     engineBar(),
     h('div', { class: 'row', style: 'margin-top:16px' },
       h('label', { class: 'field' }, h('span', {}, 'Claude command'),
@@ -2278,7 +2278,7 @@ function renderSettings() {
         h('input', { id: 's-grok-cmd', value: s.grokCommand || 'grok' }))),
     statusRow('claude', 'Claude Code CLI'),
     statusRow('codex', 'Codex CLI'),
-    statusRow('gemini', 'Gemini CLI'),
+    statusRow('gemini', 'Gemini API'),
     statusRow('grok', 'Grok CLI'),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-ghost btn-sm', onClick: saveEngineCmds }, 'Save commands'),
@@ -2309,7 +2309,7 @@ function renderSettings() {
         h('input', { id: 's-smtp-pass', value: sm.pass || '', type: 'password' }))),
   ] : [
     h('p', { class: 'hint', style: 'margin:2px 0 4px' },
-      'No setup needed. When you send, ChapterOne exports the file and opens your Mac’s Mail app with it attached — you just press Send. Switch to SMTP above if you want fully automatic one-click sending.'),
+      'On macOS, ChapterOne opens a Mail draft with the file attached. On Windows, it opens the folder so you can attach the file in your mail app or upload it to Send to Kindle. Use SMTP for automatic delivery on either platform.'),
   ];
 
   const kindleCard = h('div', { class: 'card' },
@@ -2335,7 +2335,7 @@ function renderSettings() {
   const imageCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'Gemini API key · illustrations & Gemini engine'),
     h('p', { class: 'hint', style: 'margin-bottom:14px' },
-      'Your Gemini API key powers two optional features: Nano Banana illustrations, and the Gemini writing engine (Google retired the Gemini CLI’s individual login, so Gemini now runs on this key — billed per token, which is why its default model is the cheap Flash). One key from aistudio.google.com/apikey covers both. Stored locally on this Mac.'),
+      'Your Gemini API key powers two optional features: Nano Banana illustrations, and the Gemini writing engine (Gemini runs through the API in this app and is billed separately from CLI subscriptions). One key from aistudio.google.com/apikey covers both. Stored locally on this computer.'),
     h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'Gemini API key (engine + images)'),
         h('input', { id: 's-img-key', type: 'password', value: imgs.geminiApiKey || '', placeholder: 'AIza…' })),
@@ -2353,7 +2353,7 @@ function renderSettings() {
   const audioCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'Audiobook · ElevenLabs'),
     h('p', { class: 'hint', style: 'margin-bottom:14px' },
-      'Optional. Listen to any book narrated by a top-tier AI voice. Uses your ElevenLabs API key — audio only, stored locally on this Mac, separate from your CLI/text subscription and the image key. Get a key at elevenlabs.io. ElevenLabs bills per character; ChapterOne narrates a chapter only when you press 🎧 Listen, and caches it.'),
+      'Optional. Listen to any book narrated by a top-tier AI voice. Uses your ElevenLabs API key — audio only, stored locally on this computer, separate from your CLI/text subscription and the image key. Get a key at elevenlabs.io. ElevenLabs bills per character; ChapterOne narrates a chapter only when you press 🎧 Listen, and caches it.'),
     h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'ElevenLabs API key (audio-only)'),
         h('input', { id: 's-aud-key', type: 'password', value: aud.elevenApiKey || '', placeholder: 'sk_…' })),
@@ -2370,7 +2370,7 @@ function renderSettings() {
   const dangerCard = h('div', { class: 'card danger-card' },
     h('p', { class: 'section-title', style: 'color:var(--danger)' }, 'Danger zone'),
     h('p', { class: 'hint', style: 'margin-bottom:14px' },
-      'Permanently erase everything ChapterOne has stored on this Mac: every book and chapter, all generated covers and illustrations, all narrated audio, every export, and your saved settings and API keys. This cannot be undone.'),
+      'Permanently erase everything ChapterOne has stored on this computer: every book and chapter, all generated covers and illustrations, all narrated audio, every export, and your saved settings and API keys. This cannot be undone.'),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-danger-solid btn-sm', onClick: () => clearAllDataModal() }, '🗑  Clear all my data')));
 
@@ -2390,7 +2390,7 @@ function clearAllDataModal() {
     h('div', { class: 'modal', style: 'max-width:500px' },
       h('h2', { style: 'margin:0 0 8px;color:var(--danger)' }, '⚠️  Erase ALL ChapterOne data?'),
       h('p', { class: 'hint', style: 'margin-bottom:10px' },
-        'This permanently deletes EVERY book, chapter, cover, illustration, audiobook file, export, and your saved settings and API keys on this Mac. There is no undo and no backup — anything not exported elsewhere is gone for good.'),
+        'This permanently deletes EVERY book, chapter, cover, illustration, audiobook file, export, and your saved settings and API keys on this computer. There is no undo and no backup — anything not exported elsewhere is gone for good.'),
       h('p', { class: 'hint', style: 'margin-bottom:14px;color:var(--text-dim)' },
         'Not affected: your CLI sign-ins, and any voices you already cloned on ElevenLabs (those live on their servers).'),
       h('label', { class: 'field' }, h('span', {}, `To confirm, type:  ${PHRASE}`), input),
@@ -2405,6 +2405,7 @@ function clearAllDataModal() {
     confirmBtn.textContent = 'Deleting…';
     try {
       await api.clearAllData();
+      localStorage.clear();
       overlay.remove();
       state.settings = await api.getSettings(); // back to fresh defaults
       state.authStatus = null;

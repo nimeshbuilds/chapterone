@@ -32,3 +32,19 @@ test('aborting a running child rejects with a clear cancellation (never a partia
     /cancel/i,
   );
 });
+
+test('Windows npm shims preserve spaces, Unicode and shell metacharacters in arguments', { skip: process.platform !== 'win32' }, async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chapterone space '));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, 'node_modules', 'fake-cli', 'cli.js');
+  fs.mkdirSync(path.dirname(entry), { recursive: true });
+  fs.writeFileSync(entry, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))');
+  fs.writeFileSync(path.join(dir, 'fake.cmd'), '@ECHO off\r\n"%_prog%" "%dp0%\\node_modules\\fake-cli\\cli.js" %*\r\n');
+  const args = ['a & b | c', 'quotes " here', 'line one\nline two', 'नमस्ते 📚'];
+  const result = await run('fake', args, { env: { PATH: dir, PATHEXT: '.EXE;.CMD' } });
+  assert.equal(result.code, 0);
+  assert.deepStrictEqual(JSON.parse(result.stdout), args);
+});

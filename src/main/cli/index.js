@@ -28,7 +28,7 @@ function buildAdapter(providerId, settings = {}) {
 
 /** Resolve the ordered list of provider ids for the fallback chain. */
 function resolveChain(settings = {}) {
-  const primary = settings.provider || 'claude';
+  const primary = PROVIDER_IDS.includes(settings.provider) ? settings.provider : 'claude';
   let chain = Array.isArray(settings.chain) && settings.chain.length ? settings.chain.slice() : [primary];
   // Ensure the primary is first, de-dupe, and keep only known providers.
   chain = chain.filter((p) => PROVIDER_IDS.includes(p));
@@ -44,9 +44,7 @@ function createEngine(settings = {}, overrides = {}) {
   const primary = settings.provider || 'claude';
   const s = { ...settings };
   if (overrides.model != null) {
-    if (primary === 'codex') s.codexModel = overrides.model;
-    else if (primary === 'gemini') s.geminiModel = overrides.model;
-    else s.claudeModel = overrides.model;
+    s[`${primary}Model`] = overrides.model;
   }
   return buildAdapter(primary, s);
 }

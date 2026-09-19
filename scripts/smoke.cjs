@@ -1,0 +1,85 @@
+'use strict';
+
+// Runs the real main process, preload, renderer and exports with a synthetic
+// provider and an isolated userData directory. No accounts or API calls.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const assert = require('assert/strict');
+const { app, BrowserWindow } = require('electron');
+const rootArg = process.argv.find((a) => a.startsWith('--app-root='));
+const root = rootArg ? path.resolve(rootArg.slice('--app-root='.length)) : path.join(__dirname, '..');
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'chapterone-smoke-'));
+app.setPath('userData', temp);
+app.setName('ChapterOne Smoke');
+app.disableHardwareAcceleration();
+
+const cli = require(path.join(root, 'src/main/cli'));
+cli.checkPrerequisites = async () => ({ node: { found: true }, npm: { found: false },
+  claude: { found: false }, codex: { found: false }, gemini: { found: false }, grok: { found: false }, chain: ['claude'] });
+const engine = { id: 'smoke', model: '', async complete(prompt) {
+  if (/market-ready book/.test(prompt)) return JSON.stringify({ title: 'Smoke Test Book', author: 'Test Author',
+    premise: 'A test book.', chapters: [{ title: 'Opening', summary: 'A beginning.' }] });
+  if (/WRITE CHAPTER/.test(prompt)) return '# Opening\n\n' + 'The river carried the little boat home. '.repeat(40);
+  return '{}';
+} };
+cli.createEngine = cli.createChainEngine = () => engine;
+
+const errors = [];
+const windowReady = new Promise((resolve) => app.once('browser-window-created', (_event, win) => {
+  win.webContents.on('console-message', (_event, details, legacyMessage) => {
+    const level = typeof details === 'object' ? details.level : details;
+    if (level === 'error' || level === 3) errors.push(typeof details === 'object' ? details.message : legacyMessage);
+  });
+  win.webContents.once('did-finish-load', () => resolve(win));
+}));
+const deadline = setTimeout(() => { console.error('Smoke test timed out.'); app.exit(1); }, 90000);
+require(path.join(root, 'src/main/main.js'));
+
+(async () => {
+  const win = await windowReady;
+  const js = (source) => win.webContents.executeJavaScript(source);
+  assert.equal(await js('typeof window.api.getSettings'), 'function');
+  assert.equal(win.webContents.getLastWebPreferences().sandbox, true);
+  await js('window.api.saveSettings({research:false, polish:false})');
+  const result = await js(`window.api.generate({request:'A river adventure',research:false,polish:false,imageMode:'off'}, {}, 'smoke-job')`);
+  assert.ok(result.id);
+  const book = await js(`window.api.getBook(${JSON.stringify(result.id)})`);
+  assert.equal(book.status, 'complete');
+  assert.equal(book.chapters.length, 1);
+  for (const view of ['settings', 'kids', 'create', 'library']) {
+    await js(`document.querySelector('[data-view="${view}"]').click()`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(await js('document.querySelector("#view-root").textContent.length > 50'));
+  }
+  for (const format of ['epub', 'docx', 'html', 'markdown', 'pdf', 'pdf-print']) {
+    const out = await js(`window.api.exportBook(${JSON.stringify(result.id)}, ${JSON.stringify(format)}, false)`);
+    assert.ok(fs.statSync(out.path).size > 100, `${format} export should contain data`);
+    if (format === 'pdf-print') {
+      assert.match(fs.readFileSync(out.path).toString('latin1'), /\/MediaBox\s*\[\s*0\s+0\s+432\s+648\s*\]/);
+    }
+  }
+  const raster = require(path.join(root, 'src/main/export/rasterize'));
+  const png = await raster.rasterizeSvg('<svg width="100" height="100"><rect width="100" height="100" fill="red"/></svg>');
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  await assert.rejects(js('window.api.openPath("/tmp/unapproved.exe")'), /exported document/);
+  const untrusted = new BrowserWindow({ show: false, webPreferences: {
+    preload: path.join(root, 'src/main/preload.js'), contextIsolation: true, sandbox: true,
+  } });
+  await untrusted.loadURL('data:text/html,<h1>Untrusted document</h1>');
+  await assert.rejects(untrusted.webContents.executeJavaScript('window.api.getSettings()'), /Untrusted IPC/);
+  untrusted.destroy();
+  const artifacts = path.join(__dirname, '..', 'artifacts');
+  fs.mkdirSync(artifacts, { recursive: true });
+  fs.writeFileSync(path.join(artifacts, `smoke-${process.platform}-${process.arch}.png`), (await win.webContents.capturePage()).toPNG());
+  assert.deepEqual(errors, [], 'Renderer should not report errors');
+  console.log(`Electron smoke passed: ${process.platform}/${process.arch}; UI, IPC, generation, six exports, PDF dimensions, rasterization.`);
+})().then(() => finish(0), (error) => { console.error(error); finish(1); });
+
+function finish(code) {
+  clearTimeout(deadline);
+  for (const win of BrowserWindow.getAllWindows()) win.destroy();
+  // Electron can hold cache files open until exit on Windows; cleanup is best-effort.
+  try { fs.rmSync(temp, { recursive: true, force: true }); } catch (_) { /* OS temp directory */ }
+  setTimeout(() => app.exit(code), 100);
+}
