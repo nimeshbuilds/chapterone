@@ -15,11 +15,15 @@ app.setName('ChapterOne Smoke');
 app.disableHardwareAcceleration();
 
 const cli = require(path.join(root, 'src/main/cli'));
+let providerReady = false;
 cli.checkPrerequisites = async () => ({ node: { found: true }, npm: { found: false },
-  claude: { found: false }, codex: { found: false }, gemini: { found: false }, grok: { found: false }, chain: ['claude'] });
-const engine = { id: 'smoke', model: '', async complete(prompt) {
+  claude: { found: providerReady }, codex: { found: false }, gemini: { found: false }, grok: { found: false }, chain: ['claude'] });
+const engine = { id: 'smoke', model: '', async checkAuth() { return { ok: true, detail: 'Offline test provider' }; }, async complete(prompt) {
+  if (/A reader has asked for a book/.test(prompt)) return JSON.stringify({ needsClarification: true,
+    questions: [{ id: 'setting', question: 'Where does the story begin?', suggestions: ['By the river', 'At home'] }] });
   if (/market-ready book/.test(prompt)) return JSON.stringify({ title: 'Smoke Test Book', author: 'Test Author',
-    premise: 'A test book.', chapters: [{ title: 'Opening', summary: 'A beginning.' }] });
+    premise: 'A test book.', chapters: [{ title: 'Opening', summary: 'A beginning.' },
+      ...(providerReady ? [{ title: 'Home Again', summary: 'The boat returns.' }] : [])] });
   if (/WRITE CHAPTER/.test(prompt)) return '# Opening\n\n' + 'The river carried the little boat home. '.repeat(40);
   return '{}';
 } };
@@ -33,7 +37,7 @@ const windowReady = new Promise((resolve) => app.once('browser-window-created', 
   });
   win.webContents.once('did-finish-load', () => resolve(win));
 }));
-const deadline = setTimeout(() => { console.error('Smoke test timed out.'); app.exit(1); }, 90000);
+const deadline = setTimeout(() => { console.error('Smoke test timed out.'); app.exit(1); }, 180000);
 require(path.join(root, 'src/main/main.js'));
 
 (async () => {
@@ -70,6 +74,15 @@ require(path.join(root, 'src/main/main.js'));
   await untrusted.loadURL('data:text/html,<h1>Untrusted document</h1>');
   await assert.rejects(untrusted.webContents.executeJavaScript('window.api.getSettings()'), /Untrusted IPC/);
   untrusted.destroy();
+  await require('./ui-checks.cjs')(win, result.id, () => { providerReady = true; }, () => {
+    const { Store } = require(path.join(root, 'src/main/store'));
+    const fixtureStore = new Store(temp);
+    const original = fixtureStore.getBook(result.id);
+    fixtureStore.saveBook({ ...original, id: 'ui-cover-fixture', title: 'The Moonlit Garden', isKids: true, ageBand: '3-5',
+      coverSvg: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="#233b49"/><circle cx="440" cy="200" r="80" fill="#f0d591"/><path d="M0 620 Q300 420 600 660 L600 900H0Z" fill="#386653"/><text x="60" y="110" fill="#fff" font-size="44">The Moonlit Garden</text><text x="60" y="830" fill="#fff" font-size="26">Test Author</text></svg>' });
+    fixtureStore.saveBook({ ...original, id: 'ui-title-fixture', title: 'A Field Guide to Finding Your Way Home When Every Road Leads Somewhere Unexpected', status: 'paused',
+      pausedReason: { detail: 'Synthetic paused draft for UI checks.' }, coverSvg: null });
+  });
   const artifacts = path.join(__dirname, '..', 'artifacts');
   fs.mkdirSync(artifacts, { recursive: true });
   fs.writeFileSync(path.join(artifacts, `smoke-${process.platform}-${process.arch}.png`), (await win.webContents.capturePage()).toPNG());

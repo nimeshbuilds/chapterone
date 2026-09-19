@@ -11,7 +11,7 @@ try {
   const selfTest = process.argv.includes('--self-test');
   const args = selfTest ? ['--fail-smoke'] : process.argv.slice(2);
   const child = spawnSync(require('electron'), [path.join(__dirname, 'smoke.cjs'), ...args], {
-    stdio: 'inherit', timeout: 120000,
+    stdio: 'inherit', timeout: 210000,
     env: { ...process.env, CHAPTERONE_SMOKE_RESULT: report },
   });
   if (child.error) throw child.error;

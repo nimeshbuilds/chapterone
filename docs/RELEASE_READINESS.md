@@ -28,6 +28,7 @@ The app is deliberately small: CommonJS main-process modules, a vanilla JavaScri
 | CLI nonzero exits/Windows command paths and provider stream failures were insufficiently handled | Adapter, quoting, npm-shim, native PATH, UTF-8 and stream truncation regressions |
 | Connection checks could spend image/text credits | Metadata GET requests for Gemini/Nano Banana, with explicit inconclusive model-alias results |
 | Windows packages were advertised but missing from releases | Native x64/ARM64 builds and packaged smoke tests; all-platform draft assembly with checksums |
+| Reader controls were squeezed beside the sidebar; briefs were lost on navigation; dialogs lacked keyboard handling | Responsive reader/library/forms, preserved briefs, native modal dialogs, keyboard controls, and 11 real-UI interaction groups; see [UI testing](UI_TESTING.md) |
 | Documentation implied offline AI, retired Gemini login, free art and print-platform compliance | README, security guide, setup UI and release notes corrected |
 
 ## Automated evidence
@@ -53,7 +54,7 @@ Native CI proves that source and packaged application code runs on those hosted 
 | Priority | Feature | Why / recommended scope |
 | --- | --- | --- |
 | Next | Portable library backup and restore | Export books/media plus a manifest, validate imports and preserve IDs safely. Exclude API keys; OS-encrypted settings cannot migrate between accounts. Current manuscript exports are not a library backup. |
-| Next | Accessibility pass | Keyboard focus, dialog semantics, reader navigation, screen-reader labels, contrast and reduced motion need hands-on validation. This matters more than adding another generation mode. |
+| Next | Assistive-technology acceptance | Keyboard/dialog/reader/reduced-motion fixes are covered by UI automation. VoiceOver/NVDA, full contrast review, high-contrast mode and 200% zoom still need hands-on validation. See [coverage and limits](UI_TESTING.md). |
 | Next | Redacted diagnostics and provider compatibility checks | Make CLI path/version and recoverable error reporting understandable without exposing prompts, keys or user paths. Keep reporting opt-in and previewable. |
 | Later | Better generation checkpoints and usage estimates | Completed prose survives, but cancelled art/research work can still be repeated. Persist optional-work checkpoints and clarify per-provider cost estimates. |
 | Later | Signed update delivery | There is no auto-updater; users currently download releases manually. Add updates only after signing, channels and rollback behavior are established. |

@@ -31,12 +31,35 @@ function h(tag, attrs = {}, ...kids) {
     if (kid == null || kid === false) continue;
     e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
   }
+  if ((tag === 'button' || tag === 'select') && attrs.title && !attrs['aria-label']) e.setAttribute('aria-label', attrs.title);
   return e;
 }
-function mount(node) { const r = $('#view-root'); r.innerHTML = ''; r.append(node); }
+function mount(node) {
+  const r = $('#view-root'); r.replaceChildren(node);
+}
+let dialogId = 0;
+function presentModal(overlay, dismiss = () => closeModal(overlay)) {
+  const heading = overlay.querySelector('h2');
+  if (heading) {
+    heading.id = `dialog-title-${++dialogId}`;
+    overlay.setAttribute('aria-labelledby', heading.id);
+  }
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.addEventListener('cancel', (event) => { event.preventDefault(); dismiss(); });
+  // Native modal dialogs keep the rest of the app inert and restore focus to
+  // their opener. Escape uses each dialog's own cleanup/cancellation path.
+  document.body.append(overlay);
+  overlay.showModal();
+}
+function closeModal(overlay) {
+  const notice = overlay.querySelector('#toast');
+  if (notice) document.body.append(notice);
+  overlay.close(); overlay.remove();
+}
 let toastTimer = null;
 function toast(msg, type = '') {
   const t = $('#toast');
+  (document.querySelector('dialog[open]') || document.body).append(t);
   t.textContent = msg;
   t.className = `toast ${type}`;
   clearTimeout(toastTimer);
@@ -53,8 +76,11 @@ function coverGradient(seed) {
   return `linear-gradient(150deg, hsl(${hue} 48% 34%), hsl(${(hue + 40) % 360} 58% 20%))`;
 }
 function setActiveNav(view) {
-  document.querySelectorAll('.nav-item').forEach((b) =>
-    b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('.nav-item').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === view);
+    if (b.dataset.view === view) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
 }
 async function updateSettings(partial) {
   state.settings = await api.saveSettings(partial);
@@ -173,6 +199,11 @@ function deviceSelect(kind, current, onChange, firstLabel) {
 
 // ---------- navigation ----------
 async function go(view, arg) {
+  if (state.view === 'create' && $('#f-request')) state.draftSpec = readSpec();
+  if (state.view === 'kids' && $('#k-request')) state.kidsDraft = readKidsSpec();
+  document.body.classList.toggle('reader-open', view === 'reader');
+  $('.content').scrollTop = 0;
+  if (state.readerMenuCleanup) { state.readerMenuCleanup(); state.readerMenuCleanup = null; }
   if (view !== 'reader' && state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
   if (view !== 'reader') state.readerLive = null; // stop refreshing the live-reading banner
   if (view !== 'reader' && state.readerAudioEl) {
@@ -250,26 +281,21 @@ async function refreshPrereq() {
       .filter((id) => id !== provider && state.prereq && state.prereq[id] && state.prereq[id].found);
     banner.innerHTML = '';
     const msg = others.length
-      ? `${name} isn’t set up. Sign in below, or use an engine you already have:`
-      : `No AI engine is ready yet. Install and sign in to Claude Code, Codex, or Grok, or add a Gemini API key in Settings — ChapterOne uses whichever you pick.`;
-    banner.append(h('span', { class: 'grow' }, `⚠️ ${msg}`));
+      ? `${name} isn’t set up. Choose an available engine or open Settings:`
+      : 'Connect an AI engine to start writing. Choose a provider in Settings.';
+    banner.append(h('span', { class: 'grow' }, msg));
     for (const id of others) {
       banner.append(h('button', { class: 'btn btn-gold btn-sm', onClick: () => switchProvider(id) }, `Use ${providerLabel(id)}`));
     }
-    const meta = providerMeta(provider);
     banner.append(
-      (meta.npmPackage && !isGemini) ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => openInstallModal(provider) }, `⬇ Install ${name}`) : null,
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(provider) }, isGemini ? '🔑 Add Gemini API key' : `🔑 Sign in to ${name}`),
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Settings'),
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: () => go('settings') }, 'Set up AI'),
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Hide until next check', onClick: () => banner.classList.add('hidden') }, '✕'));
     banner.classList.remove('hidden');
   }
 }
 async function recheck() {
   await refreshPrereq();
-  if (state.view === 'create') renderCreate();
-  if (state.view === 'settings') renderSettings();
-  refreshAuthStatus(); // background probe of sign-in state
+  await refreshAuthStatus();
 }
 /** Background probe of which installed CLIs are actually signed in. */
 async function refreshAuthStatus() {
@@ -281,8 +307,12 @@ async function refreshAuthStatus() {
   const a = document.activeElement;
   const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
   if (typing) return;
-  if (state.view === 'settings') renderSettings();
-  if (state.view === 'create') renderCreate();
+  document.querySelectorAll('.provider-status').forEach(row => {
+    row.replaceWith(providerStatusRow(row.dataset.provider, row.dataset.label));
+  });
+  // Update only the engine controls. A background result must not discard
+  // unsaved settings or a brief just because the user moved focus elsewhere.
+  renderEngineBarInPlace();
 }
 async function recheckAuth() {
   toast('Checking sign-in…');
@@ -314,12 +344,12 @@ function modelOptionsFor(provider) {
   const isCustom = !!current && !known.includes(current);
 
   const wrap = h('div', { class: 'model-pick' });
-  const sel = h('select', { id: `eng-model-${provider}`, class: 'model-select' });
+  const sel = h('select', { id: `eng-model-${provider}`, class: 'model-select', 'aria-label': `${providerLabel(provider)} model` });
   for (const m of list) sel.append(h('option', { value: m.id, selected: (!isCustom && m.id === current) ? 'selected' : false }, m.label));
   sel.append(h('option', { value: '__custom__', selected: isCustom ? 'selected' : false }, isCustom ? `Custom: ${current}` : 'Custom model…'));
 
   // Inline custom-model entry with live verification against the real provider.
-  const input = h('input', { class: 'model-custom-input', placeholder: 'type the exact model id…', value: isCustom ? current : '' });
+  const input = h('input', { class: 'model-custom-input', 'aria-label': `Custom ${providerLabel(provider)} model ID`, placeholder: 'type the exact model id…', value: isCustom ? current : '' });
   const chip = h('span', { class: 'model-verify' }, '');
   const customRow = h('div', { class: 'model-custom', style: isCustom ? '' : 'display:none' }, input, chip);
   const setChip = (cls, text) => { chip.className = 'model-verify ' + cls; chip.textContent = text; };
@@ -517,6 +547,17 @@ function engineBar() {
 function renderEngineBarInPlace() {
   const old = $('#engine-bar');
   if (old) old.replaceWith(engineBar());
+  const summary = $('.writing-options summary');
+  if (summary) summary.textContent = writingOptionsLabel();
+  const ready = state.prereq && state.prereq[state.settings.provider || 'claude']?.found;
+  for (const [id, label] of [['btn-clarify', 'Continue →'], ['btn-skip', 'Skip questions & write now'], ['btn-kids-go', 'Write the kids book']]) {
+    const button = document.getElementById(id);
+    if (button) { button.disabled = !ready; button.textContent = ready ? label : 'Connect an AI engine to write'; }
+  }
+}
+function writingOptionsLabel() { return `Writing options · ${providerLabel(state.settings.provider || 'claude')}`; }
+function writingOptions() {
+  return h('details', { class: 'writing-options card' }, h('summary', {}, writingOptionsLabel()), engineBar());
 }
 /** Set Fast / Pro / Default models on every engine in the current chain at once. */
 async function applyPreset(preset) {
@@ -546,7 +587,7 @@ function openAuthModal(provider) {
   if (provider === 'gemini') {
     const s = state.settings || {};
     const hasKey = !!((s.images && s.images.geminiApiKey) || s.geminiApiKey);
-    const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+    const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
       h('div', { class: 'modal', style: 'max-width:480px' },
         h('h2', { style: 'margin:0 0 6px' }, 'Connect Gemini'),
         h('p', { class: 'hint', style: 'margin-bottom:10px' },
@@ -555,9 +596,9 @@ function openAuthModal(provider) {
           hasKey ? '✅ A Gemini API key is set, so Gemini is ready to use.'
                  : 'Get a key at aistudio.google.com/apikey, then paste it into the Gemini API key field in Settings.'),
         h('div', { class: 'btn-row' },
-          h('button', { class: 'btn btn-gold btn-sm', onClick: () => { overlay.remove(); go('settings'); } }, hasKey ? 'Open Settings' : '🔑 Add key in Settings'),
-          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Close'))));
-    document.body.append(overlay);
+          h('button', { class: 'btn btn-gold btn-sm', onClick: () => { closeModal(overlay); go('settings'); } }, hasKey ? 'Open Settings' : '🔑 Add key in Settings'),
+          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Close'))));
+    presentModal(overlay);
     return;
   }
 
@@ -571,7 +612,7 @@ function openAuthModal(provider) {
   const cmdLine = h('pre', { class: 'auth-log' }, '');
   let poll = null;
   let done = false;
-  const close = () => { if (poll) clearInterval(poll); overlay.remove(); };
+  const close = () => { if (poll) clearInterval(poll); closeModal(overlay); };
 
   async function succeed() {
     if (done) return; done = true;
@@ -603,7 +644,7 @@ function openAuthModal(provider) {
   }, 10000);
 
   const recheckBtn = h('button', { class: 'btn btn-gold btn-sm', onClick: (e) => recheck(e.currentTarget) }, '✓ I’ve finished — re-check');
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
     h('div', { class: 'modal' },
       h('h2', { style: 'margin:0 0 6px' }, `Sign in to ${name}`),
       status,
@@ -613,7 +654,7 @@ function openAuthModal(provider) {
         recheckBtn,
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => api.startAuth(provider).catch(() => {}) }, '↺ Reopen Terminal'),
         h('button', { class: 'btn btn-ghost btn-sm', onClick: close }, 'Close'))));
-  document.body.append(overlay);
+  presentModal(overlay, close);
 
   api.startAuth(provider)
     .then((info) => {
@@ -639,8 +680,8 @@ function openInstallModal(provider) {
   const append = (t) => { log.textContent += t; log.scrollTop = log.scrollHeight; };
   const startBtn = h('button', { class: 'btn btn-primary btn-sm', onClick: run }, `⬇ Install ${label}`);
 
-  const close = () => { if (unsub) unsub(); overlay.remove(); };
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
+  const close = () => { if (unsub) unsub(); closeModal(overlay); };
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) close(); } },
     h('div', { class: 'modal' },
       h('h2', { style: 'margin:0 0 6px' }, `Install ${label}`),
       h('p', { class: 'hint' }, meta.npmPackage
@@ -650,7 +691,7 @@ function openInstallModal(provider) {
       h('div', { class: 'btn-row' }, startBtn,
         meta.docsUrl ? h('a', { href: meta.docsUrl, class: 'btn btn-ghost btn-sm' }, 'Install docs') : null,
         h('button', { class: 'btn btn-ghost btn-sm', onClick: close }, 'Close'))));
-  document.body.append(overlay);
+  presentModal(overlay, close);
 
   if (!npmOk) {
     append('npm was not found on your PATH.\nChapterOne installs CLIs with npm, so install Node.js (which bundles npm) from https://nodejs.org first, then reopen this.\n');
@@ -705,10 +746,9 @@ function fmtDate(iso) {
 function statusLabelFor(b) {
   return b.status === 'generating' ? 'Writing…' : (b.status === 'paused' ? 'Paused' : (b.status || 'draft'));
 }
-/** Status badge only when the book isn't finished — a completed book needs no chip. */
+/** Keep every library row's status explicit, including completed books. */
 function statusBadge(b) {
-  if (b.status === 'complete') return null;
-  return h('span', { class: `badge ${b.status}` }, statusLabelFor(b));
+  return h('span', { class: `badge ${b.status}` }, b.status === 'complete' ? 'Ready' : statusLabelFor(b));
 }
 /** Industry-standard audience/format badge (Picture Book · Ages 3–5, Adult · Fiction, …). */
 function classBadge(c, text) {
@@ -751,24 +791,35 @@ async function renderLibrary() {
   const view = libView();
   const head = h('div', { class: 'page-head' },
     h('h1', {}, 'Your Library'),
-    h('p', {}, 'Bestseller-grade books, written on demand and ready for Kindle.'));
+    h('p', {}, 'Your stories, drafts, and finished books in one place.'));
 
   const viewToggle = h('div', { class: 'seg view-toggle' },
-    h('button', { class: view === 'tiles' ? 'active' : '', title: 'Tiles', onClick: () => setLibView('tiles') }, '▦ Tiles'),
-    h('button', { class: view === 'list' ? 'active' : '', title: 'List', onClick: () => setLibView('list') }, '☰ List'));
+    h('button', { class: view === 'tiles' ? 'active' : '', 'aria-pressed': String(view === 'tiles'), title: 'Tiles', onClick: () => setLibView('tiles') }, '▦ Tiles'),
+    h('button', { class: view === 'list' ? 'active' : '', 'aria-pressed': String(view === 'list'), title: 'List', onClick: () => setLibView('list') }, '☰ List'));
 
   // Search-as-you-type over title/author/genre — a library of sequels grows fast.
-  const q = (state.libQuery || '').toLowerCase();
+  const q = (state.libQuery || '').trim().toLowerCase();
   const searchBox = h('input', {
-    class: 'lib-search', type: 'search', placeholder: '🔍 Search books…', value: state.libQuery || '',
+    class: 'lib-search', type: 'search', 'aria-label': 'Search books by title, author, or genre', placeholder: 'Search your library…', value: state.libQuery || '',
   });
-  searchBox.addEventListener('input', () => {
+  const resultCount = h('p', { class: 'library-count', role: 'status', 'aria-live': 'polite' });
+  const noResults = h('div', { class: 'empty search-empty hidden' },
+    h('h2', {}, 'No matching books'),
+    h('p', {}, 'Try a different title, author, or genre.'),
+    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { searchBox.value = ''; filterBooks(); searchBox.focus(); } }, 'Clear search'));
+  function filterBooks() {
     state.libQuery = searchBox.value;
-    const term = searchBox.value.toLowerCase();
+    const term = searchBox.value.trim().toLowerCase();
+    let count = 0;
     document.querySelectorAll('[data-book-search]').forEach((el) => {
-      el.style.display = (el.dataset.bookSearch || '').includes(term) ? '' : 'none';
+      const matches = (el.dataset.bookSearch || '').includes(term);
+      el.style.display = matches ? '' : 'none';
+      if (matches) count++;
     });
-  });
+    noResults.classList.toggle('hidden', count > 0 || !books.length);
+    resultCount.textContent = term ? `${count} of ${books.length} books` : `${books.length} book${books.length === 1 ? '' : 's'}`;
+  }
+  searchBox.addEventListener('input', filterBooks);
 
   let body;
   if (!books.length) {
@@ -791,7 +842,7 @@ async function renderLibrary() {
       const key = searchKey(b);
       const row = h('div', { class: 'book-row', 'data-book-search': key, style: q && !key.includes(q) ? 'display:none' : '', onClick: () => go('reader', b.id) },
         coverFor(b, 'thumb'),
-        h('span', { class: 'c-title' }, h('span', { class: 'r-title' }, b.title || 'Untitled'), h('span', { class: 'r-by' }, `by ${b.author || 'Anonymous'}`)),
+        h('span', { class: 'c-title' }, h('button', { class: 'r-title book-title-link', 'aria-label': `Read ${b.title || 'Untitled'}`, onClick: (e) => { e.stopPropagation(); go('reader', b.id); } }, b.title || 'Untitled'), h('span', { class: 'r-by' }, `by ${b.author || 'Anonymous'}`)),
         h('span', { class: 'c-aud' }, classBadge(b.classification)),
         h('span', { class: 'c-genre' }, b.genre || '—'),
         h('span', { class: 'c-prog' }, `${b.chapters}/${b.plannedChapters || b.chapters} ch · ${(b.words || 0).toLocaleString()} w`),
@@ -810,8 +861,10 @@ async function renderLibrary() {
     for (const b of books) {
       const paused = b.status === 'paused';
       const key = searchKey(b);
-      const card = h('div', { class: 'book-card', 'data-book-search': key, style: q && !key.includes(q) ? 'display:none' : '', onClick: () => go('reader', b.id) },
-        coverFor(b),
+      const card = h('article', { class: 'book-card', 'data-book-search': key, style: q && !key.includes(q) ? 'display:none' : '' },
+        h('button', { class: 'book-open', 'aria-label': `Read ${b.title || 'Untitled'}`, onClick: () => go('reader', b.id) },
+          coverFor(b),
+          h('span', { class: 'book-heading' }, h('strong', { class: 'book-title' }, b.title || 'Untitled'), h('span', { class: 'book-author' }, `by ${b.author || 'Anonymous'}`))),
         h('div', { class: 'book-meta' },
           h('div', { class: 'stat class-stat' }, classBadge(b.classification)),
           h('div', { class: 'stat', style: 'margin-top:8px' },
@@ -835,7 +888,8 @@ async function renderLibrary() {
       h('div', { class: 'lib-toolbar' }, h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ New Book'), searchBox, viewToggle),
       grid);
   }
-  mount(h('div', { class: 'view' }, head, body));
+  mount(h('div', { class: 'view library-view' }, head, body, books.length ? noResults : null, books.length ? resultCount : null));
+  filterBooks();
 }
 
 // ---------- CREATE ----------
@@ -899,8 +953,8 @@ function charactersEditor(values = []) {
     const thumb = h('button', { class: 'char-thumb', type: 'button', title: 'Upload a photo so the illustrations resemble them', onClick: () => file.click() }, thumbImg, placeholder);
     const row = h('div', { class: 'char-row' },
       thumb, file,
-      h('input', { class: 'char-name', placeholder: 'Name (e.g. Aanya)', value: c.name || '' }),
-      h('input', { class: 'char-role', placeholder: 'Who they are (e.g. age 5, the brave hero who loves dinosaurs)', value: c.role || '' }),
+      h('input', { class: 'char-name', 'aria-label': 'Character name', placeholder: 'Name (e.g. Aanya)', value: c.name || '' }),
+      h('input', { class: 'char-role', 'aria-label': 'Character description', placeholder: 'Who they are (e.g. age 5, the brave hero who loves dinosaurs)', value: c.role || '' }),
       h('button', { class: 'icon-btn danger', type: 'button', title: 'Remove', onClick: () => row.remove() }, '✕'));
     row._getPhoto = () => photo;
     list.append(row);
@@ -1012,17 +1066,18 @@ function readSpec() {
 }
 
 function renderCreate() {
+  if (state.view === 'create' && $('#f-request')) state.draftSpec = readSpec();
   const provider = (state.settings && state.settings.provider) || 'claude';
   const ready = state.prereq && state.prereq[provider] && state.prereq[provider].found;
   const head = h('div', { class: 'page-head' },
-    h('h1', {}, 'Commission a new book'),
-    h('p', {}, 'Pick your engine and model, then tell the bestselling author what you want. Vague is fine — they’ll ask smart questions first.'));
+    h('h1', {}, 'Start with an idea'),
+    h('p', {}, 'Describe the book you want to write. You can refine the details and review the chapter plan before writing begins.'));
 
   const actions = h('div', { class: 'btn-row' },
-    h('button', { class: 'btn btn-primary', id: 'btn-clarify', onClick: onClarify }, ready ? 'Continue →' : 'CLI not ready'),
-    h('button', { class: 'btn btn-ghost', onClick: () => skipToGenerate() }, 'Skip questions & write now'));
+    h('button', { class: 'btn btn-primary', id: 'btn-clarify', onClick: onClarify }, ready ? 'Continue →' : 'Connect an AI engine to write'),
+    h('button', { class: 'btn btn-ghost', id: 'btn-skip', disabled: !ready, onClick: () => skipToGenerate() }, 'Skip questions & write now'));
 
-  mount(h('div', { class: 'view' }, head, engineBar(), specForm(state.draftSpec || {}), actions));
+  mount(h('div', { class: 'view' }, head, specForm(state.draftSpec || {}), writingOptions(), actions));
   if (!ready) $('#btn-clarify').setAttribute('disabled', 'true');
 }
 
@@ -1061,9 +1116,9 @@ function renderKidsCreate() {
     charactersEditor(v.characters));
 
   const actions = h('div', { class: 'btn-row' },
-    h('button', { class: 'btn btn-primary', id: 'btn-kids-go', onClick: onKidsGenerate }, ready ? '✨ Write the kids book' : 'CLI not ready'));
+    h('button', { class: 'btn btn-primary', id: 'btn-kids-go', onClick: onKidsGenerate }, ready ? 'Write the kids book' : 'Connect an AI engine to write'));
 
-  mount(h('div', { class: 'view' }, head, engineBar(), form, actions));
+  mount(h('div', { class: 'view' }, head, form, writingOptions(), actions));
   if (!ready) $('#btn-kids-go').setAttribute('disabled', 'true');
 }
 function readKidsSpec() {
@@ -1132,7 +1187,7 @@ function renderClarify() {
         chips.append(h('button', { class: 'chip', onClick: () => { $('#' + inputId).value = sg; } }, sg)));
       block.append(chips);
     }
-    block.append(h('input', { id: inputId, 'data-q': q.id || q.question, placeholder: 'Your answer (optional)' }));
+    block.append(h('input', { id: inputId, 'data-q': q.id || q.question, 'aria-label': q.question, placeholder: 'Your answer (optional)' }));
     card.append(block);
   });
 
@@ -1168,14 +1223,14 @@ function logActivity(j, icon, text) {
 function confirmNanoCost(spec) {
   return new Promise((resolve) => {
     const body = h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'Estimating…');
-    const proceed = h('button', { class: 'btn btn-primary btn-sm', onClick: () => { overlay.remove(); resolve(true); } }, 'Yes, illustrate it');
-    const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } } },
+    const proceed = h('button', { class: 'btn btn-primary btn-sm', onClick: () => { closeModal(overlay); resolve(true); } }, 'Yes, illustrate it');
+    const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) { closeModal(overlay); resolve(false); } } },
       h('div', { class: 'modal', style: 'max-width:460px' },
         h('h2', { style: 'margin:0 0 6px' }, '🍌 Generate illustrations with Nano Banana?'),
         body,
         h('div', { class: 'btn-row' }, proceed,
-          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { overlay.remove(); resolve(false); } }, 'Cancel'))));
-    document.body.append(overlay);
+          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closeModal(overlay); resolve(false); } }, 'Cancel'))));
+    presentModal(overlay, () => { closeModal(overlay); resolve(false); });
     api.estimateImages(spec).then((est) => {
       body.textContent = `This will create ${est.approximate ? 'about ' : ''}~${est.count} illustration${est.count === 1 ? '' : 's'} with ${est.modelLabel} ≈ $${est.cost}. Images are billed by Google to your own Gemini API key.`;
     }).catch(() => { body.textContent = 'Nano Banana will illustrate this book (billed to your Gemini API key).'; });
@@ -1186,14 +1241,14 @@ function confirmNanoCost(spec) {
 function confirmDialog(title, message, okLabel) {
   return new Promise((resolve) => {
     const body = h('p', { class: 'hint', style: 'margin-bottom:14px;white-space:pre-wrap' }, message || '');
-    const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } } },
+    const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) { closeModal(overlay); resolve(false); } } },
       h('div', { class: 'modal', style: 'max-width:480px' },
         h('h2', { style: 'margin:0 0 6px' }, title),
         body,
         h('div', { class: 'btn-row' },
-          h('button', { class: 'btn btn-primary btn-sm', onClick: () => { overlay.remove(); resolve(true); } }, okLabel || 'Continue'),
-          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { overlay.remove(); resolve(false); } }, 'Cancel'))));
-    document.body.append(overlay);
+          h('button', { class: 'btn btn-primary btn-sm', onClick: () => { closeModal(overlay); resolve(true); } }, okLabel || 'Continue'),
+          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closeModal(overlay); resolve(false); } }, 'Cancel'))));
+    presentModal(overlay, () => { closeModal(overlay); resolve(false); });
   });
 }
 
@@ -1243,7 +1298,7 @@ async function revealBook(bookId, j) {
   for (let i = 0; i < 60; i++) {
     confetti.append(h('i', { style: `left:${(Math.random() * 100).toFixed(1)}%;animation-delay:${(Math.random() * 1.6).toFixed(2)}s;animation-duration:${(2.4 + Math.random() * 1.8).toFixed(2)}s;background:hsl(${Math.floor(Math.random() * 360)},85%,62%)` }));
   }
-  const overlay = h('div', { class: 'modal-overlay reveal-overlay' },
+  const overlay = h('dialog', { class: 'modal-overlay reveal-overlay' },
     confetti,
     h('div', { class: 'reveal-card' },
       content.cover
@@ -1255,9 +1310,9 @@ async function revealBook(bookId, j) {
         content.subtitle ? h('p', { class: 'reveal-sub' }, content.subtitle) : null,
         h('p', { class: 'reveal-by' }, `by ${content.author || 'Anonymous'}${mins ? ` · written in ${mins} min` : ''}`),
         h('div', { class: 'btn-row', style: 'margin-top:16px' },
-          h('button', { class: 'btn btn-gold', onClick: () => { overlay.remove(); go('reader', bookId); } }, '📖 Read it now'),
-          h('button', { class: 'btn btn-ghost', onClick: () => overlay.remove() }, 'Later')))));
-  document.body.append(overlay);
+          h('button', { class: 'btn btn-gold', onClick: () => { closeModal(overlay); go('reader', bookId); } }, '📖 Read it now'),
+          h('button', { class: 'btn btn-ghost', onClick: () => closeModal(overlay) }, 'Later')))));
+  presentModal(overlay);
 }
 function startResume(id) {
   state.job = newJob({ request: 'Resuming…' });
@@ -1420,8 +1475,8 @@ function renderProgress() {
       const row = h('div', { class: 'outline-review-row' },
         h('span', { class: 'orn' }, String(i + 1)),
         h('div', { class: 'orfields' },
-          h('input', { class: 'or-title', value: c.title || '' }),
-          h('input', { class: 'or-summary', value: c.summary || '', placeholder: 'What happens in this chapter…' })),
+          h('input', { class: 'or-title', 'aria-label': `Chapter ${i + 1} title`, value: c.title || '' }),
+          h('input', { class: 'or-summary', 'aria-label': `Chapter ${i + 1} summary`, value: c.summary || '', placeholder: 'What happens in this chapter…' })),
         h('button', { class: 'icon-btn danger', title: 'Cut this chapter', onClick: () => { row.remove(); } }, '✕'));
       rows.append(row);
     });
@@ -1529,6 +1584,8 @@ function saveReaderPos(id, idx) { localStorage.setItem('bw.reader.pos.' + id, St
 
 async function renderReader(id) {
   if (state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
+  if (state.readerMenuCleanup) { state.readerMenuCleanup(); state.readerMenuCleanup = null; }
+  if (state.readerAudioEl) { state.readerAudioEl.pause(); state.readerAudioEl = null; }
   let content;
   try { content = await api.getBookContent(id); }
   catch (err) { toast(`Could not open book: ${err.message}`, 'bad'); return go('library'); }
@@ -1559,12 +1616,17 @@ async function renderReader(id) {
     root.style.setProperty('--reader-fs', prefs.fontSize + 'px');
   };
 
-  const tocDrawer = h('aside', { class: 'toc-drawer' });
+  const tocDrawer = h('aside', { class: 'toc-drawer', id: 'reader-contents', 'aria-label': 'Table of contents', inert: true });
   const contentEl = h('div', { class: 'reader-content' });
   const progressFill = h('div', { class: 'rf' });
   const pageInfo = h('span', { class: 'page-info' }, '');
 
-  const toggleToc = () => tocDrawer.classList.toggle('open');
+  const toggleToc = () => {
+    const open = tocDrawer.classList.toggle('open');
+    tocDrawer.inert = !open;
+    tocButton.setAttribute('aria-expanded', String(open));
+  };
+  const tocButton = h('button', { class: 'icon-btn', title: 'Contents', 'aria-controls': 'reader-contents', 'aria-expanded': 'false', onClick: toggleToc }, '☰');
 
   // --- audiobook player (ElevenLabs): per-chapter, on-demand, voice-swappable ---
   const audioCfg = (state.settings && state.settings.audio) || {};
@@ -1798,11 +1860,11 @@ async function renderReader(id) {
   }
 
   const bar = h('div', { class: 'reader-bar' },
-    h('button', { class: 'icon-btn', title: 'Library', onClick: () => go('library') }, '←'),
-    h('button', { class: 'icon-btn', title: 'Contents', onClick: toggleToc }, '☰'),
-    h('div', { class: 'title' }, content.title),
-    classBadge(content.classification),
-    h('div', { class: 'spacer' }),
+    h('div', { class: 'reader-heading' },
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Library', onClick: () => go('library') }, '← Library'),
+      tocButton,
+      h('div', { class: 'title', title: content.title }, content.title),
+      classBadge(content.classification)),
     // typography controls
     h('div', { class: 'reader-tools' },
       h('button', { class: 'icon-btn', title: 'Smaller text', onClick: () => bumpFont(-1) }, 'A−'),
@@ -1813,7 +1875,7 @@ async function renderReader(id) {
     h('div', { class: 'reader-actions' },
       paused ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue') : null,
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Listen to this chapter (ElevenLabs)', onClick: () => playChapterAudio() }, '🎧 Listen'),
-      h('button', { class: 'btn btn-ghost btn-sm', title: 'Book stats: words, reading time, grade level', onClick: () => showBookStats(id) }, '📊'),
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Book stats: words, reading time, grade level', onClick: () => showBookStats(id) }, 'Stats'),
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Story bible: premise, style, characters', onClick: () => showStoryBible(id) }, '📖 Bible'),
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Rename book / set author', onClick: () => renameBookModal(id, content) }, '✏️'),
       exportMenu(id),
@@ -1863,7 +1925,7 @@ async function renderReader(id) {
   // Register so book:progress events refresh this banner while the user reads.
   state.readerLive = isGenerating ? { id, update: updateLive } : null;
 
-  const main = h('main', { class: 'reader-main' },
+  const main = h('div', { class: 'reader-main', role: 'region', 'aria-label': 'Book text', tabindex: '0' },
     isGenerating ? liveBanner : (paused && content.pausedReason
       ? h('div', { class: 'pause-note' }, `⏸️ ${content.pausedReason.detail || 'Paused.'} `,
           h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue writing'))
@@ -1882,7 +1944,7 @@ async function renderReader(id) {
       const num = pg.kind === 'chapter' ? String(pg.number) : (pg.kind === 'cover' ? '✦' : '•');
       tocDrawer.append(h('button', {
         class: `toc-item ${i === cur ? 'active' : ''}`, 'data-i': i,
-        onClick: () => { goPage(i); if (window.innerWidth < 760) tocDrawer.classList.remove('open'); },
+        onClick: () => { goPage(i); if (window.innerWidth < 760) { toggleToc(); tocButton.focus(); } },
       }, h('span', { class: 'toc-n' }, num), pg.label));
     });
   }
@@ -1933,6 +1995,8 @@ async function renderReader(id) {
 
   function updateProgress() {
     document.querySelectorAll('.toc-item').forEach((b) => b.classList.toggle('active', Number(b.getAttribute('data-i')) === cur));
+    editBtn.disabled = curChapterIndex() < 0;
+    rewriteBtn.disabled = curChapterIndex() < 0;
     if (prefs.mode === 'chapter') {
       const pg = pages[cur];
       pageInfo.textContent = pg && pg.kind === 'chapter'
@@ -2009,9 +2073,10 @@ async function renderReader(id) {
     // and Escape should close the modal, not exit the reader.
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    if (document.querySelector('.modal-overlay')) return;
-    if (e.key === 'ArrowRight' && prefs.mode === 'chapter') step(1);
-    else if (e.key === 'ArrowLeft' && prefs.mode === 'chapter') step(-1);
+    if (document.querySelector('.modal-overlay, .export-list:not([hidden])')) return;
+    if (e.defaultPrevented) return;
+    if (e.key === 'ArrowRight' && prefs.mode === 'chapter') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowLeft' && prefs.mode === 'chapter') { e.preventDefault(); step(-1); }
     else if (e.key === 'Escape') go('library');
   };
   document.addEventListener('keydown', state.readerKeys);
@@ -2052,20 +2117,20 @@ function emailPdfModal(id, title) {
     : `“${title}” will be rendered to PDF, then opened in your Mail app with the file attached — just press Send.`;
   const input = h('input', { type: 'email', placeholder: 'name@example.com',
     value: state.settings.pdfEmailTo || '', onkeydown: (e) => { if (e.key === 'Enter') doSend(); } });
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
     h('div', { class: 'modal', style: 'max-width:460px' },
       h('h2', { style: 'margin:0 0 6px' }, 'Email this book as a PDF'),
       h('p', { class: 'hint', style: 'margin-bottom:12px' }, subline),
       h('label', { class: 'field' }, h('span', {}, 'Recipient email'), input),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn btn-primary btn-sm', onClick: doSend }, '✉ Send PDF'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Cancel'))));
-  document.body.append(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Cancel'))));
+  presentModal(overlay);
   setTimeout(() => input.focus(), 30);
   async function doSend() {
     const to = input.value.trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { toast('Enter a valid email address.', 'bad'); return; }
-    overlay.remove();
+    closeModal(overlay);
     toast(usingSmtp ? 'Rendering PDF and emailing…' : 'Rendering PDF and opening Mail…');
     try {
       const res = await api.emailPdf(id, to);
@@ -2080,9 +2145,14 @@ function emailPdfModal(id, title) {
 /** Export dropdown: every format a finished book can become. */
 function exportMenu(id) {
   const wrap = h('div', { class: 'export-menu' });
-  const menu = h('div', { class: 'export-list', style: 'display:none' });
+  const menu = h('div', { class: 'export-list', id: 'reader-export-options', hidden: true });
+  const setOpen = (open, focus = false) => {
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    if (focus) (open ? menu.querySelector('button') : btn).focus();
+  };
   const item = (label, hint, fn) => h('button', { class: 'export-item', title: hint, onClick: async (e) => {
-    e.stopPropagation(); menu.style.display = 'none';
+    e.stopPropagation(); setOpen(false, true);
     try {
       const res = await fn();
       if (res && res.path) { toast(`Saved ${res.path.split(/[\\/]/).pop()}`, 'ok'); api.revealPath && api.revealPath(res.path); }
@@ -2096,11 +2166,24 @@ function exportMenu(id) {
     item('🌐 Web page (.html)', 'A single file you can share with anyone', () => api.exportBook(id, 'html', true)),
     item('⬇︎ Markdown', 'The full manuscript as plain Markdown', () => api.exportBook(id, 'markdown', true)),
     item('✉️ Email a PDF…', 'Compose an email with the PDF attached', async () => { emailPdfModal(id, ''); return null; }));
-  const btn = h('button', { class: 'btn btn-ghost btn-sm', title: 'Export this book', onClick: (e) => {
+  const btn = h('button', { class: 'btn btn-ghost btn-sm', title: 'Export this book', 'aria-controls': 'reader-export-options', 'aria-expanded': 'false', onClick: (e) => {
     e.stopPropagation();
-    menu.style.display = menu.style.display === 'none' ? '' : 'none';
+    setOpen(menu.hidden, true);
   } }, '⤓ Export');
-  document.addEventListener('click', () => { menu.style.display = 'none'; });
+  const outside = (event) => { if (!wrap.contains(event.target)) setOpen(false); };
+  document.addEventListener('click', outside);
+  wrap.addEventListener('focusout', (event) => { if (!wrap.contains(event.relatedTarget)) setOpen(false); });
+  wrap.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !menu.hidden) { event.preventDefault(); event.stopPropagation(); setOpen(false, true); }
+    if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault(); event.stopPropagation();
+      const items = [...menu.querySelectorAll('button')];
+      const index = items.indexOf(document.activeElement);
+      setOpen(true);
+      items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1) + items.length) % items.length].focus();
+    }
+  });
+  state.readerMenuCleanup = () => document.removeEventListener('click', outside);
   wrap.append(btn, menu);
   return wrap;
 }
@@ -2110,7 +2193,7 @@ async function showBookStats(id) {
   let s;
   try { s = await api.bookStats(id); } catch (e) { return toast(e.message, 'bad'); }
   const row = (k, v) => h('div', { class: 'stat-line' }, h('span', {}, k), h('strong', {}, v));
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
     h('div', { class: 'modal stats-modal' },
       h('h2', { style: 'margin:0 0 12px' }, '📊 Book stats'),
       row('Words', (s.words || 0).toLocaleString()),
@@ -2121,8 +2204,8 @@ async function showBookStats(id) {
       s.fkGrade != null ? row('Reading level', `${s.fkLabel} (FK ${s.fkGrade})`) : null,
       s.classification ? row('Audience', s.classification.label) : null,
       h('div', { class: 'btn-row', style: 'margin-top:14px' },
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Close'))));
-  document.body.append(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Close'))));
+  presentModal(overlay);
 }
 
 /** Story bible: the gorgeous planning artifacts the pipeline already made. */
@@ -2139,7 +2222,7 @@ async function showStoryBible(id) {
   const outline = (b.outline || []).length
     ? h('ol', {}, ...b.outline.map((c) => h('li', {}, h('strong', {}, c.title), c.summary ? ` — ${c.summary}` : '')))
     : null;
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
     h('div', { class: 'modal bible-modal' },
       h('h2', { style: 'margin:0 0 4px' }, '📖 Story bible'),
       h('p', { class: 'hint', style: 'margin:0 0 12px' }, 'Everything the author planned before writing — premise, voice, cast, and the chapter map.'),
@@ -2151,8 +2234,8 @@ async function showStoryBible(id) {
       b.blurb ? sec('Back-cover blurb', b.blurb) : null,
       outline ? sec('Chapter map', outline) : null,
       h('div', { class: 'btn-row', style: 'margin-top:14px' },
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Close'))));
-  document.body.append(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Close'))));
+  presentModal(overlay);
 }
 
 /** Rename the book / set your name as author — it's YOUR book. */
@@ -2160,7 +2243,7 @@ function renameBookModal(id, content) {
   const t = h('input', { value: content.title || '' });
   const st = h('input', { value: content.subtitle || '', placeholder: 'Subtitle (optional)' });
   const au = h('input', { value: content.author || '', placeholder: 'Author name' });
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
     h('div', { class: 'modal' },
       h('h2', { style: 'margin:0 0 12px' }, '✏️ Rename this book'),
       h('label', { class: 'field' }, h('span', {}, 'Title'), t),
@@ -2168,20 +2251,21 @@ function renameBookModal(id, content) {
       h('label', { class: 'field' }, h('span', {}, 'Author'), au),
       h('div', { class: 'btn-row', style: 'margin-top:14px' },
         h('button', { class: 'btn btn-primary btn-sm', onClick: async () => {
+          if (!t.value.trim()) { t.setAttribute('aria-invalid', 'true'); t.focus(); toast('Give the book a title before saving.', 'bad'); return; }
           try {
-            await api.updateBook(id, { title: t.value, subtitle: st.value, author: au.value });
-            overlay.remove(); toast('Saved.', 'ok'); renderReader(id);
+            await api.updateBook(id, { title: t.value.trim(), subtitle: st.value.trim(), author: au.value.trim() });
+            closeModal(overlay); toast('Saved.', 'ok'); renderReader(id);
           } catch (err) { toast(err.message, 'bad'); }
         } }, 'Save'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Cancel'))));
-  document.body.append(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Cancel'))));
+  presentModal(overlay);
   t.focus();
 }
 
 /** Hand-edit a chapter's Markdown. */
 function editChapterModal(id, chIndex, chapterTitle, markdown, onSaved) {
-  const ta = h('textarea', { class: 'edit-chapter-ta', spellcheck: 'true' }, markdown || '');
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+  const ta = h('textarea', { class: 'edit-chapter-ta', 'aria-label': 'Chapter Markdown', spellcheck: 'true' }, markdown || '');
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
     h('div', { class: 'modal edit-modal' },
       h('h2', { style: 'margin:0 0 4px' }, `✏️ Edit — ${chapterTitle}`),
       h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Plain Markdown. Your edits are saved into the book and flow into every export and narration.'),
@@ -2190,17 +2274,17 @@ function editChapterModal(id, chIndex, chapterTitle, markdown, onSaved) {
         h('button', { class: 'btn btn-primary btn-sm', onClick: async () => {
           try {
             await api.updateChapter(id, chIndex, ta.value);
-            overlay.remove(); toast('Chapter saved.', 'ok'); if (onSaved) onSaved();
+            closeModal(overlay); toast('Chapter saved.', 'ok'); if (onSaved) onSaved();
           } catch (err) { toast(err.message, 'bad'); }
         } }, 'Save chapter'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Cancel'))));
-  document.body.append(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Cancel'))));
+  presentModal(overlay);
 }
 
 /** AI rewrite of one chapter, steered by a director's note. */
 function rewriteChapterModal(id, chIndex, chapterTitle, onDone) {
-  const note = h('textarea', { class: 'rewrite-note', placeholder: 'e.g. Slower pacing, more dialogue between the sisters, end on a cliffhanger — or leave blank for a general polish.' });
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+  const note = h('textarea', { class: 'rewrite-note', 'aria-label': 'Rewrite instructions', placeholder: 'e.g. Slower pacing, more dialogue between the sisters, end on a cliffhanger — or leave blank for a general polish.' });
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
     h('div', { class: 'modal edit-modal' },
       h('h2', { style: 'margin:0 0 4px' }, `↻ Rewrite — ${chapterTitle}`),
       h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Tell the author what to change. The chapter is rewritten in place — the rest of the book is untouched.'),
@@ -2211,57 +2295,59 @@ function rewriteChapterModal(id, chIndex, chapterTitle, onDone) {
           btn.setAttribute('disabled', 'true'); btn.textContent = 'Rewriting…';
           try {
             await api.rewriteChapter(id, chIndex, note.value.trim(), `rewrite-${Date.now()}`);
-            overlay.remove(); toast('✨ Chapter rewritten.', 'ok'); if (onDone) onDone();
+            closeModal(overlay); toast('✨ Chapter rewritten.', 'ok'); if (onDone) onDone();
           } catch (err) { btn.removeAttribute('disabled'); btn.textContent = '↻ Rewrite with AI'; toast(err.message, 'bad'); }
         } }, '↻ Rewrite with AI'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Cancel'))));
-  document.body.append(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Cancel'))));
+  presentModal(overlay);
   note.focus();
 }
 
 async function deleteBook(id) {
-  if (!window.confirm('Delete this book permanently?')) return;
-  await api.deleteBook(id);
-  toast('Book deleted.');
-  go('library');
+  if (!await confirmDialog('Delete this book?', 'The manuscript, artwork, and narration will be permanently deleted. Export a copy first if you want to keep it.', 'Delete book')) return;
+  try {
+    await api.deleteBook(id);
+    toast('Book deleted.');
+    go('library');
+  } catch (err) { toast(`Could not delete book: ${err.message}`, 'bad'); }
+}
+
+function providerStatusRow(key, label) {
+  const p = state.prereq || {};
+  const npmOk = !!(p.npm && p.npm.found);
+  const info = p[key];
+  const ok = info && info.found;
+  const a = authOf(key);
+  const isG = key === 'gemini'; // Gemini = API key + connectivity, not sign-in
+  const dot = !ok ? 'bad' : (a ? (a.signedIn ? 'ok' : 'warn') : 'warn');
+  const chipText = isG
+    ? (a ? (a.signedIn ? '✓ Connected' : (hasImageKey() ? 'Key not reachable' : 'Needs API key')) : 'Testing…')
+    : (a ? (a.signedIn ? '✓ Signed in' : 'Not signed in') : 'Checking…');
+  const authChip = !ok ? null : h('span', {
+    style: `font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;${a ? (a.signedIn ? 'color:var(--ok);background:rgba(31,170,107,.14)' : 'color:var(--accent-2);background:rgba(192,138,46,.16)') : 'color:var(--text-dim)'}`,
+  }, chipText);
+  const actions = [
+    h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : (isG ? 'API key' : 'not installed')),
+    authChip,
+  ];
+  if (!ok && !isG) actions.push(h('button', {
+    class: 'btn btn-gold btn-sm',
+    title: npmOk ? `Install ${label} via npm` : 'Requires npm (install Node.js first)',
+    onClick: () => openInstallModal(key),
+  }, '⬇ Install'));
+  if (isG) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal('gemini') }, a && a.signedIn ? '🔑 API key' : '🔑 Add API key'));
+  else if (!(a && a.signedIn)) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(key) }, '🔑 Sign in'));
+  return h('div', { class: 'kv provider-status', 'data-provider': key, 'data-label': label },
+    h('span', { class: 'k' }, h('span', { class: `status-dot ${dot}` }), label),
+    h('span', { style: 'display:flex;align-items:center;gap:10px' }, ...actions.filter(Boolean)));
 }
 
 // ---------- SETTINGS ----------
 function renderSettings() {
   const s = state.settings;
-  const p = state.prereq || {};
   const head = h('div', { class: 'page-head' },
     h('h1', {}, 'Settings'),
     h('p', {}, 'Choose your AI engine & model, grounding options, and Kindle delivery.'));
-
-  const npmOk = !!(p.npm && p.npm.found);
-  const statusRow = (key, label) => {
-    const info = p[key];
-    const ok = info && info.found;
-    const a = authOf(key);
-    const isG = key === 'gemini'; // Gemini = API key + connectivity, not sign-in
-    const dot = !ok ? 'bad' : (a ? (a.signedIn ? 'ok' : 'warn') : 'warn');
-    const chipText = isG
-      ? (a ? (a.signedIn ? '✓ Connected' : (hasImageKey() ? 'Key not reachable' : 'Needs API key')) : 'Testing…')
-      : (a ? (a.signedIn ? '✓ Signed in' : 'Not signed in') : 'Checking…');
-    const authChip = !ok ? null : h('span', {
-      style: `font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;${a ? (a.signedIn ? 'color:var(--ok);background:rgba(31,170,107,.14)' : 'color:var(--accent-2);background:rgba(192,138,46,.16)') : 'color:var(--text-dim)'}`,
-    }, chipText);
-    const actions = [
-      h('span', { style: 'color:var(--text-dim);font-size:12px' }, ok ? (info.version || 'found') : (isG ? 'API key' : 'not installed')),
-      authChip,
-    ];
-    if (!ok && !isG) actions.push(h('button', {
-      class: 'btn btn-gold btn-sm',
-      title: npmOk ? `Install ${label} via npm` : 'Requires npm (install Node.js first)',
-      onClick: () => openInstallModal(key),
-    }, '⬇ Install'));
-    if (isG) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal('gemini') }, a && a.signedIn ? '🔑 API key' : '🔑 Add API key'));
-    else if (!(a && a.signedIn)) actions.push(h('button', { class: 'btn btn-ghost btn-sm', onClick: () => openAuthModal(key) }, '🔑 Sign in'));
-    return h('div', { class: 'kv' },
-      h('span', { class: 'k' }, h('span', { class: `status-dot ${dot}` }), label),
-      h('span', { style: 'display:flex;align-items:center;gap:10px' }, ...actions.filter(Boolean)));
-  };
 
   const engineCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'AI engines, models & fallback chain'),
@@ -2274,10 +2360,10 @@ function renderSettings() {
         h('input', { id: 's-codex-cmd', value: s.codexCommand || 'codex' })),
       h('label', { class: 'field' }, h('span', {}, 'Grok command'),
         h('input', { id: 's-grok-cmd', value: s.grokCommand || 'grok' }))),
-    statusRow('claude', 'Claude Code CLI'),
-    statusRow('codex', 'Codex CLI'),
-    statusRow('gemini', 'Gemini API'),
-    statusRow('grok', 'Grok CLI'),
+    providerStatusRow('claude', 'Claude Code CLI'),
+    providerStatusRow('codex', 'Codex CLI'),
+    providerStatusRow('gemini', 'Gemini API'),
+    providerStatusRow('grok', 'Grok CLI'),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-ghost btn-sm', onClick: saveEngineCmds }, 'Save commands'),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check CLIs'),
@@ -2384,7 +2470,7 @@ function clearAllDataModal() {
     if (input.value.trim().toLowerCase() === PHRASE) confirmBtn.removeAttribute('disabled');
     else confirmBtn.setAttribute('disabled', 'true');
   });
-  const overlay = h('div', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } },
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
     h('div', { class: 'modal', style: 'max-width:500px' },
       h('h2', { style: 'margin:0 0 8px;color:var(--danger)' }, '⚠️  Erase ALL ChapterOne data?'),
       h('p', { class: 'hint', style: 'margin-bottom:10px' },
@@ -2394,8 +2480,8 @@ function clearAllDataModal() {
       h('label', { class: 'field' }, h('span', {}, `To confirm, type:  ${PHRASE}`), input),
       h('div', { class: 'btn-row', style: 'margin-top:16px' },
         confirmBtn,
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => overlay.remove() }, 'Cancel'))));
-  document.body.append(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Cancel'))));
+  presentModal(overlay);
   setTimeout(() => input.focus(), 30);
 
   async function doClear() {
@@ -2404,9 +2490,10 @@ function clearAllDataModal() {
     try {
       await api.clearAllData();
       localStorage.clear();
-      overlay.remove();
+      closeModal(overlay);
       state.settings = await api.getSettings(); // back to fresh defaults
       state.authStatus = null;
+      state.draftSpec = null; state.kidsDraft = null; state.libQuery = ''; state.job = null;
       toast('✅ All ChapterOne data cleared — books, images, audio, exports, and settings.', 'ok');
       go('library');
     } catch (err) {

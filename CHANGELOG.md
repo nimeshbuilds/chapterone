@@ -13,6 +13,10 @@
 
 ### Fixed
 
+- Gave the reader a full-window layout, compact library cards, and responsive controls for smaller windows.
+- Put writing briefs before optional engine controls and preserve adult/kids briefs and characters during navigation.
+- Added native keyboard-accessible dialogs, accessible switches, export-menu keyboard handling, search feedback, and reduced-motion support.
+- Added 11 real-Electron UI interaction groups and source/packaged screenshots to the native build checks.
 - Corrected print PDF page dimensions to 6×9 inches and propagated export stream errors.
 - Persisted chapters before optional illustration work, retained paused drafts when outline/cover steps fail, and blocked conflicting writes/deletes/clears.
 - Invalidated cached narration when text or voice settings change; deduplicated simultaneous requests for the same audio.
