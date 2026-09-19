@@ -35,4 +35,63 @@ test('provider catalog includes all engines with login metadata', () => {
   assert.ok(modelsFor('gemini').some((m) => m.id === 'gemini-flash-latest'));
   assert.ok(loginFor('codex').args.includes('login'));
   assert.ok(typeof loginFor('gemini').hint === 'string');
+  assert.strictEqual(providerList().find((p) => p.id === 'gemini').npmPackage, null);
+});
+
+test('unlisted Gemini aliases are not falsely verified', async (t) => {
+  const adapter = new GeminiAdapter({ apiKey: 'test-key' });
+  t.mock.method(adapter, '_listModels', async () => ['gemini-2.5-flash']);
+  assert.strictEqual((await adapter.verifyModel('made-up-latest')).valid, null);
+  assert.strictEqual((await adapter.verifyModel('made-up-model')).valid, false);
+  assert.strictEqual((await adapter.verifyModel('gemini-2.5-flash')).valid, true);
+});
+
+test('Gemini streams split UTF-8 and a final unterminated line without exposing thoughts', async (t) => {
+  const https = require('https');
+  const { EventEmitter } = require('events');
+  const { Readable } = require('stream');
+  const event = (parts) => 'data: ' + JSON.stringify({ candidates: [{ content: { parts } }] });
+  const bytes = Buffer.from(event([{ text: 'hidden', thought: true }, { text: 'café ' }]) + '\n\n'
+    + event([{ text: 'finished' }]));
+  const split = bytes.indexOf(Buffer.from('é')) + 1;
+  let requestOptions, body;
+  t.mock.method(https, 'request', (options, callback) => {
+    requestOptions = options;
+    const req = new EventEmitter();
+    req.end = (payload) => {
+      body = JSON.parse(payload);
+      const res = Readable.from([bytes.subarray(0, split), bytes.subarray(split)]);
+      res.statusCode = 200;
+      res.complete = true;
+      queueMicrotask(() => callback(res));
+    };
+    return req;
+  });
+  const deltas = [];
+  const adapter = new GeminiAdapter({ apiKey: 'test-key' });
+  const output = await adapter.complete('A book', { research: true, onStdout: (s) => deltas.push(s) });
+  assert.strictEqual(output, 'café finished');
+  assert.strictEqual(deltas.join(''), output);
+  assert.strictEqual(requestOptions.headers['x-goog-api-key'], 'test-key');
+  assert.ok(!requestOptions.path.includes('test-key'));
+  assert.deepStrictEqual(body.tools, [{ google_search: {} }]);
+});
+
+test('Gemini rejects a truncated stream instead of accepting a partial manuscript', async (t) => {
+  const https = require('https');
+  const { EventEmitter } = require('events');
+  t.mock.method(https, 'request', (_options, callback) => {
+    const req = new EventEmitter();
+    req.end = () => queueMicrotask(() => {
+      const res = new EventEmitter();
+      res.statusCode = 200;
+      res.complete = false;
+      res.setEncoding = () => {};
+      callback(res);
+      res.emit('data', 'data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}\n');
+      res.emit('close');
+    });
+    return req;
+  });
+  await assert.rejects(new GeminiAdapter({ apiKey: 'test-key' }).complete('A book'), /connection lost mid-stream/);
 });

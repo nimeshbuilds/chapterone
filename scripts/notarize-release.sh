@@ -1,31 +1,29 @@
 #!/usr/bin/env bash
-#
-# Notarize + staple the ALREADY-BUILT, already-signed release artifacts, without
-# rebuilding. Use this after `npm run dist:mac` when notarization was skipped or
-# failed transiently (e.g. an expired Apple Developer agreement you have since
-# re-signed at https://developer.apple.com/account → Agreements).
-#
-# Prereq: a stored notary credential profile named "chapterone-notary":
-#   xcrun notarytool store-credentials chapterone-notary \
-#     --apple-id "<your-apple-id>" --team-id QPF2VF2885 --password "<app-specific-pw>"
-#
+# Recover notarization for already-signed artifacts. See SIGNING.md.
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
-DMG="release/ChapterOne-0.1.0-universal.dmg"
+VERSION=$(node -p "require('./package.json').version")
+DMG="release/ChapterOne-${VERSION}-mac-universal.dmg"
 APP="release/mac-universal/ChapterOne.app"
-PROFILE="chapterone-notary"
+ZIP="release/ChapterOne-${VERSION}-mac-universal.zip"
+PROFILE="${1:-chapterone-notary}"
 
-[ -f "$DMG" ] || { echo "No DMG at $DMG — run 'npm run dist:mac' first."; exit 1; }
+[ -f "$DMG" ] || { echo "Missing $DMG; build the signed universal app first."; exit 1; }
+[ -d "$APP" ] || { echo "Missing $APP; keep the original app from this build."; exit 1; }
+codesign --verify --deep --strict --verbose=2 "$APP"
 
-echo "→ Submitting $DMG to Apple notary service (this can take a few minutes)…"
+echo "Submitting $DMG to Apple…"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait --timeout 30m
-
-echo "→ Stapling the ticket to the DMG and app…"
 xcrun stapler staple "$DMG"
-[ -d "$APP" ] && xcrun stapler staple "$APP" || true
-
-echo "→ Verifying Gatekeeper acceptance…"
+xcrun stapler staple "$APP"
 xcrun stapler validate "$DMG"
-[ -d "$APP" ] && spctl --assess --type execute -vv "$APP" || true
+xcrun stapler validate "$APP"
+spctl --assess --type execute --verbose=2 "$APP"
 
-echo "✅ Notarized + stapled. The DMG is ready to distribute."
+# Recreate the ZIP so it contains the app's newly stapled ticket.
+ZIP_TMP=$(mktemp -d)
+trap 'rm -rf "$ZIP_TMP"' EXIT
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP_TMP/ChapterOne.zip"
+mv "$ZIP_TMP/ChapterOne.zip" "$ZIP"
+echo "Notarization verified; DMG and ZIP updated. Recalculate release checksums."

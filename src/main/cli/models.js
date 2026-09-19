@@ -1,9 +1,8 @@
 'use strict';
 
 /**
- * Provider catalog. We drive each vendor's own CLI on the user's subscription
- * (no API keys). Model lists use stable CLI aliases/ids that resolve to whatever
- * the subscription entitles the user to.
+ * Provider catalog. Claude, Codex and Grok use provider CLIs; Gemini uses its
+ * separately billed REST API. Availability depends on the user's provider account.
  */
 
 // Model ids are stable CLI aliases/slugs. We always offer "Default" first,
@@ -31,7 +30,7 @@ const CODEX_MODELS = [
 // so they keep working as Google ships new versions without us hardcoding IDs
 // the key may not have access to. Flash is the cheap default.
 const GEMINI_MODELS = [
-  { id: 'gemini-flash-latest', label: 'Gemini Flash (latest — currently 3.5 Flash) — recommended' },
+  { id: 'gemini-flash-latest', label: 'Gemini Flash (latest) — recommended' },
   { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — newest, best value' },
   { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — cheapest' },
   { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — highest quality (pricier)' },
@@ -99,13 +98,13 @@ const PROVIDERS = {
     },
   },
   gemini: {
-    id: 'gemini', label: 'Gemini', command: 'gemini', models: GEMINI_MODELS,
-    install: 'npm i -g @google/gemini-cli',
-    npmPackage: '@google/gemini-cli',
-    docsUrl: 'https://github.com/google-gemini/gemini-cli',
+    id: 'gemini', label: 'Gemini API', command: '', models: GEMINI_MODELS,
+    install: '',
+    npmPackage: null,
+    docsUrl: 'https://ai.google.dev/gemini-api/docs/api-key',
     login: {
       args: [],
-      hint: 'A Terminal window opens running “gemini”. When it starts, choose “Login with Google” (or type /auth) and sign in with the Google account on your Gemini AI Pro/Ultra plan — no API key needed. Then come back and click “I’ve finished”.',
+      hint: 'Add your Gemini API key in Settings. This app uses the Gemini API with separate usage billing; it does not use Gemini CLI login.',
     },
   },
   grok: {

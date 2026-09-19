@@ -1,188 +1,40 @@
-# CLAUDE.md — Working in this repo
+# Working in this repository
 
-Guidance for any Claude session contributing to **ChapterOne** (the app; maker: Modulagent).
-Read this first; it captures the architecture, conventions, and the non-obvious
-gotchas that will save you time.
+ChapterOne is a vanilla CommonJS Electron writing app for macOS and Windows. Claude Code, Codex and Grok are invoked as external CLIs; Gemini uses a separately billed REST API. Libraries are local, but generation sends prompts and manuscript context to cloud providers. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the source map, flows and remaining limitations.
 
-## What this is
+## Run and validate
 
-A cross-platform **Electron** desktop app (macOS `.dmg` + Windows NSIS `.exe`)
-that ghost-writes professional, bestseller-quality books by driving the user's
-own AI **CLI** on their **subscription** — Claude Code (`claude`), Codex
-(`codex`), or Gemini (`gemini`). It plans, researches, writes, edits, and
-illustrates a book; reads it in a built-in EPUB reader; exports EPUB/PDF; and
-emails to Kindle or any address.
-
-There is **no server and no API keys** — everything runs locally through the
-user's CLI. The only outbound network is the CLI's own web search, Openverse
-image lookups, and the email the user explicitly sends.
-
-## Run / test / build
+Use Node.js 22.12+ (CI uses Node 22).
 
 ```bash
-npm install
-npm start                 # launch the app
-npm run dev               # launch with DevTools
-npm test                  # node:test suite (fast, no Electron)
-npm run dist:mac          # build .dmg   (also dist:win / dist:all)
+npm ci
+npm start
+npm run dev
+npm run verify
+npm run test:smoke
+npm run dist:mac -- --publish never
+npm run dist:win:x64 -- --publish never
+npm run dist:win:arm64 -- --publish never
 ```
 
-There is **no renderer build step** — `src/renderer/` is plain HTML/CSS/JS
-loaded directly. Keep it that way unless there's a strong reason.
+There is no renderer build step. Source/packaged Electron smoke tests use isolated temporary data and a scripted provider, never a paid account. Follow [SIGNING.md](SIGNING.md) and [docs/RELEASING.md](docs/RELEASING.md) for distribution.
 
-## Architecture (where things live)
+## Implementation conventions
 
-```
-src/main/                 Electron MAIN process (Node)
-  main.js                 app lifecycle, BrowserWindow, menu
-  preload.js              contextBridge → window.api (the ONLY renderer↔main bridge)
-  ipc.js                  ALL ipcMain handlers; wraps results as {ok,data}|{ok:false,error}
-  store.js                JSON persistence: settings + books + images/exports dirs
-  util.js                 safeFilename, etc.
-  cli/
-    spawn.js              child_process runner: stdin feed, abort, timeout, env scrub
-    models.js             provider catalog (PROVIDERS), model lists, MODEL_PRESETS, login, scrub vars
-    claudeAdapter.js      drives `claude -p` (web tools via --allowedTools)
-    codexAdapter.js       drives `codex exec` (-c tools.web_search=true; medium reasoning)
-    geminiAdapter.js      Gemini REST API (key-based; CLI login retired) + verifyModel
-    grokAdapter.js        drives `grok -p` (Composer 2.5 default; strips agentic narration)
-    chainEngine.js        ChainEngine: ordered fallback + transient-error retry w/ backoff
-    authSession.js        AuthSessionManager: interactive login streaming + stdin
-    index.js              buildAdapter / createEngine / createChainEngine / verifyModel
-    spawn.js              child runner (Windows-aware command resolution; abort = reject)
-  book/
-    prompts.js            ALL prompt text + SIZES + char reference photos + size helpers
-    generator.js          the pipeline: clarify → outline → cover → chapters(+edit+art) → recap
-    classify.js           BISAC audience/format classification (Picture Book … Adult)
-    json.js               extractJson (tolerant of fences/prose)
-    errors.js             classifyError / isResumable / shouldFallback / describe
-    images.js             Openverse stock-photo sourcing (retired from UI; kept for old books)
-    aiArt.js              SVG + HTML/CSS art extract & sanitize → data-uri
-    nanoBanana.js         Gemini image API (referenceImages for character likeness)
-  export/
-    html.js               shared book HTML + reader/print CSS + cover/art figures
-    epub.js               hand-rolled EPUB3 writer (images, AI art, cover, credits)
-    pdf.js                PDF via offscreen BrowserWindow printToPDF (Electron-only)
-    rasterize.js          SVG→PNG via offscreen BrowserWindow (Electron-only)
-    markdown.js           full-manuscript Markdown
-  kindle/
-    sendToKindle.js       nodemailer: sendEmailWithAttachment / sendToKindle / verifySmtp
-src/renderer/             UI (vanilla JS, no framework, no build)
-  index.html, styles.css, app.js
-test/                     node:test specs for the pure-logic modules
-```
-
-## The generation pipeline (book/generator.js)
-
-`BookGenerator(engine)` where `engine` is a ChainEngine (or any adapter with
-`.complete(prompt, opts)`):
-
-1. `clarify(spec)` → asks clarifying questions if the brief is vague (JSON).
-2. `generate(spec, answers, hooks)`:
-   - `buildOutline` → title/premise/styleGuide/themes + chapters (JSON).
-   - `_maybeCover` → AI SVG cover (if imageMode==='ai').
-   - `_writeChapters` loop, per chapter: draft (streamed via `onStdout` →
-     `chapter:stream`), optional **editor polish** pass, optional **AI chapter
-     art** (SVG), then a compact **continuity recap** for the next chapter.
-3. `resume(book, hooks)` continues a paused book from `book.chapters.length`.
-4. Optional stops: when `spec.reviewOutline` is set, the pipeline pauses at
-   `hooks.onOutlineReview(book)` (ipc resolves it via the `outline:approve`
-   channel) so the user can edit the plan; `_backMatter` writes a blurb +
-   dedication after the last chapter (quiet, non-blocking).
-5. Author tools: `rewriteChapter(book, index, note, hooks)` regenerates ONE
-   chapter (optionally steered by a director's note); `book:updateChapter` /
-   `book:update` IPC handle hand-edits and rename. `book:stats` returns
-   words/pages/reading-time/FK-grade from `book/stats.js`. Exports include
-   docx (`export/docx.js`), single-file html, and a 6×9 print PDF
-   (`generatePrintPdf`).
-
-Progress is emitted via `hooks.onProgress({phase, ...})` and the book is saved
-after **every** chapter via `hooks.onChapter` — so cancel/crash/quota-loss
-always leaves a resumable draft. On failure mid-chapter the book is marked
-`status:'paused'` with `pausedReason` (see errors.js).
-
-Key spec flags: `size` (small|medium|large), `research`, `polish`,
-`imageMode` (off|ai|nano; legacy `stock` is migrated to `ai` in store.getSettings), `model`, `provider`.
-
-## Non-obvious gotchas (read these)
-
-- **Subscription, not API key.** Adapters strip `ANTHROPIC_API_KEY` /
-  `OPENAI_API_KEY` / `GEMINI_API_KEY` etc. from the child env (`spawn.js`
-  `scrubEnv`, list in `models.js SUBSCRIPTION_SCRUB`) so the CLI uses the
-  interactive login. Do NOT reintroduce API-key handling. The login flow
-  (`authSession.js`) deliberately does NOT scrub, so the CLI can write creds.
-- **Renderer is wrapped in an IIFE.** `app.js` is `(function(){ const api =
-  window.api; ... })()`. This is required: `contextBridge` exposes `api` as a
-  non-configurable global, so a top-level `const api` would throw
-  "already declared". Keep the IIFE.
-- **No native dependencies.** Deps are `archiver`, `marked@^4` (CJS — do not
-  bump to ESM v5+), `nodemailer`. The store is hand-rolled JSON (no
-  electron-store). EPUB is hand-rolled (no epub-gen). Keep it dependency-light
-  so packaging stays trivial.
-- **SVG must be sanitized.** Any model-produced SVG goes through
-  `aiArt.sanitizeSvg` (strips script/handlers/foreignObject/external refs)
-  before it's embedded or rendered. Never embed raw model SVG.
-- **The CLIs cannot generate raster images.** "AI art" = the CLI designs a
-  **hybrid HTML/CSS + inline-SVG scene illustration** (preferred) or a pure
-  **SVG** (fallback), which we then render to PNG via an offscreen Chromium
-  window (`export/rasterize.js`: `rasterizeBookArt` handles `coverHtml`/`artHtml`
-  and `coverSvg`/`artSvg`). Both are hardened in `book/aiArt.js`
-  (`sanitizeHtml`/`sanitizeSvg`) and rendered with `javascript:false`. Don't
-  promise DALL·E-style generation; real raster AI = Nano Banana (image API key).
-- **Electron-only modules:** `export/pdf.js`, `export/rasterize.js`, and the
-  IPC/main glue need a running Electron app (BrowserWindow). They can't run
-  under plain `node --test`. Test them via the headless smoke pattern below.
-  Pure logic (prompts, json, errors, images selection, epub assembly, store,
-  chain, adapters' arg-building) IS unit-tested.
-- **`rasterize.js` reuses ONE offscreen window** for all images. Creating a new
-  offscreen BrowserWindow per image fails after the first capture — don't
-  refactor back to per-image windows.
-- **EPUB zip:** `mimetype` must be the first entry and STORED (uncompressed).
-  When grepping a built `.epub`, remember file *contents* are deflated — only
-  filenames and the stored mimetype are visible in raw bytes; unzip to inspect
-  the OPF.
-- **IPC contract:** every `ipcMain.handle` returns `{ok:true,data}` or
-  `{ok:false,error}` (see the `wrap` helper); `preload.js invoke(channel,
-  ...args)` is **variadic** — forward all args (a single-arg version once silently
-  dropped extras and broke model verification). Keep that shape.
-- **Cross-platform (Windows):** the app builds an NSIS `.exe` (`npm run dist:win`,
-  not signed yet). `spawn.js resolveCommand()` resolves bare CLI names to their
-  `.cmd`/`.exe` shim via PATH+PATHEXT on win32 (npm globals aren't directly
-  spawnable with `shell:false`). Login opens `cmd /k`; the Mail hand-off falls
-  back to revealing the file off macOS; the Windows icon is auto-converted from
-  `build/icon.png`. Don't add macOS-only calls (osascript, `open -a`) without a
-  `process.platform` guard + a Windows/Linux branch.
-
-## Testing
-
-- `npm test` (node:test) for all pure logic. Add a spec under `test/` for any
-  new pure module/function.
-- For Electron behavior, use a headless smoke test:
-  `xvfb-run -a node_modules/.bin/electron --no-sandbox <script>` where the
-  script `require('src/main/main.js')`, waits for `ready`, and drives the
-  renderer via `win.webContents.executeJavaScript(...)`. Capture
-  `console-message` (level≥3) to catch renderer errors. `app.exit()` can
-  truncate stdout — write results to a file and read it back, or add a short
-  delay before exiting.
-
-## Conventions
-
-- Match surrounding style: 2-space indent, `'use strict'`, small focused
-  modules, JSDoc on exported functions. Comments explain *why/constraints*, not
-  *what*.
-- Settings live in `store.defaultSettings()`. Adding a setting = add a default
-  there, read it where needed, surface it in the engine bar or Settings in
-  `app.js`. `deepMerge` preserves nested defaults.
-- Adding a provider: add to `models.js PROVIDERS` + `SUBSCRIPTION_SCRUB`, create
-  an adapter in `cli/`, wire it in `cli/index.js buildAdapter`, add it to
-  `checkPrerequisites`, and the renderer picks it up from `getModels()`.
-- Adding an export format: implement in `export/`, add a branch in the
-  `book:export` IPC handler and a button in the reader.
+- Use two-space indentation, `'use strict'`, CommonJS, and focused modules. Explain constraints and reasons in comments.
+- Keep the renderer dependency-light and build-step-free. `app.js` must remain wrapped in an IIFE because the preload's non-configurable `window.api` conflicts with a top-level `const api`.
+- `preload.js` is the renderer's only Node bridge. Every IPC handler must use the trusted-sender wrapper and return `{ok:true,data}` or `{ok:false,error}`. `invoke(channel, ...args)` must forward all arguments.
+- Settings defaults live in `store.js`. Preserve nested defaults and the safeStorage credential codec. Never log credentials or silently replace unreadable persisted settings with defaults.
+- Persist chapter text before optional art. Coordinate writes through the IPC job guards so clear/delete/edit/export cannot corrupt an active generation.
+- Generated prose must pass the shared HTML sanitizer. Generated SVG/HTML art must be sanitized and rasterized in the offline session with JavaScript disabled. Never embed raw model HTML or enable file/network subresources in offline renderers.
+- The CLI restrictions and subscription environment scrub are security-sensitive. They do not override every possible user CLI configuration. Do not promise offline AI processing, guaranteed subscription billing, or copyright-free generated art.
+- Windows npm `.cmd` shims need `spawn.js` command resolution; do not enable a general shell to run arbitrary CLI strings. Login commands use the quoting helper. Guard `osascript` and other platform-specific calls.
+- EPUB `mimetype` must be first and uncompressed. PDF custom page sizes use **inches**. DOCX stream failures must reject.
+- `marked` remains on its CommonJS-compatible v4 series. New runtime/native dependencies need a concrete reason; `sanitize-html` is the security boundary for prose HTML.
+- Tests belong under `test/`. Use `npm run test:smoke` for modules requiring Electron (PDF/rasterization/IPC/UI); plain `node --test` cannot exercise those modules. Keep production retry delays while injecting an immediate delay for retry tests.
+- New providers need catalog metadata, an adapter, factory/prerequisite wiring and tests. New exports need an exporter, IPC branch and reader control. Never use live paid requests as automatic test fixtures.
 
 ## Git / workflow
 
-- Develop on the feature branch the session was given; commit with clear
-  messages; push with `git push -u origin <branch>`. Do NOT open a PR unless
-  asked. Do NOT put model identifiers in commit messages or code.
-- Always run `npm test` (and a smoke test for UI/Electron changes) before
-  committing.
+- Develop on the feature branch the session was given; commit with clear messages; push with `git push -u origin <branch>`. Do NOT open a PR unless asked. Do NOT put model identifiers in commit messages or code.
+- Always run `npm test` (and a smoke test for UI/Electron changes) before committing.

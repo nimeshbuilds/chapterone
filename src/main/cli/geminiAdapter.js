@@ -31,13 +31,13 @@ class GeminiAdapter {
   /** Is `model` a real Gemini model the key can use? Checks the models.list API. */
   async verifyModel(model) {
     if (!this.apiKey) return { valid: null, detail: 'Add a Gemini API key first.' };
-    // `-latest` aliases resolve server-side and aren't always in the list.
-    if (/-latest$/.test(model)) return { valid: true, detail: 'Valid alias (resolves to the newest model)' };
     const ids = await this._listModels();
     if (!ids.length) return { valid: null, detail: 'Could not read the model list.' };
-    return ids.includes(model)
-      ? { valid: true, detail: 'Valid Gemini model for your key' }
-      : { valid: false, detail: 'Not a model your key can use.' };
+    if (ids.includes(model)) return { valid: true, detail: 'Valid Gemini model for your key' };
+    // Aliases may be omitted by models.list. Do not falsely verify arbitrary
+    // names ending in "-latest", or spend credits on a generation probe.
+    if (/-latest$/.test(model)) return { valid: null, detail: 'Alias not listed; availability is checked when generating.' };
+    return { valid: false, detail: 'Not a model your key can use.' };
   }
 
   async _listModels() {
@@ -99,24 +99,27 @@ class GeminiAdapter {
         res.setEncoding('utf8');
         let buf = '';
         let full = '';
+        const readLine = (line) => {
+          if (!line.startsWith('data:')) return;
+          const data = line.slice(5).trim();
+          if (!data || data === '[DONE]') return;
+          let j;
+          try { j = JSON.parse(data); } catch (_) { return; }
+          const parts = j?.candidates?.[0]?.content?.parts;
+          if (!Array.isArray(parts)) return;
+          const t = parts.filter((p) => p && !p.thought && typeof p.text === 'string').map((p) => p.text).join('');
+          if (t) { full += t; if (opts.onStdout) opts.onStdout(t); }
+        };
         res.on('data', (chunk) => {
           buf += chunk;
           let nl;
           while ((nl = buf.indexOf('\n')) >= 0) {
             const line = buf.slice(0, nl).trim();
             buf = buf.slice(nl + 1);
-            if (!line.startsWith('data:')) continue;
-            const data = line.slice(5).trim();
-            if (!data || data === '[DONE]') continue;
-            try {
-              const j = JSON.parse(data);
-              const parts = ((((j.candidates || [])[0] || {}).content) || {}).parts || [];
-              const t = parts.filter((p) => !p.thought).map((p) => p.text || '').join('');
-              if (t) { full += t; if (opts.onStdout) opts.onStdout(t); }
-            } catch (_) { /* ignore keep-alive / partial lines */ }
+            readLine(line);
           }
         });
-        res.on('end', () => resolve(full));
+        res.on('end', () => { readLine(buf.trim()); resolve(full); });
       });
       req.on('error', reject);
       if (opts.timeoutMs) req.setTimeout(opts.timeoutMs, () => req.destroy(new Error('Gemini request timed out')));

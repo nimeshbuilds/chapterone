@@ -225,8 +225,8 @@ async function refreshPrereq() {
       banner.innerHTML = '';
       banner.append(
         h('span', { class: 'grow' }, keySet
-          ? '⚠️ Gemini’s API key isn’t reaching the Gemini API (check the key or your connection). Gemini has no subscription login.'
-          : '⚠️ Gemini has no subscription login — it needs a Gemini API key to use as a writing engine.'),
+          ? '⚠️ The Gemini API could not be reached. Check your API key and connection.'
+          : '⚠️ ChapterOne needs a Gemini API key to use Gemini as a writing engine.'),
         h('button', { class: 'btn btn-gold btn-sm', onClick: () => openAuthModal('gemini') }, keySet ? '🔑 Update API key' : '🔑 Add Gemini API key'),
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheckAuth() }, 'Re-test'),
         h('button', { class: 'btn btn-ghost btn-sm', title: 'Hide until next check', onClick: () => banner.classList.add('hidden') }, '✕'));
@@ -428,7 +428,7 @@ function chainBuilder() {
       ? h('div', { class: 'chain-note', style: 'margin-top:10px' },
           '🔑 Gemini runs on your Gemini API key (per-token billing) — it does not use a subscription.')
       : h('div', { class: 'chain-note warn', style: 'margin-top:10px' },
-          '⚠️ Gemini has no subscription login — it needs a Gemini API key. ',
+          '⚠️ ChapterOne uses the Gemini API — add your API key to connect. ',
           h('button', { class: 'btn btn-gold btn-sm', style: 'margin-left:6px', onClick: () => openAuthModal('gemini') }, '🔑 Add Gemini API key')));
   }
 
@@ -452,7 +452,7 @@ function imageModeControl() {
   if (mode === 'stock') { mode = 'ai'; updateSettings({ imageMode: 'ai' }); } // stock retired → vector art
   const seg = h('div', { class: 'seg' });
   const opts = [
-    { v: 'ai', l: '🎨 AI vector art (free)' },
+    { v: 'ai', l: '🎨 AI vector art' },
     { v: 'nano', l: '🍌 Nano Banana (real AI photos)' },
     { v: 'off', l: 'No images' },
   ];
@@ -465,7 +465,7 @@ function imageModeControl() {
         ? 'Real, theme-matched illustrations generated with Google’s Nano Banana (Gemini image API). ~$0.13/image with the Pro model; density adapts to a kids book’s age. A cost estimate is shown before writing.'
         : 'Nano Banana needs your Gemini API key (image-only, separate from your CLI subscription).')
     : mode === 'ai'
-      ? 'Your selected engine (Claude, Codex, or Gemini) designs a bespoke vector cover and a chapter illustration that match each chapter — always relevant and copyright-free, no extra cost.'
+      ? 'Your selected writing engine designs the cover and chapter illustrations. This uses your provider’s subscription quota or Gemini API billing. Review generated artwork before publishing.'
       : 'No images will be added (a designed cover is still created).';
   return h('div', { class: 'engine-col grow' },
     h('span', { class: 'mini-label' }, 'Cover & illustrations'),
@@ -484,7 +484,7 @@ function engineBar() {
     const signedIn = !!(a && a.signedIn);
     let title;
     if (p.id === 'gemini') {
-      // Gemini has no subscription login — it's API-key only.
+      // This integration uses the Gemini API.
       title = hasImageKey() ? `${p.label}: using your Gemini API key` : `${p.label}: needs a Gemini API key (no subscription)`;
     } else {
       title = signedIn ? `${p.label}: signed in` : (found ? `${p.label}: installed, not signed in` : `${p.label}: not installed`);
@@ -644,7 +644,7 @@ function openInstallModal(provider) {
     h('div', { class: 'modal' },
       h('h2', { style: 'margin:0 0 6px' }, `Install ${label}`),
       h('p', { class: 'hint' }, meta.npmPackage
-        ? `This runs “npm install -g ${meta.npmPackage}”, then verifies it’s on your PATH. Afterwards you sign in with your own ${label} subscription — ChapterOne never uses an API key.`
+        ? `This runs “npm install -g ${meta.npmPackage}”, then verifies it’s on your PATH. Afterwards you sign in with your own ${label} subscription. Check the active account and billing settings in that CLI.`
         : `No automatic installer is available for ${label}.`),
       log,
       h('div', { class: 'btn-row' }, startBtn,
@@ -908,7 +908,7 @@ function charactersEditor(values = []) {
   (values || []).forEach((c) => addRow(c));
   return h('div', { class: 'chars-editor', id: 'chars-editor' },
     h('span', { class: 'mini-label' }, 'Characters (optional) — make it personal'),
-    h('span', { class: 'hint', style: 'margin:0 0 8px' }, 'Add real people (your child, family, friends) and who they are. Tap the 🙂 to upload a photo — with Nano Banana illustrations, the art will resemble them.'),
+    h('span', { class: 'hint', style: 'margin:0 0 8px' }, 'Add characters and who they are. Tap the 🙂 to add a reference photo. Nano Banana sends these photos to Google to guide illustrations; use photos you have permission to share.'),
     list,
     h('button', { class: 'btn btn-ghost btn-sm', type: 'button', style: 'align-self:flex-start;margin-top:8px', onClick: () => addRow({}) }, '+ Add character'));
 }
@@ -2265,15 +2265,13 @@ function renderSettings() {
 
   const engineCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'AI engines, models & fallback chain'),
-    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'ChapterOne drives your locally installed CLIs on your own subscriptions (Claude Code, Codex, Grok) — with “Use subscription” on, API-key env vars are stripped so billing always uses your plan login. Gemini is the exception: This app connects to Gemini through its API with your Gemini API key. Research uses each engine’s own web tools. Prompts and manuscript context are sent to the providers in your chain. ChapterOne has no backend.'),
+    h('p', { class: 'hint', style: 'margin-bottom:14px' }, 'ChapterOne uses your local Claude Code, Codex and Grok CLIs. “Use subscription” removes known API-key environment variables; confirm your billing account in each CLI. Gemini uses its separately billed API. Prompts and manuscript context are sent to providers in your chain, and research enables web tools. ChapterOne has no backend.'),
     engineBar(),
     h('div', { class: 'row', style: 'margin-top:16px' },
       h('label', { class: 'field' }, h('span', {}, 'Claude command'),
         h('input', { id: 's-claude-cmd', value: s.claudeCommand || 'claude' })),
       h('label', { class: 'field' }, h('span', {}, 'Codex command'),
         h('input', { id: 's-codex-cmd', value: s.codexCommand || 'codex' })),
-      h('label', { class: 'field' }, h('span', {}, 'Gemini command'),
-        h('input', { id: 's-gemini-cmd', value: s.geminiCommand || 'gemini' })),
       h('label', { class: 'field' }, h('span', {}, 'Grok command'),
         h('input', { id: 's-grok-cmd', value: s.grokCommand || 'grok' }))),
     statusRow('claude', 'Claude Code CLI'),
@@ -2591,7 +2589,6 @@ async function saveEngineCmds() {
   await updateSettings({
     claudeCommand: $('#s-claude-cmd').value.trim() || 'claude',
     codexCommand: $('#s-codex-cmd').value.trim() || 'codex',
-    geminiCommand: $('#s-gemini-cmd').value.trim() || 'gemini',
     grokCommand: $('#s-grok-cmd').value.trim() || 'grok',
   });
   await recheck();

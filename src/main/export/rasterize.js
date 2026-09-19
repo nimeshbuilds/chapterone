@@ -55,8 +55,8 @@ function makeWindow() {
   const { BrowserWindow, session } = require('electron');
   // Model-authored art renders in an isolated, NETWORK-DEAD session: even if a
   // crafted fragment slips past the sanitizer (unquoted attrs, CSS escapes,
-  // srcset…), no request can leave the machine. data:/file: (our own inputs)
-  // still work; everything else is cancelled at the network layer.
+  // srcset…), requests to network and local files are cancelled. Only inline
+  // data: documents/resources are needed by the rasterizer.
   const s = session.fromPartition('art-rasterizer');
   if (!s._chapterOneBlocked) {
     s._chapterOneBlocked = true;

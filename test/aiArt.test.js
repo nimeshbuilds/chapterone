@@ -69,3 +69,20 @@ test('svgToDataUri produces a base64 svg data uri', () => {
   const uri = svgToDataUri('<svg viewBox="0 0 1 1"></svg>');
   assert.match(uri, /^data:image\/svg\+xml;base64,/);
 });
+
+test('SVG exports reject obfuscated resources, unquoted handlers and animated links', () => {
+  const dirty = '<svg viewBox="0 0 20 20" onload=alert(1)>'
+    + '<use href="&#x6a;avascript:alert(1)"/><use href="file:///private/book"/>'
+    + '<set attributeName="href" to="https://evil.test"/>'
+    + '<rect fill="url(https://evil.test)" style="fill:url(https://evil.test);stroke:#abc"/>'
+    + '<style>@import "https://evil.test";</style>'
+    + '<defs><linearGradient id="good"><stop stop-color="#fff"/></linearGradient></defs>'
+    + '<rect fill="url(#good)"/><use href="#good"/></svg>';
+  const clean = sanitizeSvg(dirty);
+  assert.doesNotMatch(clean, /onload|javascript:|file:|evil|<set|<style/);
+  assert.match(clean, /fill="url\(#good\)"/);
+  assert.match(clean, /<linearGradient/);
+  assert.match(clean, /stroke:#abc/);
+  const embedded = Buffer.from(svgToDataUri(dirty).split(',')[1], 'base64').toString();
+  assert.doesNotMatch(embedded, /onload|javascript:|file:|evil/);
+});

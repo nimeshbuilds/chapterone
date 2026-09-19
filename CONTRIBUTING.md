@@ -15,21 +15,18 @@ dependency-light Electron app, and contributions of all sizes are welcome.
 ```bash
 git clone https://github.com/npandeya/bookwriter.git
 cd bookwriter
-npm install
+npm ci
 npm start          # launch the app
 npm run dev        # launch with DevTools
-npm test           # run the test suite (must pass before you push)
+npm run verify     # syntax, regression tests, and dependency audit
+npm run test:smoke # real Electron app with synthetic provider data
 ```
 
-You'll need **Node.js 18+** and at least one AI CLI (Claude Code, Codex, or
-Gemini) installed and signed in to exercise the generation flow.
+Use **Node.js 22.12+** (Node 22 is used in CI). Automated tests require no AI accounts. For real generation, configure a supported Claude Code, Codex or Grok CLI, or a Gemini API key. Provider requests can consume subscription quota or incur charges.
 
 ## Project layout
 
-See [`README.md`](README.md#architecture) for the high-level map and
-[`CLAUDE.md`](CLAUDE.md) for a detailed architecture guide, conventions, and the
-non-obvious gotchas (subscription-not-API-key, the renderer IIFE, SVG
-sanitization, EPUB packaging, etc.). Reading `CLAUDE.md` will save you time.
+See [the architecture guide](docs/ARCHITECTURE.md) for the module map and trust boundaries, and [CLAUDE.md](CLAUDE.md) for implementation conventions. Read [SECURITY.md](SECURITY.md) before changing IPC, generated markup, storage or CLI execution.
 
 ## Making a change
 
@@ -37,13 +34,13 @@ sanitization, EPUB packaging, etc.). Reading `CLAUDE.md` will save you time.
 2. Match the surrounding style: 2-space indent, `'use strict'`, small focused
    modules, JSDoc on exported functions. Comments explain *why*, not *what*.
 3. Add or update a test under `test/` for any new pure-logic module or function.
-4. Run `npm test` (and, for UI/Electron changes, a quick manual smoke run).
+4. Run `npm run verify` and, for UI/Electron changes, `npm run test:smoke`. Native CI must pass before merging.
 5. Open a pull request with a clear description of the change and how you tested
    it. Reference any related issue.
 
 ## Pull request checklist
 
-- [ ] `npm test` passes.
+- [ ] `npm run verify` passes; relevant Electron smoke checks pass.
 - [ ] No new runtime dependencies (or a clear justification).
 - [ ] New behavior is covered by a test where practical.
 - [ ] No secrets, API keys, or personal data committed.

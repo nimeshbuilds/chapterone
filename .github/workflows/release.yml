@@ -50,13 +50,13 @@ jobs:
         run: ${{ matrix.build }}
         env:
           CHAPTERONE_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
       - name: Smoke test packaged application code
         run: npm run test:smoke -- --app-root=${{ matrix.app }}
       - name: Verify macOS signature and notarization
@@ -66,6 +66,20 @@ jobs:
           spctl --assess --type execute --verbose=2 release/mac-universal/ChapterOne.app
           xcrun stapler validate release/mac-universal/ChapterOne.app
           for dmg in release/*.dmg; do xcrun stapler staple "$dmg"; xcrun stapler validate "$dmg"; done
+      - name: Verify Windows signature when configured
+        if: runner.os == 'Windows'
+        env:
+          HAS_WINDOWS_CERT: ${{ secrets.WIN_CSC_LINK != '' }}
+        shell: pwsh
+        run: |
+          if ($env:HAS_WINDOWS_CERT -eq 'true') {
+            Get-ChildItem release/*.exe | ForEach-Object {
+              $signature = Get-AuthenticodeSignature $_.FullName
+              if ($signature.Status -ne 'Valid') { throw "Invalid installer signature: $($_.Name) ($($signature.Status))" }
+            }
+          } else {
+            Write-Output 'Unsigned Windows build: disclose this in the draft release notes.'
+          }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.name }}

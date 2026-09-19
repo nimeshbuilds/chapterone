@@ -5,6 +5,7 @@ const archiver = require('archiver');
 const { randomUUID } = require('crypto');
 const { chapterToHtml, escapeHtml, creditsHtml, BOOK_CSS } = require('./html');
 const { mimeForExt } = require('../book/images');
+const { sanitizeSvg } = require('../book/aiArt');
 const { cssForBand } = require('../book/ageBands');
 
 /** Make marked's HTML output XHTML-valid by self-closing void elements. */
@@ -54,9 +55,9 @@ function generateEpub(book, outPath) {
         const name = `art/chapter-${i + 1}.png`;
         artFiles.push({ id: `art-${i + 1}`, name, file: c.artFile, mime: 'image/png' });
         artHtml = `<figure class="chapter-art"><img src="${name}" alt="" /></figure>`;
-      } else if (c.artSvg) {
+      } else if (sanitizeSvg(c.artSvg)) {
         const name = `art/chapter-${i + 1}.svg`;
-        artFiles.push({ id: `art-${i + 1}`, name, svg: c.artSvg, mime: 'image/svg+xml' });
+        artFiles.push({ id: `art-${i + 1}`, name, svg: sanitizeSvg(c.artSvg), mime: 'image/svg+xml' });
         artHtml = `<figure class="chapter-art"><img src="${name}" alt="" /></figure>`;
       }
       return {
@@ -69,7 +70,7 @@ function generateEpub(book, outPath) {
     });
     const cover = (book.coverPng && fs.existsSync(book.coverPng))
       ? { name: 'cover.png', file: book.coverPng, mime: 'image/png' }
-      : (book.coverSvg ? { name: 'cover.svg', svg: book.coverSvg, mime: 'image/svg+xml' } : null);
+      : (sanitizeSvg(book.coverSvg) ? { name: 'cover.svg', svg: sanitizeSvg(book.coverSvg), mime: 'image/svg+xml' } : null);
 
     const output = fs.createWriteStream(outPath);
     const archive = archiver('zip', { zlib: { level: 9 } });

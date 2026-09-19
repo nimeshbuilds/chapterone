@@ -92,7 +92,8 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "ChapterOne records short voice samples so you can narrate your books in your own cloned voice."
+        "NSMicrophoneUsageDescription": "ChapterOne records short voice samples so you can narrate your books in your own cloned voice.",
+        "NSAppleEventsUsageDescription": "ChapterOne opens Terminal for AI provider login and creates Mail drafts when you choose to send a book."
       },
       "minimumSystemVersion": "13.0.0",
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
