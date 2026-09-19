@@ -38,6 +38,7 @@ require(path.join(root, 'src/main/main.js'));
 
 (async () => {
   const win = await windowReady;
+  if (process.argv.includes('--fail-smoke')) throw new Error('Intentional smoke failure');
   const js = (source) => win.webContents.executeJavaScript(source);
   assert.equal(await js('typeof window.api.getSettings'), 'function');
   assert.equal(win.webContents.getLastWebPreferences().sandbox, true);
@@ -74,12 +75,19 @@ require(path.join(root, 'src/main/main.js'));
   fs.writeFileSync(path.join(artifacts, `smoke-${process.platform}-${process.arch}.png`), (await win.webContents.capturePage()).toPNG());
   assert.deepEqual(errors, [], 'Renderer should not report errors');
   console.log(`Electron smoke passed: ${process.platform}/${process.arch}; UI, IPC, generation, six exports, PDF dimensions, rasterization.`);
-})().then(() => finish(0), (error) => { console.error(error); finish(1); });
+})().then(() => finish(0), (error) => { console.error(error); finish(1, error.message); });
 
-function finish(code) {
+function finish(code, error) {
   clearTimeout(deadline);
-  for (const win of BrowserWindow.getAllWindows()) win.destroy();
+  // On Windows, destroying the last window invokes main.js's app.quit(), which
+  // used to turn failed checks into exit code 0 before the delayed app.exit(1).
+  // The Node runner also requires this explicit completion record.
+  if (process.env.CHAPTERONE_SMOKE_RESULT) {
+    fs.writeFileSync(process.env.CHAPTERONE_SMOKE_RESULT, JSON.stringify({
+      ok: code === 0, platform: process.platform, arch: process.arch, root, error,
+    }));
+  }
   // Electron can hold cache files open until exit on Windows; cleanup is best-effort.
   try { fs.rmSync(temp, { recursive: true, force: true }); } catch (_) { /* OS temp directory */ }
-  setTimeout(() => app.exit(code), 100);
+  app.exit(code);
 }

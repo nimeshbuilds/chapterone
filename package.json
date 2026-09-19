@@ -1,7 +1,7 @@
 {
   "name": "chapterone",
   "version": "0.2.0",
-  "description": "ChapterOne \u2014 Your Personal Book Writer. Turn one idea into a finished book with Claude Code, Codex, Grok (your subscriptions) or Gemini (API key): planned, research-grounded, written, illustrated with AI art, narrated, and delivered to Kindle, EPUB, PDF, DOCX, or the web.",
+  "description": "ChapterOne — Your Personal Book Writer. Turn one idea into a finished book with Claude Code, Codex, Grok (your subscriptions) or Gemini (API key): planned, research-grounded, written, illustrated with AI art, narrated, and delivered to Kindle, EPUB, PDF, DOCX, or the web.",
   "author": {
     "name": "Modulagent"
   },
@@ -49,7 +49,7 @@
     "dist:win": "electron-builder --win --x64 --arm64 --config electron-builder.config.js",
     "dist:all": "npm run dist:mac && npm run dist:win",
     "check": "node scripts/check.js",
-    "test:smoke": "electron scripts/smoke.cjs",
+    "test:smoke": "node scripts/run-smoke.cjs",
     "verify": "npm run check && npm test && npm audit --audit-level=high",
     "dist:win:x64": "electron-builder --win --x64 --config electron-builder.config.js",
     "dist:win:arm64": "electron-builder --win --arm64 --config electron-builder.config.js"
@@ -67,7 +67,7 @@
   "build": {
     "appId": "com.modulagent.chapterone",
     "productName": "ChapterOne",
-    "copyright": "Copyright \u00a9 2026 Modulagent",
+    "copyright": "Copyright © 2026 Modulagent",
     "files": [
       "src/**/*",
       "assets/**/*",
@@ -116,13 +116,7 @@
     "win": {
       "icon": "build/icon.png",
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        "nsis"
       ],
       "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
     },
@@ -133,7 +127,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "ChapterOne",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "buildUniversalInstaller": false
     },
     "linux": {
       "target": [

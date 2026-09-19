@@ -45,6 +45,8 @@ jobs:
         run: node scripts/release-check.cjs
       - run: npm ci
       - run: npm run verify
+      - name: Verify smoke runner failure detection
+        run: npm run test:smoke -- --self-test
       - run: npm run test:smoke
       - name: Build and sign
         run: ${{ matrix.build }}

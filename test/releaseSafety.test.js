@@ -117,13 +117,20 @@ test('IPC requires the exact top-level app document', () => {
   assert.equal(isTrustedSender({ senderFrame: { url: 'https://bad.test' }, sender: { mainFrame: main } }), false);
 });
 
-test('offline rendering only permits its exact main document and data resources', () => {
+test('offline rendering only permits its exact main document and data resources', (t) => {
+  const { pathToFileURL } = require('url');
+  const file = path.join(temp(t), 'Book with spaces and é.html');
+  fs.writeFileSync(file, '<h1>Safe</h1>');
   let filter;
   configureOfflineSession({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {},
-    webRequest: { onBeforeRequest(fn) { filter = fn; } } }, '/tmp/book.html');
-  for (const url of ['https://bad.test', 'file:///etc/passwd', 'file:///tmp/book.html']) {
+    webRequest: { onBeforeRequest(fn) { filter = fn; } } }, file);
+  const url = pathToFileURL(file).href;
+  for (const url of ['https://bad.test', 'file:///etc/passwd', pathToFileURL(file).href]) {
     filter({ url, resourceType: 'image' }, ({ cancel }) => assert.equal(cancel, true));
   }
+  filter({ url, resourceType: 'mainFrame' }, ({ cancel }) => assert.equal(cancel, false));
+  filter({ url: pathToFileURL(fs.realpathSync.native(file)).href, resourceType: 'mainFrame' }, ({ cancel }) => assert.equal(cancel, false));
+  filter({ url: 'file://server/private/book.html', resourceType: 'mainFrame' }, ({ cancel }) => assert.equal(cancel, true));
   filter({ url: 'data:image/png;base64,YQ==', resourceType: 'image' }, ({ cancel }) => assert.equal(cancel, false));
 });
 
