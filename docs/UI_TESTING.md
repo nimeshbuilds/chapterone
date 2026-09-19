@@ -12,7 +12,9 @@ The 0.2.0 release-readiness branch includes a focused UI review, not a claim of 
 
 ## Automated UI coverage
 
-`scripts/ui-checks.cjs` runs these 11 interaction groups inside the smoke test:
+`scripts/ui-checks.cjs` runs these 12 interaction groups inside the smoke test:
+
+- Model presets, current choices, preserved custom/media pins, retirement notices, explicit checks only, no probes on typing/navigation, and model controls at compact size.
 
 1. Search by author, case-insensitive matching, no matches, clearing search, and tile/list persistence.
 2. Adult/kids brief, character, and age selection preservation; writing controls when no engine is configured.

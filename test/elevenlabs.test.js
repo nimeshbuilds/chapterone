@@ -6,8 +6,42 @@ const el = require('../src/main/book/elevenlabs');
 test('model catalog + recommendations', () => {
   assert.strictEqual(el.DEFAULT_MODEL, 'eleven_multilingual_v2');
   assert.ok(el.MODELS.some((m) => m.id === 'eleven_multilingual_v2'));
+  assert.ok(el.MODELS.some((m) => m.id === 'eleven_flash_v2_5'));
   assert.ok(Array.isArray(el.RECOMMENDED.adults) && el.RECOMMENDED.adults.length >= 5);
   assert.ok(Array.isArray(el.RECOMMENDED.kids) && el.RECOMMENDED.kids.length >= 5);
+});
+
+test('narration uses compatible v3 voice settings and chunks below every supported model limit', async (t) => {
+  const https = require('https');
+  const { EventEmitter } = require('events');
+  const calls = [];
+  t.mock.method(https, 'request', (options, callback) => {
+    const req = new EventEmitter();
+    req.end = payload => queueMicrotask(() => {
+      calls.push({ options, body: JSON.parse(payload) });
+      const res = new EventEmitter();
+      res.statusCode = 200;
+      callback(res);
+      res.emit('data', Buffer.from('MP3'));
+      res.emit('end');
+      req.emit('close');
+    });
+    return req;
+  });
+  for (const { id } of el.MODELS) {
+    calls.length = 0;
+    const result = await el.tts({ apiKey: 'test-key', voiceId: 'voice/1', modelId: id, text: 'A river flows. '.repeat(400) });
+    assert.ok(calls.length >= 3);
+    assert.strictEqual(result.buffer.toString(), 'MP3'.repeat(calls.length));
+    for (const { options, body } of calls) {
+      assert.strictEqual(options.path, '/v1/text-to-speech/voice%2F1');
+      assert.strictEqual(body.model_id, id);
+      assert.ok(body.text.length <= 2500);
+      assert.strictEqual(body.voice_settings.stability, 0.5);
+      if (id === 'eleven_v3') assert.deepStrictEqual(body.voice_settings, { stability: 0.5 });
+      else assert.strictEqual(body.voice_settings.use_speaker_boost, true);
+    }
+  }
 });
 
 test('chunkText splits long text at sentence boundaries', () => {

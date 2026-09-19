@@ -4,6 +4,7 @@
 
 ### Added
 
+- Refreshed text, image, and narration catalogs against September 2026 provider documentation, with current presets, a visible review date, model compatibility notes, and saved-pin retirement guidance. See [model support](docs/MODELS.md).
 - Native CI for Intel Mac, Apple Silicon, Windows x64 and Windows ARM64. Source and packaged Electron smoke tests exercise generation, the UI, six exports, print dimensions and IPC isolation.
 - A tagged release workflow that verifies all platforms, signs/notarizes Mac builds, supports Windows signing, and creates a draft with universal DMG/ZIP, x64/ARM64 EXE installers and SHA256 checksums.
 - Outline approval, chapter rewrites and manual editing, story bible and reading statistics, sequel briefs, library search/list views and read-while-writing.
@@ -13,10 +14,12 @@
 
 ### Fixed
 
+- Made custom-model checks explicit so loading or typing a saved model never triggers a quota-consuming probe. Preserved unknown image/audio pins in Settings.
+- Excluded Gemini thinking-draft images from final artwork and used compatible voice settings for expressive narration.
 - Gave the reader a full-window layout, compact library cards, and responsive controls for smaller windows.
 - Put writing briefs before optional engine controls and preserve adult/kids briefs and characters during navigation.
 - Added native keyboard-accessible dialogs, accessible switches, export-menu keyboard handling, search feedback, and reduced-motion support.
-- Added 11 real-Electron UI interaction groups and source/packaged screenshots to the native build checks.
+- Added 12 real-Electron UI interaction groups and source/packaged screenshots to the native build checks.
 - Corrected print PDF page dimensions to 6×9 inches and propagated export stream errors.
 - Persisted chapters before optional illustration work, retained paused drafts when outline/cover steps fail, and blocked conflicting writes/deletes/clears.
 - Invalidated cached narration when text or voice settings change; deduplicated simultaneous requests for the same audio.

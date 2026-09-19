@@ -5,55 +5,67 @@
  * separately billed REST API. Availability depends on the user's provider account.
  */
 
-// Model ids are stable CLI aliases/slugs. We always offer "Default" first,
-// which lets each CLI pick the best model the user's subscription entitles —
-// so it auto-tracks the latest "best Pro" without us hardcoding a preview id
-// that might not be enabled on a given account. The named entries below let a
-// user pin a specific model, newest/highest-quality listed first.
+// Reviewed against official provider documentation. See docs/MODELS.md for
+// sources and the update checklist. CLI defaults honor the user's configuration;
+// neither a default nor an alias guarantees account access to the newest model.
+const CATALOG_REVIEWED_AT = '2026-09-19';
 const CLAUDE_MODELS = [
-  { id: '', label: 'Default — best on your plan (recommended)' },
-  { id: 'opus', label: 'Claude Opus — highest quality' },
-  { id: 'sonnet', label: 'Claude Sonnet — balanced quality & speed' },
-  { id: 'haiku', label: 'Claude Haiku — fastest / lightest' },
+  { id: '', label: 'CLI default — uses your configuration' },
+  { id: 'fable', label: 'Claude Fable — latest alias', note: 'Requires a recent Claude Code and account access. Fable may require usage credits and billing consent in Claude Code before headless use.' },
+  { id: 'opus', label: 'Claude Opus — latest alias, quality' },
+  { id: 'sonnet', label: 'Claude Sonnet — latest alias, balanced' },
+  { id: 'haiku', label: 'Claude Haiku — latest alias, fast' },
+  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 — pinned', note: 'Requires Claude Code 2.1.257 or later, account access, and any required billing consent in Claude Code.' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5 — pinned', note: 'Requires Claude Code 2.1.219 or later and provider/account access.' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 — pinned', note: 'Requires Claude Code 2.1.197 or later and provider/account access.' },
 ];
 
-// Codex on a ChatGPT subscription (gpt-5.5 default, 5.4 fallback, 5.4-mini light).
 const CODEX_MODELS = [
-  { id: '', label: 'Default — best on your plan (recommended)' },
-  { id: 'gpt-5.5', label: 'GPT-5.5 — highest quality' },
-  { id: 'gpt-5.4', label: 'GPT-5.4 — balanced' },
-  { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini — fastest' },
+  { id: '', label: 'CLI default — uses your configuration' },
+  { id: 'gpt-6-astra', label: 'GPT-6 Astra — most capable', note: 'Availability depends on your plan, rollout, and Codex version. Uses more quota than the smaller choices.' },
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol — complex writing & reasoning' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra — balanced' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna — fast & economical' },
+  { id: 'gpt-5.5', label: 'GPT-5.5 — legacy' },
 ];
 
-// Gemini runs via the Gemini REST API with an API key (per-token billing). The
-// "-latest" aliases always resolve to the newest model the key is entitled to,
-// so they keep working as Google ships new versions without us hardcoding IDs
-// the key may not have access to. Flash is the cheap default.
+// Gemini uses separately billed REST calls. Google controls alias targets,
+// which may point to stable, preview, or experimental releases.
 const GEMINI_MODELS = [
-  { id: 'gemini-flash-latest', label: 'Gemini Flash (latest) — recommended' },
-  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — newest, best value' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — cheapest' },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — highest quality (pricier)' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — pinned stable' },
+  { id: 'gemini-flash-latest', label: 'Gemini Flash — latest alias', note: 'Google updates this alias automatically; it can point to a stable, preview, or experimental release. Choose a pinned version for predictable behavior.' },
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash — latest stable Flash' },
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — fast & economical' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — preview', note: 'Preview model: availability and behavior can change before a stable release.' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — older pinned version' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — older pinned version' },
 ];
 
-// Grok Build CLI on a SuperGrok / X Premium Plus subscription. Drives `grok -p`
-// headless. Models come from `grok models`; grok-build is xAI's latest (512K
-// context) and the best default. Composer 2.5 is Cursor's coding model.
+// Only advertise documented CLI choices. API-only models are not necessarily
+// available through subscription login. Custom IDs can be checked via `grok models`.
 const GROK_MODELS = [
-  { id: 'grok-composer-2.5-fast', label: 'Composer 2.5 Fast — fastest, great prose (recommended)' },
-  { id: 'grok-build', label: 'Grok Build — xAI’s latest, agentic (slower)' },
-  { id: '', label: 'CLI default' },
+  { id: '', label: 'CLI default — uses your configuration' },
+  { id: 'grok-build', label: 'Grok Build — current CLI alias' },
 ];
 
-// One-click model presets per provider. "Fast" = the quickest/cheapest model,
-// "Pro" = the largest/highest-quality, "default" = best on the plan / recommended.
-// Used by the Fast/Pro/Default quick-select buttons in the engine bar.
+// Preserve quality/speed tiers. Grok has no separately verified fast CLI alias;
+// its Fast preset leaves model selection to the user's CLI configuration.
 const MODEL_PRESETS = {
   claude: { fast: 'haiku', pro: 'opus', default: '' },
-  codex: { fast: 'gpt-5.4-mini', pro: 'gpt-5.5', default: '' },
-  gemini: { fast: 'gemini-3.1-flash-lite', pro: 'gemini-3.1-pro-preview', default: 'gemini-flash-latest' },
-  grok: { fast: 'grok-composer-2.5-fast', pro: 'grok-build', default: 'grok-composer-2.5-fast' },
+  codex: { fast: 'gpt-5.6-luna', pro: 'gpt-5.6-sol', default: '' },
+  gemini: { fast: 'gemini-3.5-flash-lite', pro: 'gemini-3.1-pro-preview', default: 'gemini-flash-latest' },
+  grok: { fast: '', pro: 'grok-build', default: '' },
+};
+
+// Saved pins remain intact, including IDs absent from the current catalog.
+const MODEL_NOTICES = {
+  codex: {
+    'gpt-5.4': 'Retired from Codex with ChatGPT sign-in on August 31, 2026. Choose GPT-5.6 Terra or CLI default. API-key access is separate.',
+    'gpt-5.4-mini': 'Retired from Codex with ChatGPT sign-in on August 31, 2026. Choose GPT-5.6 Luna or CLI default. API-key access is separate.',
+    'gpt-5.5': 'Scheduled to retire from Codex with ChatGPT sign-in on October 14, 2026. Choose GPT-5.6 Sol or CLI default. API-key access is separate.',
+  },
+  grok: {
+    'grok-composer-2.5-fast': 'This saved model is no longer a recommended CLI choice. Use Check model to query your CLI, or choose Grok Build / CLI default.',
+  },
 };
 
 /** The model id for a provider's preset ('fast' | 'pro' | 'default'). */
@@ -81,7 +93,7 @@ const PROVIDERS = {
     id: 'claude', label: 'Claude Code', command: 'claude', models: CLAUDE_MODELS,
     install: 'npm i -g @anthropic-ai/claude-code',
     npmPackage: '@anthropic-ai/claude-code',
-    docsUrl: 'https://docs.anthropic.com/en/docs/claude-code/overview',
+    docsUrl: 'https://code.claude.com/docs/en/overview',
     login: {
       args: ['/login'],
       hint: 'A Terminal window opens running “claude /login”. Follow the prompts (a browser may open) to authorize your Claude Pro/Max subscription, then come back and click “I’ve finished”.',
@@ -111,7 +123,7 @@ const PROVIDERS = {
     id: 'grok', label: 'Grok', command: 'grok', models: GROK_MODELS,
     install: 'npm i -g @xai-official/grok',
     npmPackage: '@xai-official/grok',
-    docsUrl: 'https://docs.x.ai/build/cli',
+    docsUrl: 'https://docs.x.ai/build/overview',
     login: {
       args: ['login'],
       hint: 'A Terminal window opens running “grok login”. It opens your browser ONCE to sign in with your xAI account (SuperGrok or X Premium Plus) — no API key needed. Finish in the browser, then come back; ChapterOne detects it automatically.',
@@ -136,6 +148,6 @@ function loginFor(provider) {
 
 module.exports = {
   CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, GROK_MODELS,
-  SUBSCRIPTION_SCRUB, PROVIDERS, PROVIDER_IDS, MODEL_PRESETS,
+  SUBSCRIPTION_SCRUB, PROVIDERS, PROVIDER_IDS, MODEL_PRESETS, MODEL_NOTICES, CATALOG_REVIEWED_AT,
   modelsFor, providerList, loginFor, presetModel,
 };

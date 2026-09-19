@@ -16,6 +16,11 @@ app.disableHardwareAcceleration();
 
 const cli = require(path.join(root, 'src/main/cli'));
 let providerReady = false;
+const modelChecks = [];
+cli.verifyModel = async (provider, model) => {
+  modelChecks.push({ provider, model });
+  return { valid: true, detail: 'Offline model check' };
+};
 cli.checkPrerequisites = async () => ({ node: { found: true }, npm: { found: false },
   claude: { found: providerReady }, codex: { found: false }, gemini: { found: false }, grok: { found: false }, chain: ['claude'] });
 const engine = { id: 'smoke', model: '', async checkAuth() { return { ok: true, detail: 'Offline test provider' }; }, async complete(prompt) {
@@ -82,7 +87,7 @@ require(path.join(root, 'src/main/main.js'));
       coverSvg: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="#233b49"/><circle cx="440" cy="200" r="80" fill="#f0d591"/><path d="M0 620 Q300 420 600 660 L600 900H0Z" fill="#386653"/><text x="60" y="110" fill="#fff" font-size="44">The Moonlit Garden</text><text x="60" y="830" fill="#fff" font-size="26">Test Author</text></svg>' });
     fixtureStore.saveBook({ ...original, id: 'ui-title-fixture', title: 'A Field Guide to Finding Your Way Home When Every Road Leads Somewhere Unexpected', status: 'paused',
       pausedReason: { detail: 'Synthetic paused draft for UI checks.' }, coverSvg: null });
-  });
+  }, modelChecks);
   const artifacts = path.join(__dirname, '..', 'artifacts');
   fs.mkdirSync(artifacts, { recursive: true });
   fs.writeFileSync(path.join(artifacts, `smoke-${process.platform}-${process.arch}.png`), (await win.webContents.capturePage()).toPNG());

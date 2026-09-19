@@ -31,7 +31,7 @@ function openLoginTerminal(cmd) {
 
 const { Store } = require('./store');
 const { createEngine, createChainEngine, checkPrerequisites, installProviderCli, verifyModel } = require('./cli');
-const { modelsFor, providerList, loginFor, PROVIDERS } = require('./cli/models');
+const { modelsFor, providerList, loginFor, PROVIDERS, MODEL_PRESETS, MODEL_NOTICES, CATALOG_REVIEWED_AT } = require('./cli/models');
 const { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, verifyKey, priceFor, modelLabel } = require('./book/nanoBanana');
 const { bandOf, plannedImageCount, readerVarsForBand } = require('./book/ageBands');
 const { classifyBook } = require('./book/classify');
@@ -162,7 +162,9 @@ function registerIpc(store) {
     codex: modelsFor('codex'),
     gemini: modelsFor('gemini'),
     grok: modelsFor('grok'),
-    presets: require('./cli/models').MODEL_PRESETS,
+    presets: MODEL_PRESETS,
+    modelNotices: MODEL_NOTICES,
+    reviewedAt: CATALOG_REVIEWED_AT,
     providers: providerList(),
     imageModels: IMAGE_MODELS,
     defaultImageModel: DEFAULT_IMAGE_MODEL,

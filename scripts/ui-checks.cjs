@@ -7,7 +7,7 @@ const { nativeTheme } = require('electron');
 
 // These checks drive the real sandboxed UI with an isolated library and the
 // smoke runner's offline provider. They never use a real account or send mail.
-module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary) {
+module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary, modelChecks) {
   const js = (source) => win.webContents.executeJavaScript(source);
   const pause = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
   const application = process.argv.some(arg => arg.startsWith('--app-root=')) ? 'packaged' : 'source';
@@ -81,6 +81,57 @@ module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary
     nativeTheme.themeSource = 'light';
     win.setContentSize(1180, 820);
     win.webContents.debugger.attach('1.3');
+    await check('Current model presets, saved pins, retirement notices, and explicit quota checks', async () => {
+      const initial = await js('window.api.getSettings()');
+      const reload = async () => {
+        await new Promise(resolve => { win.webContents.once('did-finish-load', resolve); win.webContents.reload(); });
+        await waitFor('!!document.querySelector(".nav-item[aria-current=page]")');
+      };
+      await js(`window.api.saveSettings({chain:['claude','codex','gemini','grok'], codexModel:'gpt-5.4-mini',
+        images:{model:'saved-image-pin'}, audio:{model:'saved-audio-pin'}})`);
+      await reload();
+      await nav('settings');
+      await pause(800);
+      assert.equal(modelChecks.length, 0, 'Loading a legacy pin must not generate a model probe');
+      assert.match(await js('document.querySelector("#eng-model-codex").closest(".model-pick").textContent'), /Retired.*August 31/);
+      assert.equal(await js('document.querySelector("#s-img-model").value'), 'saved-image-pin');
+      assert.equal(await js('document.querySelector("#s-aud-model").value'), 'saved-audio-pin');
+      const custom = '#eng-model-codex + .model-custom .model-custom-input';
+      await fill(custom, 'future-model-pin');
+      await pause(800);
+      assert.equal(modelChecks.length, 0, 'Typing must not consume provider quota');
+      assert.equal(await js('window.api.getSettings().then(s => s.codexModel)'), 'future-model-pin');
+      await screenshot('models-custom');
+      await click('#eng-model-codex + .model-custom button');
+      await waitFor('document.querySelector("#eng-model-codex + .model-custom .model-verify").textContent.includes("Offline model check")');
+      assert.deepEqual(modelChecks, [{ provider: 'codex', model: 'future-model-pin' }]);
+      await nav('create');
+      await nav('settings');
+      assert.equal(await js(`document.querySelector(${JSON.stringify(custom)}).value`), 'future-model-pin');
+      assert.equal(modelChecks.length, 1, 'Navigating must not repeat the check');
+      for (const [label, preset] of [['⚡ Fast', 'fast'], ['💎 Pro', 'pro'], ['Default', 'default']]) {
+        await clickText(label);
+        const saved = await js('window.api.getSettings()');
+        const meta = await js('window.api.getModels()');
+        for (const provider of saved.chain) assert.equal(saved[provider + 'Model'], meta.presets[provider][preset]);
+      }
+      assert.equal(modelChecks.length, 1, 'Preset selection must not generate a probe');
+      await fill('#s-img-model', 'gemini-3.1-flash-lite-image');
+      assert.match(await js('document.querySelector(".image-model-note").textContent'), /multiple character reference/);
+      await fill('#s-img-model', 'gemini-2.5-flash-image');
+      assert.match(await js('document.querySelector(".image-model-note").textContent'), /October 2, 2026/);
+      win.setContentSize(900, 640);
+      win.webContents.setZoomFactor(1.25);
+      await fill('#eng-model-codex', '__custom__');
+      await fill(custom, 'a-long-future-model-id-that-must-wrap-without-overflowing-the-layout');
+      await layoutFits();
+      await js('document.querySelector("#eng-model-codex").closest(".chain-step").scrollIntoView({block:"center"})');
+      await screenshot('models-compact');
+      win.webContents.setZoomFactor(1);
+      win.setContentSize(1180, 820);
+      await js(`window.api.saveSettings(${JSON.stringify(initial)})`);
+      await reload();
+    });
     await check('Library search, empty results, and list preference', async () => {
       await nav('library');
       await fill('.lib-search', 'no-such-book-xyz');

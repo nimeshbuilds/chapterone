@@ -79,7 +79,7 @@ Configure at least one writing provider in Settings:
 | [Grok](https://docs.x.ai/build/cli/reference) | `npm i -g @xai-official/grok` | `grok login` |
 | [Gemini API](https://aistudio.google.com/apikey) | Add an API key in Settings | API key; separately billed usage |
 
-The packaged desktop app does not need a separate Node installation. The optional **Install CLI** buttons do require Node.js with npm on PATH. Source development requires **Node.js 22.12+**. Use current provider CLI versions; CLI flags, account entitlements, and available models can change independently of ChapterOne. The Default model choice avoids pinning an unavailable model.
+The packaged desktop app does not need a separate Node installation. The optional **Install CLI** buttons do require Node.js with npm on PATH. Source development requires **Node.js 22.12+**. Use current provider CLI versions; CLI flags, account entitlements, and available models can change independently of ChapterOne. The Default choice honors your CLI configuration; it does not guarantee access to the newest model. See the [current model catalog, presets, and retirement notices](docs/MODELS.md).
 
 Optional services: the same Gemini key can generate Nano Banana images; an [ElevenLabs](https://elevenlabs.io) key enables narration and voice cloning. Uploaded character photos go to Google when image generation uses them, and voice samples go to ElevenLabs when cloning. API usage is billed by the provider. Checking a Gemini/image key does not generate a paid sample.
 

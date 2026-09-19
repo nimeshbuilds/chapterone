@@ -346,12 +346,24 @@ function modelOptionsFor(provider) {
   const wrap = h('div', { class: 'model-pick' });
   const sel = h('select', { id: `eng-model-${provider}`, class: 'model-select', 'aria-label': `${providerLabel(provider)} model` });
   for (const m of list) sel.append(h('option', { value: m.id, selected: (!isCustom && m.id === current) ? 'selected' : false }, m.label));
-  sel.append(h('option', { value: '__custom__', selected: isCustom ? 'selected' : false }, isCustom ? `Custom: ${current}` : 'Custom model…'));
+  sel.append(h('option', { value: '__custom__', selected: isCustom ? 'selected' : false }, 'Custom model…'));
 
-  // Inline custom-model entry with live verification against the real provider.
+  // Checking Claude/Codex runs a real completion. Never probe just because a
+  // saved pin is absent from this release's catalog or the user is typing.
   const input = h('input', { class: 'model-custom-input', 'aria-label': `Custom ${providerLabel(provider)} model ID`, placeholder: 'type the exact model id…', value: isCustom ? current : '' });
-  const chip = h('span', { class: 'model-verify' }, '');
-  const customRow = h('div', { class: 'model-custom', style: isCustom ? '' : 'display:none' }, input, chip);
+  const chip = h('span', { class: 'model-verify', 'aria-live': 'polite' }, 'Unchecked');
+  const check = h('button', { class: 'btn btn-ghost btn-sm', disabled: !input.value.trim(), onClick: () => verify(input.value) }, 'Check model');
+  const probeHint = h('span', { class: 'hint model-check-hint' },
+    provider === 'claude' || provider === 'codex'
+      ? 'Check model sends a short test prompt and uses your quota or API billing.'
+      : 'Check model reads the provider’s model list without generating content.');
+  const customRow = h('div', { class: 'model-custom', style: isCustom ? '' : 'display:none' }, input, check, chip, probeHint);
+  const note = h('span', { class: 'hint model-note' });
+  const showNote = (value) => {
+    note.textContent = state.models.modelNotices?.[provider]?.[value] || list.find(m => m.id === value)?.note || '';
+    note.hidden = !note.textContent;
+  };
+  showNote(current);
   const setChip = (cls, text) => { chip.className = 'model-verify ' + cls; chip.textContent = text; };
 
   let token = 0;
@@ -359,29 +371,38 @@ function modelOptionsFor(provider) {
     const v = val.trim();
     if (!v) { setChip('', ''); return; }
     const mine = ++token;
+    check.disabled = true;
     setChip('checking', '⏳ checking…');
     try {
+      await updateSettings({ [field]: v });
+      if (mine !== token) return;
       const r = await api.verifyModel(provider, v);
       if (mine !== token) return; // a newer keystroke superseded this check
       if (r.valid === true) setChip('ok', '✓ ' + (r.detail || 'valid model'));
       else if (r.valid === false) setChip('bad', '✗ ' + (r.detail || 'not a valid model'));
       else setChip('warn', '⚠ ' + (r.detail || 'could not verify'));
     } catch (e) { if (mine === token) setChip('warn', '⚠ ' + e.message); }
+    finally { check.disabled = !input.value.trim(); }
   };
 
-  let timer = null;
   input.addEventListener('input', () => {
-    if (timer) clearTimeout(timer);
-    const val = input.value.trim();
-    setChip('checking', '⏳ …');
-    timer = setTimeout(async () => { await updateSettings({ [field]: val }); verify(val); }, 700);
+    ++token;
+    check.disabled = !input.value.trim();
+    setChip('', 'Unchecked');
+    showNote(input.value.trim());
+  });
+  input.addEventListener('change', async () => {
+    if (sel.value !== '__custom__') return;
+    try { await updateSettings({ [field]: input.value.trim() }); }
+    catch (err) { toast(`Could not save model: ${err.message}`, 'bad'); }
   });
 
   sel.addEventListener('change', async () => {
+    ++token;
     if (sel.value === '__custom__') {
       customRow.style.display = '';
       input.focus();
-      if (input.value.trim()) verify(input.value);
+      showNote(input.value.trim());
     } else {
       customRow.style.display = 'none';
       await updateSettings({ [field]: sel.value });
@@ -389,8 +410,7 @@ function modelOptionsFor(provider) {
     }
   });
 
-  if (isCustom) verify(current); // verify the saved custom value on load
-  wrap.append(sel, customRow);
+  wrap.append(sel, customRow, note);
   return wrap;
 }
 
@@ -492,7 +512,7 @@ function imageModeControl() {
   const nanoNeedsKey = mode === 'nano' && !hasImageKey();
   const hint = mode === 'nano'
     ? (hasImageKey()
-        ? 'Real, theme-matched illustrations generated with Google’s Nano Banana (Gemini image API). ~$0.13/image with the Pro model; density adapts to a kids book’s age. A cost estimate is shown before writing.'
+        ? 'Illustrations generated with your selected Nano Banana model. Image-output estimates are shown before writing; Google also bills for input and thinking tokens.'
         : 'Nano Banana needs your Gemini API key (image-only, separate from your CLI subscription).')
     : mode === 'ai'
       ? 'Your selected writing engine designs the cover and chapter illustrations. This uses your provider’s subscription quota or Gemini API billing. Review generated artwork before publishing.'
@@ -532,10 +552,11 @@ function engineBar() {
         h('span', { class: 'mini-label' }, 'Engines, models & automatic fallback chain'),
         h('div', { class: 'preset-btns' },
           h('span', { class: 'preset-label' }, 'Quick pick:'),
-          h('button', { class: 'btn btn-ghost btn-sm', title: 'Fastest model on every engine in your chain', onClick: () => applyPreset('fast') }, '⚡ Fast'),
-          h('button', { class: 'btn btn-ghost btn-sm', title: 'Largest / highest-quality model on every engine', onClick: () => applyPreset('pro') }, '💎 Pro'),
-          h('button', { class: 'btn btn-ghost btn-sm', title: 'Best on your plan / recommended default', onClick: () => applyPreset('default') }, 'Default'))),
+          h('button', { class: 'btn btn-ghost btn-sm', title: 'Fast choices; Grok uses your CLI default', onClick: () => applyPreset('fast') }, '⚡ Fast'),
+          h('button', { class: 'btn btn-ghost btn-sm', title: 'Quality-focused models across your chain', onClick: () => applyPreset('pro') }, '💎 Pro'),
+          h('button', { class: 'btn btn-ghost btn-sm', title: 'Your CLI configuration, or the Gemini Flash alias', onClick: () => applyPreset('default') }, 'Default'))),
       chainBuilder(),
+      h('span', { class: 'hint catalog-reviewed' }, `Model catalog reviewed ${state.models.reviewedAt || 'with this release'}. Access depends on your account and installed CLI version. Custom IDs remain available for newer releases.`),
       h('span', { class: 'hint' }, 'Writing runs top-to-bottom. If an engine’s quota runs out mid-book, it continues automatically on the next. Use Quick pick to set Fast / Pro / Default models across every engine at once.')),
     h('div', { class: 'engine-row', style: 'margin-top:14px' }, imageModeControl()),
     h('div', { class: 'engine-row toggles' },
@@ -2414,8 +2435,16 @@ function renderSettings() {
   const imgs = s.images || {};
   const imageModels = state.models.imageModels || [];
   const imgModelSel = h('select', { id: 's-img-model' });
-  (imageModels.length ? imageModels : [{ id: 'gemini-3-pro-image', label: 'Nano Banana Pro' }])
-    .forEach((m) => imgModelSel.append(h('option', { value: m.id, selected: m.id === (imgs.model || 'gemini-3-pro-image') ? 'selected' : false }, m.label + (m.price ? ` (~$${m.price}/img)` : ''))));
+  const selectedImageModel = imgs.model || state.models.defaultImageModel || '';
+  imageModels.forEach((m) => imgModelSel.append(h('option', { value: m.id, selected: m.id === selectedImageModel ? 'selected' : false }, m.label + (m.price ? ` (~$${m.price}/img)` : ''))));
+  if (selectedImageModel && !imageModels.some(m => m.id === selectedImageModel)) {
+    imgModelSel.append(h('option', { value: selectedImageModel, selected: true }, `Saved: ${selectedImageModel}`));
+  }
+  const imageNote = h('p', { class: 'hint image-model-note' });
+  const updateImageNote = () => { imageNote.textContent = [imageModels.find(m => m.id === imgModelSel.value)?.note,
+    'Estimates cover standard 1K image output only; input and thinking tokens cost extra.'].filter(Boolean).join(' '); };
+  imgModelSel.addEventListener('change', updateImageNote);
+  updateImageNote();
   const imageCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'Gemini API key · illustrations & Gemini engine'),
     h('p', { class: 'hint', style: 'margin-bottom:14px' },
@@ -2424,6 +2453,7 @@ function renderSettings() {
       h('label', { class: 'field' }, h('span', {}, 'Gemini API key (engine + images)'),
         h('input', { id: 's-img-key', type: 'password', value: imgs.geminiApiKey || '', placeholder: 'AIza…' })),
       h('label', { class: 'field' }, h('span', {}, 'Image model'), imgModelSel)),
+    imageNote,
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-primary btn-sm', onClick: saveImages }, 'Save'),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: verifyImages }, 'Test key')));
@@ -2432,6 +2462,9 @@ function renderSettings() {
   const audModels = state.models.audioModels || [{ id: 'eleven_multilingual_v2', label: 'Multilingual v2' }];
   const audModelSel = h('select', { id: 's-aud-model' });
   audModels.forEach((m) => audModelSel.append(h('option', { value: m.id, selected: m.id === (aud.model || 'eleven_multilingual_v2') ? 'selected' : false }, m.label)));
+  if (aud.model && !audModels.some(m => m.id === aud.model)) {
+    audModelSel.append(h('option', { value: aud.model, selected: true }, `Saved: ${aud.model}`));
+  }
   const voiceBox = h('div', { id: 'voice-pickers', class: 'voice-pickers' },
     h('span', { class: 'hint' }, aud.elevenApiKey ? 'Click “Load voices” to choose your narrators.' : 'Add your ElevenLabs key, Save, then load voices.'));
   const audioCard = h('div', { class: 'card' },

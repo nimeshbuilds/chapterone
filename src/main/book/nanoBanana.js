@@ -5,24 +5,25 @@ const { requestBuffer } = require('../http');
 /**
  * Google "Nano Banana" image generation via the Gemini API.
  *
- * Unlike the text engines (which run on the user's CLI subscription, never an
- * API key), the image models are NOT available through any CLI — so image
- * generation is an explicit, opt-in feature that uses a Gemini API key the user
- * provides. This key is used ONLY for image calls to Google; it never touches
- * text generation and is never injected into the CLI child environment.
+ * Image generation is opt-in and billed through the user's Gemini API key.
+ * The Gemini writing engine can share this key; subscription CLIs never receive it.
  *
  * Docs: https://ai.google.dev/gemini-api/docs/image-generation
  */
 
 const IMAGE_MODELS = [
-  { id: 'gemini-2.5-flash-image', label: 'Nano Banana — recommended', price: 0.039 },
-  { id: 'gemini-3-pro-image', label: 'Nano Banana Pro — best quality', price: 0.134 },
+  { id: 'gemini-3.1-flash-image', label: 'Nano Banana 2 — recommended', price: 0.067 },
+  { id: 'gemini-3.1-flash-lite-image', label: 'Nano Banana 2 Lite — fastest & lowest cost', price: 0.0336,
+    note: 'Best for simple images. For multiple character reference photos and consistency across pages, choose Nano Banana 2 or Pro.' },
+  { id: 'gemini-3-pro-image', label: 'Nano Banana Pro — complex artwork', price: 0.134 },
+  { id: 'gemini-2.5-flash-image', label: 'Nano Banana — legacy', price: 0.039,
+    note: 'Google will shut down this model on October 2, 2026. Choose Nano Banana 2 or 2 Lite.' },
 ];
-const DEFAULT_IMAGE_MODEL = 'gemini-2.5-flash-image';
+const DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image';
 const HOST = 'generativelanguage.googleapis.com';
-const API_VERSION = 'v1beta'; // image generation (responseModalities) requires v1beta
+const API_VERSION = 'v1beta'; // retain compatibility with existing generateContent integrations
 
-/** Per-image USD price for a model id (for cost estimates). */
+/** Approximate standard 1K image-output USD price; input/thinking billed separately. */
 function priceFor(modelId) {
   const m = IMAGE_MODELS.find((x) => x.id === modelId);
   return m ? m.price : 0.134;
@@ -46,7 +47,7 @@ function describeError(status, bodyText) {
   try { msg = JSON.parse(bodyText).error?.message || ''; } catch (_) { msg = (bodyText || '').slice(0, 200); }
   if (status === 400) return `Nano Banana rejected the request (400): ${msg || 'bad request'}`;
   if (status === 401 || status === 403) return `Your Gemini API key was rejected (${status}). Check the key in Settings → AI Illustrations.${msg ? ` ${msg}` : ''}`;
-  if (status === 404) return `That image model isn't available on your key (404). Pick a different model in Settings → AI Illustrations (try “Nano Banana — recommended”).${msg ? ` ${msg}` : ''}`;
+  if (status === 404) return `That image model isn't available on your key (404). Pick a different model in Settings → AI Illustrations (try “Nano Banana 2 — recommended”).${msg ? ` ${msg}` : ''}`;
   if (status === 429) return 'Nano Banana rate/quota limit hit (429). Wait a moment or check your Google AI Studio quota.';
   return `Nano Banana error ${status}: ${msg || 'unknown'}`;
 }
@@ -55,6 +56,7 @@ function describeError(status, bodyText) {
 function extractImage(json) {
   const parts = json?.candidates?.[0]?.content?.parts || [];
   for (const p of parts) {
+    if (p.thought) continue; // Gemini 3 can return interim composition images.
     const inline = p.inline_data || p.inlineData;
     if (inline && inline.data) {
       const mime = inline.mime_type || inline.mimeType || 'image/png';
@@ -74,9 +76,8 @@ async function generateImage(opts = {}) {
   const model = opts.model || DEFAULT_IMAGE_MODEL;
   if (!opts.prompt || !opts.prompt.trim()) throw new Error('An image prompt is required.');
 
-  // Aspect ratio is expressed in the prompt (the v1beta image API has no body
-  // field for it on all models). The body uses ONLY the documented field
-  // responseModalities on generationConfig (no other config field is valid).
+  // Keep the shared generateContent request compatible with saved legacy models.
+  // New models also support imageConfig; use their default 1K size here.
   const aspectHint = opts.aspectRatio ? `Compose this as a ${opts.aspectRatio} aspect ratio image. ` : '';
   // Optional reference photos (e.g. a child's uploaded picture) so the model
   // draws a character that RESEMBLES them, in the book's art style. Sent as

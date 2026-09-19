@@ -28,7 +28,8 @@ The app is deliberately small: CommonJS main-process modules, a vanilla JavaScri
 | CLI nonzero exits/Windows command paths and provider stream failures were insufficiently handled | Adapter, quoting, npm-shim, native PATH, UTF-8 and stream truncation regressions |
 | Connection checks could spend image/text credits | Metadata GET requests for Gemini/Nano Banana, with explicit inconclusive model-alias results |
 | Windows packages were advertised but missing from releases | Native x64/ARM64 builds and packaged smoke tests; all-platform draft assembly with checksums |
-| Reader controls were squeezed beside the sidebar; briefs were lost on navigation; dialogs lacked keyboard handling | Responsive reader/library/forms, preserved briefs, native modal dialogs, keyboard controls, and 11 real-UI interaction groups; see [UI testing](UI_TESTING.md) |
+| Reader controls were squeezed beside the sidebar; briefs were lost on navigation; dialogs lacked keyboard handling | Responsive reader/library/forms, preserved briefs, native modal dialogs, keyboard controls, and 12 real-UI interaction groups; see [UI testing](UI_TESTING.md) |
+| Presets used retired subscription models and opening saved custom models could trigger billed probes | September 2026 [model catalog](MODELS.md), retirement notices, explicit checks, preserved settings, media request compatibility tests and real-UI coverage |
 | Documentation implied offline AI, retired Gemini login, free art and print-platform compliance | README, security guide, setup UI and release notes corrected |
 
 ## Automated evidence

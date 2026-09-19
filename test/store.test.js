@@ -28,6 +28,21 @@ test('save and merge settings', () => {
   assert.strictEqual(out.kindle.smtp.port, 587);
 });
 
+test('catalog updates preserve saved and custom model pins while new installs use current defaults', () => {
+  const s = tmpStore();
+  const { DEFAULT_IMAGE_MODEL } = require('../src/main/book/nanoBanana');
+  assert.strictEqual(s.getSettings().grokModel, '');
+  assert.strictEqual(s.getSettings().images.model, DEFAULT_IMAGE_MODEL);
+  const pins = { codexModel: 'gpt-5.4-mini', grokModel: 'grok-composer-2.5-fast', claudeModel: 'custom-future-model',
+    images: { model: 'gemini-2.5-flash-image' }, audio: { model: 'saved-custom-voice-model' } };
+  s.saveSettings(pins);
+  s.saveSettings({ authorName: 'Test Writer' });
+  const saved = new Store(s.baseDir).getSettings();
+  for (const name of ['codexModel', 'grokModel', 'claudeModel']) assert.strictEqual(saved[name], pins[name]);
+  assert.strictEqual(saved.images.model, pins.images.model);
+  assert.strictEqual(saved.audio.model, pins.audio.model);
+});
+
 test('book CRUD + list', () => {
   const s = tmpStore();
   const book = {

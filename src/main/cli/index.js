@@ -15,8 +15,7 @@ function buildAdapter(providerId, settings = {}) {
     return new CodexAdapter({ command: settings.codexCommand, model: settings.codexModel, extraArgs: settings.codexExtraArgs, forceSubscription });
   }
   if (providerId === 'gemini') {
-    // Gemini talks to the REST API directly with a Gemini API key (the CLI's
-    // login is dead). Reuse the same key set for Nano Banana — it's one Google key.
+    // This integration uses the REST API, sharing the Nano Banana key if set.
     const apiKey = settings.geminiApiKey || (settings.images && settings.images.geminiApiKey) || '';
     return new GeminiAdapter({ model: settings.geminiModel, apiKey });
   }
@@ -66,7 +65,7 @@ function createChainEngine(settings = {}, opts = {}) {
  */
 async function verifyModel(provider, model, settings = {}) {
   const m = String(model || '').trim();
-  if (!m) return { valid: true, detail: 'Uses the plan/CLI default model' };
+  if (!m) return { valid: true, detail: 'Uses your configured default model' };
   try {
     const adapter = buildAdapter(provider, settings);
     if (typeof adapter.verifyModel === 'function') return await adapter.verifyModel(m); // grok, gemini

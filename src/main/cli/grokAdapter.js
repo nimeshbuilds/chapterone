@@ -20,7 +20,7 @@ class GrokAdapter {
     this.id = 'grok';
     this.label = 'Grok CLI';
     this.command = config.command || 'grok';
-    this.model = config.model || ''; // empty => CLI default (grok-build-0.1)
+    this.model = config.model || ''; // empty => the user's CLI configuration
     this.extraArgs = config.extraArgs || [];
     this.forceSubscription = config.forceSubscription !== false;
   }

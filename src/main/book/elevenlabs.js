@@ -14,8 +14,9 @@ const HOST = 'api.elevenlabs.io';
 
 const MODELS = [
   { id: 'eleven_multilingual_v2', label: 'Multilingual v2 — best for audiobooks' },
-  { id: 'eleven_v3', label: 'v3 — most expressive (newest)' },
-  { id: 'eleven_turbo_v2_5', label: 'Turbo v2.5 — fast & low-cost' },
+  { id: 'eleven_v3', label: 'Eleven v3 — expressive narration' },
+  { id: 'eleven_flash_v2_5', label: 'Flash v2.5 — fast & low-cost' },
+  { id: 'eleven_turbo_v2_5', label: 'Turbo v2.5 — previous fast model' },
 ];
 const DEFAULT_MODEL = 'eleven_multilingual_v2';
 
@@ -101,6 +102,10 @@ async function tts(opts = {}) {
   const text = String(opts.text || '').trim();
   if (!text) throw new Error('There is no text to narrate yet.');
   const modelId = opts.modelId || DEFAULT_MODEL;
+  // v3 has discrete stability modes and does not support similarity/boost.
+  const voiceSettings = modelId === 'eleven_v3'
+    ? { stability: 0.5 }
+    : { stability: 0.5, similarity_boost: 0.8, style: 0.0, use_speaker_boost: true };
 
   const chunks = chunkText(text);
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
@@ -110,7 +115,7 @@ async function tts(opts = {}) {
     const { status, buffer } = await httpPostAudio(
       `/v1/text-to-speech/${encodeURIComponent(opts.voiceId)}`,
       apiKey,
-      { text: chunks[i], model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.0, use_speaker_boost: true } },
+      { text: chunks[i], model_id: modelId, voice_settings: voiceSettings },
       opts.signal
     );
     if (status !== 200) throw new Error(describeError(status, buffer.toString('utf8')));

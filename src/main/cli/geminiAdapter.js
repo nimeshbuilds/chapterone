@@ -4,7 +4,7 @@ const https = require('https');
 const { requestBuffer } = require('../http');
 const { enforceMinWords } = require('./spawn');
 
-const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest'; // alias → newest Flash the key can access
+const DEFAULT_GEMINI_MODEL = require('./models').MODEL_PRESETS.gemini.default;
 const HOST = 'generativelanguage.googleapis.com';
 
 /**

@@ -3,6 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const { classifyBook } = require('./book/classify');
+const { MODEL_PRESETS } = require('./cli/models');
+const { DEFAULT_IMAGE_MODEL } = require('./book/nanoBanana');
 
 const SECRET_PATHS = [
   ['geminiApiKey'], ['images', 'geminiApiKey'], ['audio', 'elevenApiKey'],
@@ -64,9 +66,9 @@ class Store {
       codexCommand: 'codex',
       codexModel: '',
       geminiCommand: 'gemini',
-      geminiModel: 'gemini-flash-latest', // REST API + key; alias → newest Flash the key can use
+      geminiModel: MODEL_PRESETS.gemini.default,
       grokCommand: 'grok',
-      grokModel: 'grok-composer-2.5-fast', // fastest + reliable for prose (grok-build's agentic mode is slow/flaky headless)
+      grokModel: MODEL_PRESETS.grok.default,
       forceSubscription: true, // strip API-key env vars; use subscription login
       authorName: '', // if set, books are authored under this name (no invented pen name)
       research: true, // ground content with web search by default
@@ -74,12 +76,11 @@ class Store {
       imageMode: 'off', // 'off' | 'ai' (CLI-designed SVG art) | 'stock' (Openverse)
       illustrate: false, // legacy flag (mapped to imageMode='stock')
       polish: true, // agentic editor pass for bestseller-grade prose
-      // Nano Banana image generation (opt-in, image-only Gemini API key —
-      // separate from the CLI subscription; never used for text generation).
+      // Gemini API key shared by optional image generation and Gemini writing.
       images: {
         provider: 'nano',
         geminiApiKey: '',
-        model: 'gemini-3-pro-image', // Nano Banana Pro
+        model: DEFAULT_IMAGE_MODEL,
       },
       // ElevenLabs audiobook narration (opt-in, audio-only API key — separate
       // from the CLI subscription and the image key; never used for text).
