@@ -35,10 +35,12 @@ jobs:
             os: windows-latest
             build: npm run dist:win:x64 -- --publish never
             app: release/win-unpacked/resources/app.asar
+            executable: release/win-unpacked/ChapterOne.exe
           - name: windows-arm64
             os: windows-11-arm
             build: npm run dist:win:arm64 -- --publish never
             app: release/win-arm64-unpacked/resources/app.asar
+            executable: release/win-arm64-unpacked/ChapterOne.exe
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
@@ -56,6 +58,21 @@ jobs:
       - run: npm run test:smoke
       - name: Build installers
         run: ${{ matrix.build }}
+      - name: Verify unsigned Windows test artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          APP_EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          $files = @(Get-Item -LiteralPath $env:APP_EXECUTABLE -ErrorAction Stop)
+          $installers = @(Get-ChildItem release/*.exe -ErrorAction Stop)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows installer.' }
+          $files += $installers
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned CI artifact: $($file.Name) ($($signature.Status))" }
+            Write-Output "Verified unsigned status: $($file.Name)"
+          }
       - name: Smoke test packaged application code
         run: npm run test:smoke -- --app-root=${{ matrix.app }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

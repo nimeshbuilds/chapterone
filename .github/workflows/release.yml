@@ -15,6 +15,9 @@ concurrency:
 jobs:
   prepare:
     name: Validate version and signing policy
+    # A maintainer may assemble this exact tag using a locally notarized Mac
+    # build and matching native CI installers. Other tags keep the full gate.
+    if: github.event_name == 'workflow_dispatch' || github.ref_name != vars.RELEASE_MANUAL_TAG
     runs-on: ubuntu-latest
     outputs:
       mac_signing: ${{ steps.signing.outputs.mac_signing }}
@@ -30,6 +33,7 @@ jobs:
         id: signing
         run: node scripts/release-check.cjs --signing
         env:
+          CHAPTERONE_UNSIGNED_WINDOWS_VERSION: ${{ vars.RELEASE_UNSIGNED_WINDOWS_VERSION }}
           MAC_CSC_LINK_PRESENT: ${{ secrets.MAC_CSC_LINK != '' }}
           MAC_CSC_KEY_PASSWORD_PRESENT: ${{ secrets.MAC_CSC_KEY_PASSWORD != '' }}
           APPLE_ID_PRESENT: ${{ secrets.APPLE_ID != '' }}
@@ -87,6 +91,7 @@ jobs:
           ${{ matrix.build }}
         env:
           CHAPTERONE_RELEASE: 'true'
+          CHAPTERONE_UNSIGNED_WINDOWS_VERSION: ${{ needs.prepare.outputs.windows_signing == 'unsigned' && vars.RELEASE_UNSIGNED_WINDOWS_VERSION || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'true'
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
@@ -110,6 +115,7 @@ jobs:
         if: runner.os == 'Windows'
         env:
           APP_EXECUTABLE: ${{ matrix.executable }}
+          WINDOWS_SIGNING: ${{ needs.prepare.outputs.windows_signing }}
         shell: pwsh
         run: |
           $files = @(Get-Item -LiteralPath $env:APP_EXECUTABLE -ErrorAction Stop)
@@ -119,6 +125,11 @@ jobs:
           $publisher = $null
           foreach ($file in $files) {
             $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if ($env:WINDOWS_SIGNING -eq 'unsigned') {
+              if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned file: $($file.Name) ($($signature.Status))" }
+              Write-Output "Verified unsigned status: $($file.Name)"
+              continue
+            }
             if ($signature.Status -ne 'Valid') { throw "Invalid signature: $($file.Name) ($($signature.Status))" }
             if (-not $signature.TimeStamperCertificate) { throw "Missing signature timestamp: $($file.Name)" }
             $subject = $signature.SignerCertificate.Subject
@@ -159,6 +170,7 @@ jobs:
         env:
           MAC_SIGNING: ${{ needs.prepare.outputs.mac_signing }}
           WINDOWS_SIGNING: ${{ needs.prepare.outputs.windows_signing }}
+          CHAPTERONE_UNSIGNED_WINDOWS_VERSION: ${{ vars.RELEASE_UNSIGNED_WINDOWS_VERSION }}
       - name: Create draft with every installer
         env:
           GH_TOKEN: ${{ github.token }}

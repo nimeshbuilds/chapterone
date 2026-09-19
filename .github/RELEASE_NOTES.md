@@ -1,6 +1,6 @@
 ChapterOne {{VERSION}} includes the security, reliability, interface, and provider updates developed in the open-source readiness review. The repository lives at **nimeshbuilds/chapterone**.
 
-This signed release replaces the withdrawn unsigned 0.2.0 release. Both platforms now require verified signatures before publication.
+This release replaces the withdrawn 0.2.0 release. The Mac downloads are Developer ID signed and notarized. See the platform signing status below before downloading the Windows installers.
 
 ## Downloads
 
@@ -29,7 +29,7 @@ See the [full changelog](https://github.com/{{REPOSITORY}}/blob/{{COMMIT}}/CHANG
 
 ## Validation and limits
 
-Built from commit [`{{COMMIT}}`](https://github.com/{{REPOSITORY}}/commit/{{COMMIT}}) in this [release workflow]({{BUILD_URL}}). The workflow runs unit tests, syntax checks, dependency audits, deliberate smoke-runner failure checks, and real Electron smoke tests against source and packaged app code. UI checks cover 12 workflow groups, synthetic generation, six export formats, print dimensions, and IPC isolation. Uploaded asset sizes and SHA256 digests are checked before publication.
+Built from commit [`{{COMMIT}}`](https://github.com/{{REPOSITORY}}/commit/{{COMMIT}}), with native builds and tests recorded in this [build run]({{BUILD_URL}}). Checks include unit tests, syntax checks, dependency audits, deliberate smoke-runner failure checks, and real Electron smoke tests against source and packaged app code. UI checks cover 12 workflow groups, synthetic generation, six export formats, print dimensions, and IPC isolation. Mac signing/notarization and uploaded asset sizes and SHA256 digests are verified before publication. Mac signing may be performed locally using the maintainer's Keychain; signing credentials are not included in downloads.
 
 Automated checks use synthetic providers. Clean-machine install/upgrade/uninstall, every supported OS/hardware combination, real provider login/quotas, paid image/audio calls, SMTP delivery, and full screen-reader acceptance have **not** all been manually validated. See [release acceptance](https://github.com/{{REPOSITORY}}/blob/{{COMMIT}}/docs/RELEASING.md#manual-acceptance-before-public-launch).
 

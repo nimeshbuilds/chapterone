@@ -4,9 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION=$(node -p "require('./package.json').version")
-DMG="release/ChapterOne-${VERSION}-mac-universal.dmg"
-APP="release/mac-universal/ChapterOne.app"
-ZIP="release/ChapterOne-${VERSION}-mac-universal.zip"
+RELEASE_DIR="${CHAPTERONE_RELEASE_DIR:-release}"
+DMG="$RELEASE_DIR/ChapterOne-${VERSION}-mac-universal.dmg"
+APP="$RELEASE_DIR/mac-universal/ChapterOne.app"
+ZIP="$RELEASE_DIR/ChapterOne-${VERSION}-mac-universal.zip"
 PROFILE="${1:-chapterone-notary}"
 
 [ -f "$DMG" ] || { echo "Missing $DMG; build the signed universal app first."; exit 1; }

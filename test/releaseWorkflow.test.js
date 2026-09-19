@@ -18,6 +18,7 @@ function check(args, env = {}, cwd) {
   return spawnSync(process.execPath, [script, ...args], {
     cwd, encoding: 'utf8',
     env: { ...process.env, ...unsignedEnv, GITHUB_REF_TYPE: 'branch', GITHUB_OUTPUT: '', ALLOW_UNSIGNED: '',
+      CHAPTERONE_UNSIGNED_WINDOWS_VERSION: '',
       MAC_SIGNING: '', WINDOWS_SIGNING: '', ...env },
   });
 }
@@ -52,6 +53,24 @@ test('publication requires every signing credential and ignores obsolete unsigne
   assert.match(signed.stdout, /mac_signing=signed\nwindows_signing=signed/);
 });
 
+test('unsigned Windows exception requires the exact version and never waives Mac or partial credentials', () => {
+  const mac = Object.fromEntries(macSecrets.map((key) => [`${key}_PRESENT`, 'true']));
+  const approved = { ...mac, CHAPTERONE_UNSIGNED_WINDOWS_VERSION: version };
+  const result = check(['--signing'], approved);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /mac_signing=signed\nwindows_signing=unsigned/);
+  assert.notEqual(check(['--signing'], { ...approved, CHAPTERONE_UNSIGNED_WINDOWS_VERSION: '0.0.0-wrong' }).status, 0);
+  for (const key of macSecrets) {
+    assert.notEqual(check(['--signing'], { ...approved, [`${key}_PRESENT`]: 'false' }).status, 0, key);
+  }
+  for (const key of windowsSecrets) {
+    assert.notEqual(check(['--signing'], { ...approved, [`${key}_PRESENT`]: 'true' }).status, 0, key);
+  }
+  const signed = check(['--signing'], { ...approved, ...Object.fromEntries(windowsSecrets.map((key) => [`${key}_PRESENT`, 'true'])) });
+  assert.equal(signed.status, 0, signed.stderr);
+  assert.match(signed.stdout, /windows_signing=signed/);
+});
+
 test('release notes reject unsigned platforms and pin the exact source and build', (t) => {
   const cwd = fixture(t);
   assert.notEqual(check(['--notes'], {}, cwd).status, 0);
@@ -68,6 +87,13 @@ test('release notes reject unsigned platforms and pin the exact source and build
   assert.match(notes, /example\/chapterone\/actions\/runs\/123/);
   assert.ok(notes.includes(`example/chapterone/commit/${env.GITHUB_SHA}`));
   assert.doesNotMatch(notes, /\{\{/);
+  const unsigned = check(['--notes'], { ...env, WINDOWS_SIGNING: 'unsigned', CHAPTERONE_UNSIGNED_WINDOWS_VERSION: version }, cwd);
+  assert.equal(unsigned.status, 0, unsigned.stderr);
+  const unsignedNotes = fs.readFileSync(path.join(cwd, 'release/RELEASE_NOTES.md'), 'utf8');
+  assert.match(unsignedNotes, /\*\*Windows signing:\*\* UNSIGNED/);
+  assert.match(unsignedNotes, /Publisher identity is not verified/);
+  assert.doesNotMatch(unsignedNotes, /Authenticode signed and timestamped/);
+  assert.notEqual(check(['--notes'], { ...env, MAC_SIGNING: 'unsigned', WINDOWS_SIGNING: 'unsigned', CHAPTERONE_UNSIGNED_WINDOWS_VERSION: version }, cwd).status, 0);
 });
 
 test('release packaging cannot disable required signatures or Mac notarization', () => {
@@ -88,6 +114,17 @@ test('release packaging cannot disable required signatures or Mac notarization',
     const win = config(trigger, 'win32');
     assert.equal(win.win.forceCodeSigning, true);
     assert.equal(win.forceCodeSigning, true);
+    const exception = { ...trigger, CHAPTERONE_UNSIGNED_WINDOWS_VERSION: require('../package.json').version };
+    const unsignedWin = config(exception, 'win32');
+    assert.equal(unsignedWin.forceCodeSigning, false);
+    assert.equal(unsignedWin.win.forceCodeSigning, false);
+    assert.throws(() => config(exception, 'darwin'), /notarization credentials/);
+    const stillSignedMac = config({ ...exception, APPLE_KEYCHAIN_PROFILE: 'synthetic-test-profile' }, 'darwin');
+    assert.equal(stillSignedMac.forceCodeSigning, true);
+    assert.equal(stillSignedMac.mac.forceCodeSigning, true);
+    assert.equal(stillSignedMac.mac.notarize, true);
+    assert.equal(stillSignedMac.dmg.sign, true);
+    assert.equal(config({ ...trigger, CHAPTERONE_UNSIGNED_WINDOWS_VERSION: '0.0.0-wrong' }, 'win32').forceCodeSigning, true);
   }
   // Pull-request tests never need access to private signing credentials.
   assert.equal(config({}, 'darwin').forceCodeSigning, false);

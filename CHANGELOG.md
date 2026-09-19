@@ -1,9 +1,9 @@
 # Changelog
 
-## [0.2.1] — Unreleased
+## [0.2.1] — 2026-09-19
 
-- Require signed releases on both platforms; remove every unsigned-release opt-in and optional Windows signing path.
-- Enforce signing in electron-builder, notarize and verify the Mac app and DMG, verify the app extracted from the ZIP, and require valid timestamped Windows app/installer signatures.
+- Require Developer ID signing and notarization on macOS. Permit owner-approved unsigned Windows installers through an exception scoped to the exact package version; disclose their signing status in download notes.
+- Enforce signing in electron-builder, notarize and verify the Mac app and DMG, verify the app extracted from the ZIP, and require valid timestamped Windows app/installer signatures unless the exact-version unsigned Windows exception applies.
 - Withdraw unsigned version 0.2.0. The replacement uses a new version; previously published binaries are not overwritten.
 
 ## [0.2.0] — 2026-09-19 (withdrawn)
@@ -47,7 +47,7 @@
 ### Compatibility
 
 - Requires macOS 13+ on Intel or Apple Silicon; Windows 10/11 x64 or Windows 11 ARM64. No 32-bit Windows package. Node.js 22.12+ is required only for source development and compatible CLI setup.
-- This version was published unsigned and then withdrawn. Version 0.2.1 requires signing and notarization before publication. Automated builds do not replace clean-machine install/upgrade tests or live provider acceptance checks.
+- This version was published unsigned and then withdrawn. Version 0.2.1 requires Mac signing and notarization before publication and has an owner-approved unsigned Windows exception. Automated builds do not replace clean-machine install/upgrade tests or live provider acceptance checks.
 
 ## [0.1.0] — 2026-06-15
 
@@ -78,3 +78,5 @@ Initial release. Historical notes below describe that version; current platform,
 
 [0.1.0]: https://github.com/nimeshbuilds/chapterone/releases/tag/v0.1.0
 [0.2.0]: https://github.com/nimeshbuilds/chapterone/releases/tag/v0.2.0
+
+[0.2.1]: https://github.com/nimeshbuilds/chapterone/releases/tag/v0.2.1
