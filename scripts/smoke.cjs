@@ -70,14 +70,21 @@ require(path.join(root, 'src/main/main.js'));
   }
   for (const format of ['epub', 'docx', 'html', 'markdown', 'pdf', 'pdf-print']) {
     const out = await js(`window.api.exportBook(${JSON.stringify(result.id)}, ${JSON.stringify(format)}, false)`);
-    assert.ok(fs.statSync(out.path).size > 100, `${format} export should contain data`);
+    const exported = fs.readFileSync(out.path);
+    assert.ok(exported.length > 100, `${format} export should contain data`);
     if (format === 'pdf-print') {
-      assert.match(fs.readFileSync(out.path).toString('latin1'), /\/MediaBox\s*\[\s*0\s+0\s+432\s+648\s*\]/);
+      assert.match(exported.toString('latin1'), /\/MediaBox\s*\[\s*0\s+0\s+432\s+648\s*\]/);
     }
   }
   const raster = require(path.join(root, 'src/main/export/rasterize'));
   const png = await raster.rasterizeSvg('<svg width="100" height="100"><rect width="100" height="100" fill="red"/></svg>');
   assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  const { sanitizeHtml } = require(path.join(root, 'src/main/book/aiArt'));
+  const hybrid = sanitizeHtml('<style>.art{display:flex;align-items:center;background:linear-gradient(120deg,#234,#678);color:white}</style><div class="art"><svg viewBox="0 0 20 20" width="40" height="40"><circle cx="10" cy="10" r="8" fill="#ffeebb"/></svg><span>ChapterOne</span></div>');
+  const hybridPng = await raster.rasterizeHtml(hybrid, { width: 240, height: 120 });
+  assert.equal(hybridPng.subarray(1, 4).toString(), 'PNG');
+  assert.equal(hybridPng.readUInt32BE(16), 240);
+  assert.equal(hybridPng.readUInt32BE(20), 120);
   await assert.rejects(js('window.api.openPath("/tmp/unapproved.exe")'), /exported document/);
   const untrusted = new BrowserWindow({ show: false, webPreferences: {
     preload: path.join(root, 'src/main/preload.js'), contextIsolation: true, sandbox: true,

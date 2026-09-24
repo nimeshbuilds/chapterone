@@ -44,3 +44,11 @@ test('tidyProse keeps inline code and never corrupts standalone numbers', () => 
   assert.doesNotMatch(out, /undefined/);
   assert.match(out, /command, fast\./);     // em-dash still becomes a comma
 });
+
+test('list marker normalization preserves indentation, numbering and inline emphasis', () => {
+  const out = t.tidyProse('Intro.\n\n  * **Bold** item\n\t+ Another *emphasized* item\n  12. Numbered item\n- Already normalized');
+  assert.match(out, /^  - \*\*Bold\*\* item$/m);
+  assert.match(out, /^\t- Another \*emphasized\* item$/m);
+  assert.match(out, /^  12\. Numbered item$/m);
+  assert.match(out, /^- Already normalized$/m);
+});

@@ -29,7 +29,6 @@ function openLoginTerminal(cmd) {
   });
 }
 
-const { Store } = require('./store');
 const { createEngine, createChainEngine, checkPrerequisites, installProviderCli, verifyModel } = require('./cli');
 const { modelsFor, providerList, loginFor, PROVIDERS, MODEL_PRESETS, MODEL_NOTICES, CATALOG_REVIEWED_AT } = require('./cli/models');
 const { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, verifyKey, priceFor, modelLabel } = require('./book/nanoBanana');
@@ -48,7 +47,7 @@ const { generatePdf, generatePrintPdf } = require('./export/pdf');
 const { exportDocx } = require('./export/docx');
 const { rasterizeBookArt } = require('./export/rasterize');
 const { bookToMarkdown } = require('./export/markdown');
-const { bookToHtml, chapterToHtml, svgFigure } = require('./export/html');
+const { bookToHtml, chapterToHtml } = require('./export/html');
 const { svgToDataUri } = require('./book/aiArt');
 const { sendToKindle, sendEmailWithAttachment, verifySmtp, composeInMail, SIGNATURE } = require('./kindle/sendToKindle');
 const { safeFilename } = require('./util');

@@ -12,6 +12,7 @@
 - Add outline approval for children's books and protect unsaved chapter edits when closing or quitting the app.
 - Publish a searchable, accessible GitHub Pages handbook covering installation, providers, writing, revision, narration, exports, privacy, troubleshooting, and contribution.
 - Extend unit and real-Electron regression coverage for history, restore/cancellation, manuscript checks, UI navigation, and documentation.
+- Harden HTML artwork with parser-based allowlists and bound Grok sign-in file reads to a single inspected file descriptor; add adversarial and file-race regressions.
 
 ## [0.2.1] — 2026-09-19
 

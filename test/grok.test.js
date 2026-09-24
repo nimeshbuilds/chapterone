@@ -77,6 +77,61 @@ test('grok checkAuth detects the cached token file WITHOUT spawning the CLI (no 
   }
 });
 
+test('grok auth scan reads the inspected descriptor if its pathname is replaced', (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-auth-race-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'settings.json');
+  fs.writeFileSync(file, '{"access_token":"fixture"}');
+  const fstat = fs.fstatSync;
+  const close = fs.closeSync;
+  let inspected, closed = false, replaced = false;
+  t.mock.method(fs, 'fstatSync', (fd) => {
+    const stat = fstat(fd);
+    inspected = fd;
+    fs.renameSync(file, path.join(dir, 'previous.json'));
+    fs.writeFileSync(file, '{"unrelated":true}');
+    replaced = true;
+    return stat;
+  });
+  t.mock.method(fs, 'closeSync', (fd) => { if (fd === inspected) closed = true; return close(fd); });
+  assert.strictEqual(new GrokAdapter()._scanForToken(dir, 0), true);
+  assert.strictEqual(replaced, true);
+  assert.strictEqual(closed, true, 'Returning early must still close the descriptor');
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"unrelated":true}');
+});
+
+test('grok auth scan bounds reads even when the opened file grows after inspection', (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-auth-growth-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'settings.json');
+  fs.writeFileSync(file, 'abc');
+  const fstat = fs.fstatSync;
+  const read = fs.readSync;
+  const close = fs.closeSync;
+  let inspected, readSize = 0, closed = false;
+  t.mock.method(fs, 'fstatSync', (fd) => {
+    const stat = fstat(fd);
+    inspected = fd;
+    fs.appendFileSync(file, ' '.repeat(70_000) + 'access_token');
+    return stat;
+  });
+  t.mock.method(fs, 'readSync', (fd, buffer, offset, length, position) => {
+    assert.strictEqual(fd, inspected);
+    readSize = length;
+    return read(fd, buffer, offset, length, position);
+  });
+  t.mock.method(fs, 'closeSync', (fd) => { if (fd === inspected) closed = true; return close(fd); });
+  assert.strictEqual(new GrokAdapter()._scanForToken(dir, 0), false);
+  assert.strictEqual(readSize, 65536);
+  assert.strictEqual(closed, true);
+});
+
 test('grok strips agentic narration/preamble but keeps real prose', () => {
   const { GrokAdapter, isNarration } = require('../src/main/cli/grokAdapter');
   const a = new GrokAdapter({});

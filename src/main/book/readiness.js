@@ -1,10 +1,32 @@
 'use strict';
 
 const { stripMarkdown } = require('./stats');
+const { Parser } = require('htmlparser2');
 
 const LIMITATIONS = 'This offline check looks for missing prose, visible draft markers and repeated text. It does not verify facts, originality, permissions, continuity or publishing requirements. Review the manuscript yourself before sharing it.';
 const normalize = (text) => String(text || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
 const excerpt = (text) => String(text).trim().replace(/\s+/g, ' ').slice(0, 180);
+
+function hasBodyText(source) {
+  let fence = null;
+  for (const line of source.split(/\r?\n/)) {
+    const marker = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+    } else if (fence && /[\p{L}\p{N}]/u.test(line)) return true;
+  }
+  let found = false;
+  let ignoredDepth = 0;
+  const ignored = new Set(['script', 'style', 'iframe', 'object', 'template']);
+  const parser = new Parser({
+    onopentag(name) { if (ignored.has(name)) ignoredDepth++; },
+    onclosetag(name) { if (ignored.has(name)) ignoredDepth = Math.max(0, ignoredDepth - 1); },
+    ontext(text) { if (!ignoredDepth && /[\p{L}\p{N}]/u.test(text)) found = true; },
+  });
+  parser.end(source);
+  return found;
+}
 
 /** Ignore code examples when detecting draft markers or Markdown headings. */
 function proseLines(content) {
@@ -54,9 +76,8 @@ function bookReadiness(book) {
     const prose = stripMarkdown(content);
     words += prose.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
     // Heading-only stubs are incomplete. Code-only technical chapters are not.
-    const body = content.replace(/^\s{0,3}#{1,6}\s+.*$/gm, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-      .replace(/<[^>]*>/g, '');
-    if (!/[\p{L}\p{N}]/u.test(body)) {
+    const body = content.replace(/^\s{0,3}#{1,6}\s+.*$/gm, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+    if (!hasBodyText(body)) {
       add(`empty-chapter-${index}`, 'error', 'This chapter has no prose', 'Add the chapter text; a heading or illustration alone does not contain a written chapter.', index);
     }
     const title = normalize(chapter.title);

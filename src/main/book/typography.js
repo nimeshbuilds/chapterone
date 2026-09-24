@@ -86,7 +86,14 @@ function tidyProse(markdown) {
     }
     const listMatch = raw.match(/^(\s*(?:[-*+]|\d+\.)\s+)(.*)$/);
     if (listMatch) {
-      out.push(listMatch[1].replace(/[*+]/, '-') + cleanInline(listMatch[2]));
+      // This prefix contains exactly one Markdown marker, never prose. Build
+      // unordered markers directly rather than treating it as sanitization.
+      const prefix = listMatch[1];
+      const marker = prefix.trim();
+      const normalized = marker === '*' || marker === '+'
+        ? prefix.slice(0, prefix.indexOf(marker)) + '-' + prefix.slice(prefix.indexOf(marker) + 1)
+        : prefix;
+      out.push(normalized + cleanInline(listMatch[2]));
       continue;
     }
     out.push(cleanInline(raw));

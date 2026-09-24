@@ -27,6 +27,16 @@ Previous chapter text remains in the local, unencrypted book file until the hist
 
 ## Publication follow-through
 
+After publication, the first full CodeQL run on the updated `main` reported 26 findings. Review followed the actual data paths rather than treating the scanner's severity labels as proof of exploitation:
+
+- The Grok authentication scan checked a path before reading it. It now inspects and reads one file descriptor, caps the read at 64 KiB even if the file grows, and closes the descriptor on every path. Regression tests replace the pathname and grow the file between inspection and reading.
+- HTML artwork cleanup used incomplete regular-expression filters. Parser-based HTML, SVG and CSS allowlists replace that cleanup. JavaScript-disabled, network-isolated rasterization remains an additional boundary; adversarial markup and legitimate artwork are both tested.
+- Two temporary-file findings originated from a test fixture passing the shared temporary-directory root. The fixture now owns an isolated temporary directory and verifies that text-only generation writes no artwork. Other test assertions and unused helpers were simplified.
+- Four code-construction findings concern controlled offline UI fixtures encoded with `JSON.stringify` and passed directly to `webContents.executeJavaScript`. There is no HTML or script-element insertion at that boundary. These were dismissed as false positives with per-alert explanations.
+- One network finding follows chapter prose into the documented, user-requested ElevenLabs narration body. The host is fixed to `api.elevenlabs.io`, the voice identifier is URL-encoded, and manuscript data does not control the destination. This was dismissed as a false positive with that explanation.
+
+CodeQL remains enabled. Re-run it and the native packaging matrix for the final release commit; a reviewed false positive does not suppress future findings in other flows.
+
 The final working-tree and Pages scans above are point-in-time checks. Repeat them if publication inputs change. Keep GitHub private vulnerability reporting enabled; after the repository became public, its API confirmed `enabled: true`.
 
 The repository owner also enabled GitHub secret scanning, secret-scanning push protection, dependency vulnerability alerts and Dependabot security updates, and verified their enabled state through GitHub's APIs. These ongoing protections supplement the local review; they do not cover every possible credential format or vulnerability.

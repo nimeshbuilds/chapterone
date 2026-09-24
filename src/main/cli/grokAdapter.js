@@ -91,15 +91,22 @@ class GrokAdapter {
     for (const e of entries) {
       const full = path.join(dir, e.name);
       if (e.isFile()) {
+        let fd;
         try {
-          const st = fs.statSync(full);
-          if (st.size <= 2) continue;
+          // Inspect and read the same opened file. A pathname can be replaced
+          // between stat and read; the file can also grow after its size check.
+          fd = fs.openSync(full, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+          const st = fs.fstatSync(fd);
+          if (!st.isFile() || st.size <= 2) continue;
           if (/(auth|token|credential|session|oauth|account)/i.test(e.name)) return true;
           if (st.size < 65536) {
-            const txt = fs.readFileSync(full, 'utf8');
+            const buffer = Buffer.alloc(65536);
+            const length = fs.readSync(fd, buffer, 0, buffer.length, 0);
+            const txt = buffer.toString('utf8', 0, length);
             if (/xai-[A-Za-z0-9]|access_token|refresh_token|"?(id|access)_?token"?\s*[:=]/i.test(txt)) return true;
           }
         } catch (_) { /* skip unreadable */ }
+        finally { if (fd !== undefined) fs.closeSync(fd); }
       } else if (e.isDirectory() && depth < 2 && !/node_modules|cache|logs/i.test(e.name)) {
         if (this._scanForToken(full, depth + 1)) return true;
       }

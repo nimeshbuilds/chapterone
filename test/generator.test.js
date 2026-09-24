@@ -192,13 +192,18 @@ test('completed prose is saved before an optional illustration can fail', async 
 });
 
 test('No images and the unset default make no cover, illustration or image API requests', async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const imagesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chapterone-no-images-'));
+  t.after(() => fs.rmSync(imagesDir, { recursive: true, force: true }));
   const https = require('node:https');
   let networkCalls = 0;
   t.mock.method(https, 'request', () => { networkCalls++; throw new Error('Network calls are forbidden in this fixture'); });
   for (const imageSpec of [{ imageMode: 'off', illustrate: true }, {}, { illustrate: false }]) {
     const engine = new FakeEngine();
     const gen = new BookGenerator(engine, { imageConfig: {
-      apiKey: 'offline-fixture', imagesDir: require('node:os').tmpdir(),
+      apiKey: 'offline-fixture', imagesDir,
     } });
     const phases = [];
     const book = await gen.generate({ request: 'A river voyage', research: false, polish: false, ...imageSpec }, {}, {
@@ -213,6 +218,7 @@ test('No images and the unset default make no cover, illustration or image API r
     assert.ok(engine.calls.every((call) => !/book-cover designer|illustrator/.test(call.opts.system || '')));
   }
   assert.equal(networkCalls, 0);
+  assert.deepStrictEqual(fs.readdirSync(imagesDir), [], 'No images mode must not write artwork files');
 });
 
 test('opting into AI art still generates and saves a cover and chapter illustrations', async () => {

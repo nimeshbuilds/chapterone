@@ -82,3 +82,13 @@ test('revision snapshots are not analyzed as current manuscript content', () => 
   source.chapters[0].revisions = [{ content: 'TODO: finish. [Insert ending]' }];
   assert.equal(bookReadiness(source).status, 'clear');
 });
+
+test('empty-body detection parses markup and ignores executable/style content', () => {
+  const onlyMarkup = book([{ title: 'Opening', content: '# Opening\n\n<script>not manuscript prose</script >'
+    + '<style>.visible{color:red}</style><img alt="Not chapter prose" src="file:///private">' }]);
+  assert.equal(bookReadiness(onlyMarkup).summary.errors, 1);
+  const encodedProse = book([{ title: 'Opening', content: '# Opening\n\n<p>&#65; real paragraph.</p>' }]);
+  assert.equal(bookReadiness(encodedProse).summary.errors, 0);
+  const literalHtmlCode = book([{ title: 'Example', content: '# Example\n\n```\n<div></div>\n```' }]);
+  assert.equal(bookReadiness(literalHtmlCode).summary.errors, 0);
+});

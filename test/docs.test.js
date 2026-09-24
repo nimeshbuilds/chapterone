@@ -30,7 +30,7 @@ test('handbook builds every guide with valid links, anchors, assets and searchab
     assert.doesNotMatch(html, /<link[^>]+href="https?:[^>]+rel="stylesheet"/);
   }
   assert.match(fs.readFileSync(path.join(dir, 'model-reference.html'), 'utf8'), /Model catalog/);
-  assert.match(fs.readFileSync(path.join(dir, '404.html'), 'utf8'), /https:\/\/nimeshbuilds\.github\.io\/chapterone\/assets\/site\.css/);
+  assert.ok(fs.readFileSync(path.join(dir, '404.html'), 'utf8').includes('href="https://nimeshbuilds.github.io/chapterone/assets/site.css"'));
 });
 
 test('Markdown references map to handbook pages or existing repository files', () => {

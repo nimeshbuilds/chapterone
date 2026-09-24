@@ -1,6 +1,46 @@
 'use strict';
 
 const sanitizeMarkup = require('sanitize-html');
+const { Parser } = require('htmlparser2');
+const postcss = require('postcss');
+
+const SVG_TAGS = [
+  'svg', 'g', 'defs', 'title', 'desc', 'path', 'rect', 'circle', 'ellipse',
+  'line', 'polyline', 'polygon', 'text', 'tspan', 'textPath', 'use', 'symbol',
+  'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'pattern',
+  'filter', 'feGaussianBlur', 'feOffset', 'feBlend', 'feColorMatrix',
+  'feComponentTransfer', 'feFuncR', 'feFuncG', 'feFuncB', 'feFuncA',
+  'feComposite', 'feMerge', 'feMergeNode', 'feFlood', 'feDropShadow',
+];
+const SVG_ATTRIBUTES = [
+  'id', 'viewBox', 'width', 'height', 'x', 'y', 'x1', 'x2', 'y1', 'y2',
+  'cx', 'cy', 'r', 'rx', 'ry', 'd', 'points', 'dx', 'dy', 'transform',
+  'fill', 'fill-rule', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity',
+  'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset',
+  'opacity', 'font-family', 'font-size', 'font-weight', 'font-style',
+  'text-anchor', 'dominant-baseline', 'letter-spacing', 'preserveAspectRatio',
+  'offset', 'stop-color', 'stop-opacity', 'gradientUnits', 'gradientTransform',
+  'spreadMethod', 'fx', 'fy', 'clip-path', 'clip-rule', 'clipPathUnits', 'mask',
+  'maskUnits', 'maskContentUnits', 'patternUnits', 'patternContentUnits',
+  'patternTransform', 'filter', 'filterUnits', 'primitiveUnits', 'in', 'in2',
+  'result', 'stdDeviation', 'mode', 'type', 'values', 'operator', 'k1', 'k2',
+  'k3', 'k4', 'flood-color', 'flood-opacity', 'slope', 'intercept', 'amplitude',
+  'exponent', 'tableValues', 'href', 'xlink:href', 'startOffset', 'style',
+];
+const SVG_COLOR = /^(?:#[a-f\d]{3,8}|[a-z]+|(?:rgb|hsl)a?\([\d.,%\s+-]+\)|url\(#[\w-]+\))$/i;
+
+function cleanSvgAttributes(tagName, attribs) {
+  for (const name of ['href', 'xlink:href']) {
+    if (attribs[name] && !/^#[\w-]+$/.test(attribs[name])) delete attribs[name];
+  }
+  for (const name of ['fill', 'stroke', 'stop-color', 'flood-color']) {
+    if (attribs[name] && !SVG_COLOR.test(attribs[name])) delete attribs[name];
+  }
+  for (const name of ['filter', 'clip-path', 'mask']) {
+    if (attribs[name] && !/^(?:none|url\(#[\w-]+\))$/.test(attribs[name])) delete attribs[name];
+  }
+  return { tagName, attribs };
+}
 
 /**
  * AI-designed vector art helpers.
@@ -25,52 +65,19 @@ function extractSvg(text) {
 function sanitizeSvg(svg) {
   const source = extractSvg(svg);
   if (!source) return null;
-  const color = /^(?:#[a-f\d]{3,8}|[a-z]+|(?:rgb|hsl)a?\([\d.,%\s+-]+\)|url\(#[\w-]+\))$/i;
   let s = sanitizeMarkup(source, {
     parser: { xmlMode: true, lowerCaseTags: false, lowerCaseAttributeNames: false },
-    allowedTags: [
-      'svg', 'g', 'defs', 'title', 'desc', 'path', 'rect', 'circle', 'ellipse',
-      'line', 'polyline', 'polygon', 'text', 'tspan', 'textPath', 'use', 'symbol',
-      'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'pattern',
-      'filter', 'feGaussianBlur', 'feOffset', 'feBlend', 'feColorMatrix',
-      'feComponentTransfer', 'feFuncR', 'feFuncG', 'feFuncB', 'feFuncA',
-      'feComposite', 'feMerge', 'feMergeNode', 'feFlood', 'feDropShadow',
-    ],
+    allowedTags: SVG_TAGS,
     nonTextTags: ['script', 'style', 'foreignObject', 'iframe', 'object', 'embed'],
-    allowedAttributes: { '*': [
-      'id', 'viewBox', 'width', 'height', 'x', 'y', 'x1', 'x2', 'y1', 'y2',
-      'cx', 'cy', 'r', 'rx', 'ry', 'd', 'points', 'dx', 'dy', 'transform',
-      'fill', 'fill-rule', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity',
-      'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset',
-      'opacity', 'font-family', 'font-size', 'font-weight', 'font-style',
-      'text-anchor', 'dominant-baseline', 'letter-spacing', 'preserveAspectRatio',
-      'offset', 'stop-color', 'stop-opacity', 'gradientUnits', 'gradientTransform',
-      'spreadMethod', 'fx', 'fy', 'clip-path', 'clip-rule', 'clipPathUnits', 'mask',
-      'maskUnits', 'maskContentUnits', 'patternUnits', 'patternContentUnits',
-      'patternTransform', 'filter', 'filterUnits', 'primitiveUnits', 'in', 'in2',
-      'result', 'stdDeviation', 'mode', 'type', 'values', 'operator', 'k1', 'k2',
-      'k3', 'k4', 'flood-color', 'flood-opacity', 'slope', 'intercept', 'amplitude',
-      'exponent', 'tableValues', 'href', 'xlink:href', 'startOffset', 'style',
-    ] },
+    allowedAttributes: { '*': SVG_ATTRIBUTES },
     allowedStyles: { '*': {
-      fill: [color], stroke: [color], color: [color], 'stop-color': [color],
+      fill: [SVG_COLOR], stroke: [SVG_COLOR], color: [SVG_COLOR], 'stop-color': [SVG_COLOR],
       opacity: [/^[\d.]+$/], 'fill-opacity': [/^[\d.]+$/], 'stroke-opacity': [/^[\d.]+$/],
       'stroke-width': [/^[\d.]+(?:px)?$/], 'font-size': [/^[\d.]+(?:px|pt|em|%)?$/],
       'font-family': [/^[\w\s,'"-]+$/], 'font-weight': [/^(?:normal|bold|[1-9]00)$/],
       'font-style': [/^(?:normal|italic|oblique)$/], 'text-anchor': [/^(?:start|middle|end)$/],
     } },
-    transformTags: { '*': (tagName, attribs) => {
-      for (const name of ['href', 'xlink:href']) {
-        if (attribs[name] && !/^#[\w-]+$/.test(attribs[name])) delete attribs[name];
-      }
-      for (const name of ['fill', 'stroke', 'stop-color', 'flood-color']) {
-        if (attribs[name] && !color.test(attribs[name])) delete attribs[name];
-      }
-      for (const name of ['filter', 'clip-path', 'mask']) {
-        if (attribs[name] && !/^(?:none|url\(#[\w-]+\))$/.test(attribs[name])) delete attribs[name];
-      }
-      return { tagName, attribs };
-    } },
+    transformTags: { '*': cleanSvgAttributes },
   });
   if (!/^<svg[\s>]/.test(s.trim()) || !/\b(?:viewBox|width)=/.test(s)) return null;
   s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"');
@@ -102,38 +109,83 @@ function extractHtmlArt(text) {
  * this is defence-in-depth. Returns a cleaned fragment, or null if unusable.
  */
 function sanitizeHtml(html) {
-  let s = extractHtmlArt(html);
-  if (!s) return null;
-
-  s = s.replace(/<script[\s\S]*?<\/script>/gi, '');
-  s = s.replace(/<(?:iframe|object|embed|template|audio|video|form)[\s\S]*?<\/(?:iframe|object|embed|template|audio|video|form)>/gi, '');
-  s = s.replace(/<(?:iframe|object|embed|link|meta|base|source|track|param)\b[^>]*>/gi, '');
-  s = s.replace(/<!--[\s\S]*?-->/g, '');
-  // event handlers (quoted and unquoted)
-  s = s.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '');
-  s = s.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '');
-  s = s.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
-  // Attributes that can fetch remote content and that art never needs: remove
-  // them wholesale (quoted or not) rather than trying to police their values.
-  s = s.replace(/\s(?:srcset|poster|background|formaction|action|ping|data)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-  // Neutralise javascript:/external refs in href/src/xlink:href — quoted AND
-  // unquoted, tolerating HTML-entity/whitespace obfuscation of the scheme.
-  const EVIL = /^[\s'"]*(?:javascript|https?|ftp)\s*:|^[\s'"]*\/\//i;
-  s = s.replace(/(href|src|xlink:href)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi, (m, attr, _q, dq, sq, uq) => {
-    const val = (dq != null ? dq : sq != null ? sq : uq || '').replace(/&#x?[0-9a-f]+;?/gi, '').replace(/[\x00- ]/g, '');
-    return EVIL.test(val) ? `${attr}="#"` : m;
+  const source = extractHtmlArt(html);
+  if (!source) return null;
+  // Parse style elements separately. They are never admitted raw through the
+  // HTML allowlist, because CSS is a second language with its own resources.
+  const styles = [];
+  let css = null;
+  const parser = new Parser({
+    onopentag(name) { if (name === 'style') css = ''; },
+    ontext(text) { if (css !== null) css += text; },
+    onclosetag(name) { if (name === 'style' && css !== null) { styles.push(cleanCss(css)); css = null; } },
   });
-  // Neutralise external CSS resources (tolerate CSS escapes/whitespace in the
-  // scheme, e.g. u\72 l or "ht\74 tps:"), keep data: URIs and gradients.
-  s = s.replace(/url\(\s*['"]?[^)]*?(?:ht\s*tps?|https?|\/\/)[^)]*\)/gi, 'none');
-  s = s.replace(/url\(\s*['"]?\s*(?:\\[0-9a-f]{1,6}\s?|[^)])*?:\s*\/\/[^)]*\)/gi, 'none');
-  s = s.replace(/@import[^;]+;/gi, '');
-  // Note: the rasterizer additionally renders art in a network-dead session
-  // (network and embedded local-file requests cancelled), so even a sanitizer bypass
-  // cannot fetch remote content. This function is defence-in-depth.
+  parser.end(source);
+  const tagNames = new Map(SVG_TAGS.map((tag) => [tag.toLowerCase(), tag]));
+  const attributeNames = new Map(SVG_ATTRIBUTES.map((name) => [name.toLowerCase(), name]));
+  const markup = sanitizeMarkup(source, {
+    parser: { lowerCaseTags: true, lowerCaseAttributeNames: true },
+    allowedTags: [...SVG_TAGS, 'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'strong', 'em', 'b', 'i', 'br', 'section', 'article', 'header', 'footer', 'main',
+      'figure', 'figcaption', 'ul', 'ol', 'li', 'small', 'img'],
+    nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'template', 'textarea',
+      'xmp', 'noembed', 'noframes', 'noscript', 'foreignObject'],
+    allowedAttributes: { '*': [...SVG_ATTRIBUTES, 'class'], img: ['src', 'alt', 'width', 'height', 'class', 'style'] },
+    allowedSchemes: [], allowedSchemesByTag: { img: ['data'] }, allowProtocolRelative: false,
+    parseStyleAttributes: false, // Every style attribute is parsed by cleanCss below.
+    transformTags: { '*': (name, rawAttributes) => {
+      const tagName = tagNames.get(name.toLowerCase()) || name.toLowerCase();
+      const attribs = Object.fromEntries(Object.entries(rawAttributes).map(([key, value]) =>
+        [attributeNames.get(key.toLowerCase()) || key.toLowerCase(), value]));
+      cleanSvgAttributes(tagName, attribs);
+      if (attribs.style) attribs.style = cleanCss(attribs.style, true);
+      if (tagName === 'img' && !/^data:image\/(?:png|jpeg|gif|webp);base64,[a-z\d+/=\s]+$/i.test(attribs.src || '')) delete attribs.src;
+      return { tagName, attribs };
+    } },
+    exclusiveFilter: (frame) => frame.tag === 'img' && !frame.attribs.src,
+  }).trim();
+  if (!/<[a-z]/i.test(markup)) return null;
+  const sheet = styles.filter(Boolean).join('\n');
+  return (sheet ? `<style>${sheet}</style>` : '') + markup;
+}
 
-  if (!/<[a-z]/i.test(s)) return null;
-  return s.trim();
+const ART_CSS_PROPERTY = /^(?:--[\w-]+|(?:min-|max-)?(?:width|height)|display|position|inset(?:-[a-z]+)?|top|right|bottom|left|z-index|opacity|overflow(?:-[xy])?|box-sizing|box-shadow|text-shadow|color|background(?:-[a-z-]+)?|border(?:-[a-z-]+)?|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|font(?:-[a-z-]+)?|line-height|letter-spacing|word-spacing|white-space|text(?:-[a-z-]+)?|vertical-align|transform(?:-origin)?|filter|clip-path|fill(?:-[a-z]+)?|stroke(?:-[a-z-]+)?|stop-color|stop-opacity|flex(?:-[a-z-]+)?|grid(?:-[a-z-]+)?|gap|row-gap|column-gap|align(?:-[a-z-]+)?|justify(?:-[a-z-]+)?|order|content|isolation|mix-blend-mode)$/;
+const ART_CSS_FUNCTIONS = new Set([
+  'rgb', 'rgba', 'hsl', 'hsla', 'hwb', 'lab', 'lch', 'oklab', 'oklch', 'color', 'color-mix', 'light-dark',
+  'linear-gradient', 'radial-gradient', 'conic-gradient', 'repeating-linear-gradient', 'repeating-radial-gradient', 'repeating-conic-gradient',
+  'blur', 'brightness', 'contrast', 'drop-shadow', 'grayscale', 'hue-rotate', 'invert', 'opacity', 'saturate', 'sepia',
+  'matrix', 'matrix3d', 'perspective', 'rotate', 'rotatex', 'rotatey', 'rotatez', 'rotate3d',
+  'scale', 'scalex', 'scaley', 'scalez', 'scale3d', 'skew', 'skewx', 'skewy',
+  'translate', 'translatex', 'translatey', 'translatez', 'translate3d',
+  'calc', 'min', 'max', 'clamp', 'var', 'env', 'fit-content', 'minmax', 'repeat',
+  'circle', 'ellipse', 'inset', 'polygon', 'path', 'url',
+]);
+
+function safeCssValue(value) {
+  // Decline escaped/obfuscated tokens as a whole instead of deleting pieces
+  // that a browser could join back into a resource-loading function.
+  if (value.includes('\\') || value.includes('/*') || value.includes('<') || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value)) return false;
+  for (const match of value.matchAll(/([-\w]+)\s*\(/g)) {
+    if (!ART_CSS_FUNCTIONS.has(match[1].toLowerCase())) return false;
+  }
+  if (/\burl\s*\(/i.test(value) && !/^url\(\s*(['"]?)#[\w-]+\1\s*\)$/i.test(value.trim())) return false;
+  return true;
+}
+
+/** Keep static layout/painting declarations, never imports, fonts or URLs. */
+function cleanCss(source, inline = false) {
+  try {
+    const tree = postcss.parse(inline ? `a{${source}}` : source, { from: undefined });
+    if (inline && (tree.nodes.length !== 1 || tree.first.type !== 'rule')) return '';
+    tree.walkAtRules((rule) => rule.remove());
+    tree.walkComments((comment) => comment.remove());
+    tree.walkRules((rule) => { if (rule.selector.includes('<') || rule.selector.includes('\\')) rule.remove(); });
+    tree.walkDecls((decl) => {
+      if (!ART_CSS_PROPERTY.test(decl.prop) || !safeCssValue(decl.value)) decl.remove();
+    });
+    const result = inline ? (tree.first?.nodes || []).filter((node) => node.type === 'decl').map((node) => node.toString()).join(';') : tree.toString();
+    return result.includes('<') || result.includes('\\') ? '' : result;
+  } catch (_) { return ''; }
 }
 
 module.exports = { extractSvg, sanitizeSvg, svgToDataUri, extractHtmlArt, sanitizeHtml };

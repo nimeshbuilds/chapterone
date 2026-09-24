@@ -33,7 +33,6 @@ test('extractFinal slices between the codex marker and the tokens-used trailer',
 test('research grounding uses the config tool toggle, NOT the removed --search flag', () => {
   const args = new CodexAdapter({}).buildArgs('x', { research: true });
   assert.ok(!args.includes('--search')); // --search errors on modern Codex
-  const i = args.indexOf('-c');
   assert.ok(args.includes('web_search="live"'));
   assert.ok(args.indexOf('web_search="live"') > -1);
 });

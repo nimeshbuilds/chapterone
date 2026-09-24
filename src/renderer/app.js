@@ -80,10 +80,6 @@ function toast(msg, type = '') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 4600);
 }
-function svgDataUri(svg) {
-  try { return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg))); }
-  catch (_) { return ''; }
-}
 function coverGradient(seed) {
   let hash = 0;
   for (let i = 0; i < (seed || 'book').length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
@@ -2200,15 +2196,6 @@ async function renderReader(id) {
   renderBody();
 }
 
-async function downloadEpub(id) {
-  toast('Exporting EPUB…');
-  try {
-    const res = await api.exportBook(id, 'epub', true);
-    if (res.canceled) return;
-    toast('Saved EPUB. Opening…', 'ok');
-    await api.openPath(res.path);
-  } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
-}
 async function sendKindle(id) {
   const k = state.settings && state.settings.kindle;
   if (!k || !k.toAddress) {
