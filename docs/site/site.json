@@ -1,0 +1,26 @@
+{
+  "title": "ChapterOne Handbook",
+  "url": "https://nimeshbuilds.github.io/chapterone",
+  "repository": "https://github.com/nimeshbuilds/chapterone",
+  "pages": [
+    { "slug": "index", "title": "Welcome to ChapterOne", "nav": "Start here", "section": "Get started", "description": "A practical guide from your first idea to a manuscript you can make your own." },
+    { "slug": "install", "title": "Install ChapterOne", "nav": "Install & update", "section": "Get started", "description": "Choose the right download for your Mac or Windows PC, install it, and keep your library safe when updating." },
+    { "slug": "quickstart", "title": "Write your first book", "nav": "Your first book", "section": "Get started", "description": "Follow one small example from connecting a provider to reviewing, editing, and exporting your first draft." },
+    { "slug": "providers", "title": "Connect your writing providers", "nav": "Providers & models", "section": "Get started", "description": "Set up Claude Code, Codex, Gemini, or Grok, choose models, and understand automatic fallback." },
+    { "slug": "writing", "title": "Plan a book worth finishing", "nav": "Plan & draft", "section": "Make your book", "description": "Write a useful brief, review the chapter map, follow generation, and recover when writing stops." },
+    { "slug": "kids", "title": "Make a book for a young reader", "nav": "Books for children", "section": "Make your book", "description": "Choose an age band, personalize characters, and review the story and illustrations together." },
+    { "slug": "reading", "title": "Read, edit, and find your work", "nav": "Library & reader", "section": "Make your book", "description": "Navigate your library, make reading comfortable, edit the manuscript, and carry a story into its sequel." },
+    { "slug": "revisions", "title": "Revise with a way back", "nav": "Revisions & manuscript check", "section": "Make your book", "description": "Compare saved chapter versions, restore earlier prose, and find practical manuscript issues before exporting." },
+    { "slug": "illustrations", "title": "Choose illustrations with intention", "nav": "Illustrations", "section": "Make your book", "description": "Compare text-only books, writing-engine art, and Nano Banana images, including cost and character references." },
+    { "slug": "audio", "title": "Listen to your manuscript", "nav": "Audiobooks & voices", "section": "Make your book", "description": "Set up ElevenLabs, narrate chapters, reuse saved audio, and understand what changes trigger new narration." },
+    { "slug": "exporting", "title": "Share the right file", "nav": "Export & Kindle", "section": "Make your book", "description": "Choose EPUB, PDF, Word, HTML, Markdown, or MP3 and prepare your book for readers and editors." },
+    { "slug": "privacy-costs", "title": "Your data, accounts, and costs", "nav": "Privacy & costs", "section": "Use with confidence", "description": "Know what stays on your computer, what goes to a provider, and which actions can use quota or incur charges." },
+    { "slug": "backups", "title": "Protect and move your library", "nav": "Backups & recovery", "section": "Use with confidence", "description": "Keep independent copies, understand saved checkpoints, and avoid losing work when moving computers or deleting data." },
+    { "slug": "troubleshooting", "title": "Get unstuck", "nav": "Troubleshooting", "section": "Use with confidence", "description": "Follow focused fixes for sign-in, missing models, interrupted writing, images, narration, exports, and installation." },
+    { "slug": "model-reference", "title": "Model catalog", "nav": "Model reference", "section": "Reference", "description": "The reviewed provider catalog, model presets, compatibility notes, and official sources.", "source": "../../MODELS.md" },
+    { "slug": "glossary", "title": "A small writing-workspace glossary", "nav": "Glossary & FAQ", "section": "Reference", "description": "Clear definitions for drafts, outlines, story bibles, models, fallbacks, checkpoints, and export formats." },
+    { "slug": "contributing", "title": "Build and improve ChapterOne", "nav": "Contribute & test", "section": "For contributors", "description": "Run the desktop app, understand the test layers, and improve the app or this handbook." },
+    { "slug": "architecture", "title": "Architecture & maintenance", "nav": "Architecture", "section": "For contributors", "description": "Follow the process boundaries, modules, persistence model, and generation pipeline.", "source": "../../ARCHITECTURE.md" },
+    { "slug": "releasing", "title": "Release and signing procedure", "nav": "Release procedure", "section": "For contributors", "description": "Build, validate, sign, notarize, and publish installers with traceable checksums.", "source": "../../RELEASING.md" }
+  ]
+}

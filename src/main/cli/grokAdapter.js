@@ -71,12 +71,12 @@ class GrokAdapter {
         : [path.join(os.homedir(), '.grok'), path.join(os.homedir(), '.grok-build')];
       for (const home of candidates) {
         if (fs.existsSync(home) && this._scanForToken(home, 0)) {
-          return { ok: true, detail: 'Signed in (subscription)' };
+          return { ok: true, detail: 'Cached Grok sign-in found. No text was generated; session validity, model access and billing were not checked.' };
         }
       }
       return { ok: false, detail: 'Not signed in — run “grok login” in Terminal.' };
     } catch (_) {
-      return { ok: false, detail: 'Not signed in.' };
+      return { ok: null, detail: 'Could not read Grok sign-in status. Check the CLI in Terminal. No text was generated.' };
     }
   }
 
@@ -163,14 +163,19 @@ class GrokAdapter {
   /** Strip status/banner lines AND any leading agentic narration/preamble. */
   extractFinal(raw) {
     if (!raw) return '';
-    const lines = String(raw).split('\n').filter((l) => {
-      const t = l.trim();
-      if (!t) return true;
-      if (/^\[?\d{4}-\d{2}-\d{2}/.test(t)) return false; // timestamps
-      if (/^(grok|model|provider|reasoning|workdir|sandbox|tokens used|thinking)\s*[:=]/i.test(t)) return false;
-      if (/^-{3,}$/.test(t)) return false;
-      return true;
-    });
+    const lines = String(raw).split('\n');
+    // Plain output is manuscript content. Strip recognized CLI headers only
+    // before the first content line, never dates, scene breaks, or metadata-like
+    // prose inside a chapter. The old global filter silently deleted those lines.
+    while (lines.length && !lines[0].trim()) lines.shift();
+    const hasBanner = /^grok\s*[:=]/i.test(lines[0] || '') || /^Grok (?:Build|CLI)\b/.test(lines[0] || '');
+    if (hasBanner) {
+      while (lines.length && (!lines[0].trim()
+        || /^(grok|model|provider|reasoning|workdir|sandbox|thinking)\s*[:=]/i.test(lines[0].trim())
+        || /^Grok (?:Build|CLI)\b/.test(lines[0].trim()))) lines.shift();
+    }
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    if (/^tokens used\s*[:=]\s*[\d,]+\s*$/i.test(lines[lines.length - 1] || '')) lines.pop();
     // Drop leading "I'll verify the facts, then write the chapter…"-style preamble
     // the agentic model emits before the real content. Bounded and conservative:
     // only the first THREE non-empty lines are candidates, each must be short

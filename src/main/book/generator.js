@@ -32,7 +32,7 @@ const { classifyError, isResumable, describe } = require('./errors');
 
 /** Resolve the image strategy from a spec (back-compat with the old flag). */
 function imageModeOf(spec) {
-  if (spec && spec.imageMode) return spec.imageMode; // 'ai' | 'stock' | 'off'
+  if (spec && spec.imageMode) return spec.imageMode; // 'ai' | 'nano' | 'stock' | 'off'
   return spec && spec.illustrate ? 'stock' : 'off';
 }
 
@@ -291,13 +291,14 @@ class BookGenerator {
     return book;
   }
 
-  /** Generate a cover: a real Nano Banana image, or an AI-designed SVG. */
+  /** Generate an opted-in cover: a Nano Banana image, or AI-designed artwork. */
   async _maybeCover(book, hooks = {}) {
     const { onProgress = () => {}, onChapter, signal } = hooks;
     const mode = imageModeOf(book.spec);
     if (book.coverSvg || book.coverPng || book.coverHtml) return; // any cover form counts — don't regenerate on resume
-    // A cover is ALWAYS generated. Nano Banana makes a real image when selected;
-    // otherwise we design a vector cover and rasterize it to PNG (the default).
+    // No images means no illustration requests, including the cover. Keep any
+    // existing artwork on resume, but never spend quota creating it in off mode.
+    if (mode === 'off') return;
 
     if (this._nanoReady(mode)) {
       onProgress({ phase: 'cover:start', message: 'Painting the cover with Nano Banana…' });

@@ -46,6 +46,14 @@ test('grok extractFinal strips banner/status lines', () => {
   assert.doesNotMatch(out, /model:|tokens used/);
 });
 
+test('grok preserves scene breaks, dates, and metadata-like lines in manuscript content', () => {
+  const adapter = new GrokAdapter({});
+  const manuscript = '# A Field Guide\n\n2026-09-23 was the day.\n\n---\n\nModel: the wooden ship.\nThinking: what happens next?\nProvider: a neighbor.\n\nEnd.';
+  assert.strictEqual(adapter.extractFinal(manuscript), manuscript);
+  assert.strictEqual(adapter.extractFinal('grok: thinking\nmodel: grok-build\n' + manuscript + '\ntokens used: 1,234'), manuscript);
+  assert.strictEqual(adapter.extractFinal('Model: a wooden ship\n\n---\n\nA new scene.'), 'Model: a wooden ship\n\n---\n\nA new scene.');
+});
+
 test('grok login uses the dedicated `grok login` command', () => {
   assert.deepStrictEqual(loginFor('grok').args, ['login']);
 });

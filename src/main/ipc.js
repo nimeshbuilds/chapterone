@@ -36,8 +36,10 @@ const { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, verifyKey, priceFor, modelLabel } = r
 const { bandOf, plannedImageCount, readerVarsForBand } = require('./book/ageBands');
 const { classifyBook } = require('./book/classify');
 const elevenlabs = require('./book/elevenlabs');
-const { markdownToSpeech, tidyText, tidyProse } = require('./book/typography');
+const { markdownToSpeech, tidyText } = require('./book/typography');
 const { bookStats } = require('./book/stats');
+const { chapterSnapshot, listChapterRevisions } = require('./book/revisions');
+const { bookReadiness } = require('./book/readiness');
 const { AuthSessionManager } = require('./cli/authSession');
 const { BookGenerator } = require('./book/generator');
 const { resolveImagesForBook } = require('./book/images');
@@ -76,6 +78,12 @@ function registerIpc(store) {
   });
   const ensureIdle = () => {
     if (jobs.size) throw new Error('Finish or cancel the current writing job first.');
+  };
+  const ensureEditable = (countedWrite = false) => {
+    ensureIdle();
+    if (activeWrites > (countedWrite ? 1 : 0)) {
+      throw new Error('Wait for audio, export, or delivery to finish before changing a manuscript.');
+    }
   };
 
   /** Image (Nano Banana) config from settings, for the generator. */
@@ -369,9 +377,9 @@ function registerIpc(store) {
       if (!(pre[id] && pre[id].found)) return [id, { installed: false, signedIn: false }];
       try {
         const r = await createEngine({ ...settings, provider: id }).checkAuth();
-        return [id, { installed: true, signedIn: !!r.ok, detail: r.detail }];
+        return [id, { installed: true, signedIn: r.ok === true ? true : r.ok === false ? false : null, detail: r.detail }];
       } catch (e) {
-        return [id, { installed: true, signedIn: false, detail: e.message }];
+        return [id, { installed: true, signedIn: null, detail: 'Sign-in status could not be checked. Open the CLI in Terminal or try again.' }];
       }
     }));
     return Object.fromEntries(entries);
@@ -425,17 +433,17 @@ function registerIpc(store) {
 
   handle('book:generate', wrap(async (event, { spec, answers, jobId }) => {
     if (jobs.size > 0) throw new Error('A book is already being written — open it from the Library, or cancel it first.');
+    ensureEditable(true);
     const settings = store.getSettings();
     const controller = new AbortController();
     jobs.set(jobId, controller);
     const sender = event.sender;
     const onProgress = (e) => { if (!sender.isDestroyed()) sender.send('book:progress', { jobId, ...e }); };
-    const engine = createChainEngine(settings, {
-      onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
-    });
-    const gen = new BookGenerator(engine, { imageConfig: imageConfigFrom(settings) });
-
     try {
+      const engine = createChainEngine(settings, {
+        onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
+      });
+      const gen = new BookGenerator(engine, { imageConfig: imageConfigFrom(settings) });
       const book = await gen.generate(spec, answers || {}, {
         onProgress,
         onChapter: (b) => store.saveBook(b),
@@ -471,19 +479,18 @@ function registerIpc(store) {
 
   // ---- resume a paused / interrupted book ----
   handle('book:resume', wrap(async (event, { id, jobId }) => {
-    ensureIdle();
+    ensureEditable(true);
     const settings = store.getSettings();
     const book = store.getBook(id);
     const controller = new AbortController();
     jobs.set(jobId, controller);
     const sender = event.sender;
     const onProgress = (e) => { if (!sender.isDestroyed()) sender.send('book:progress', { jobId, ...e }); };
-    const engine = createChainEngine(settings, {
-      onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
-    });
-    const gen = new BookGenerator(engine, { imageConfig: imageConfigFrom(settings) });
-
     try {
+      const engine = createChainEngine(settings, {
+        onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
+      });
+      const gen = new BookGenerator(engine, { imageConfig: imageConfigFrom(settings) });
       const done = await gen.resume(book, {
         onProgress,
         onChapter: (b) => store.saveBook(b),
@@ -510,41 +517,36 @@ function registerIpc(store) {
 
   // ---- author tools: edit / rewrite / rename / stats ----
   handle('book:updateChapter', wrap(async (_e, { id, index, content }) => {
-    ensureIdle();
-    const book = store.getBook(id);
-    const ch = (book.chapters || [])[index];
-    if (!ch) throw new Error('No such chapter.');
-    ch.content = tidyProse(String(content || ''));
-    ch.words = (ch.content.match(/\S+/g) || []).length;
-    book.words = (book.chapters || []).reduce((n, c) => n + ((c && c.words) || 0), 0);
-    store.saveBook(book);
-    return { id, index, words: ch.words };
+    ensureEditable();
+    return store.updateChapter(id, index, content);
   }));
 
   handle('book:rewriteChapter', wrap(async (event, { id, index, note, jobId }) => {
-    ensureIdle();
+    ensureEditable(true);
+    if (note != null && typeof note !== 'string') throw new Error('Rewrite instructions must be text.');
     const settings = store.getSettings();
     const book = store.getBook(id);
+    const previous = chapterSnapshot(book, index);
+    listChapterRevisions(book, index); // Refuse corrupt history before spending provider quota.
     const controller = new AbortController();
     jobs.set(jobId, controller);
     const sender = event.sender;
     const onProgress = (e) => { if (!sender.isDestroyed()) sender.send('book:progress', { jobId, ...e }); };
-    const engine = createChainEngine(settings, {
-      onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
-    });
     try {
+      const engine = createChainEngine(settings, {
+        onSwitch: (info) => onProgress({ phase: 'engine:switch', ...info }),
+      });
       const gen = new BookGenerator(engine, { imageConfig: imageConfigFrom(settings) });
       await gen.rewriteChapter(book, index, note, { onProgress, signal: controller.signal });
-      book.words = (book.chapters || []).reduce((n, c) => n + ((c && c.words) || 0), 0);
-      store.saveBook(book);
-      return { id, index };
+      if (controller.signal.aborted) throw new Error('Generation cancelled by user');
+      return store.saveRewrittenChapter(book, index, previous);
     } finally {
       jobs.delete(jobId);
     }
   }));
 
   handle('book:update', wrap(async (_e, { id, title, subtitle, author }) => {
-    ensureIdle();
+    ensureEditable();
     const book = store.getBook(id);
     if (title != null && String(title).trim()) book.title = tidyText(String(title).trim());
     if (subtitle != null) book.subtitle = tidyText(String(subtitle).trim());
@@ -556,6 +558,17 @@ function registerIpc(store) {
   handle('book:stats', wrap(async (_e, id) => {
     const book = store.getBook(id);
     return { ...bookStats(book), classification: classifyBook(book) };
+  }));
+  handle('book:readiness', wrap(async (_e, id) => bookReadiness(store.getBook(id))));
+  handle('book:revisions', wrap(async (_e, { id, index }) => store.getChapterRevisions(id, index)));
+  handle('book:revision', wrap(async (_e, { id, index, revisionId }) => {
+    const revision = store.getChapterRevision(id, index, revisionId);
+    // History previews share the prose sanitizer and cannot load resources.
+    return { ...revision, html: chapterToHtml(revision.content) };
+  }));
+  handle('book:restoreRevision', wrap(async (_e, { id, index, revisionId }) => {
+    ensureEditable();
+    return store.restoreChapterRevision(id, index, revisionId);
   }));
   handle('book:delete', wrap(async (_e, id) => {
     ensureIdle();

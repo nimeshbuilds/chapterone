@@ -36,7 +36,7 @@ function resolveChain(settings = {}) {
 }
 
 /**
- * Single active adapter (used for clarify/auth probes). Honors a per-book model
+ * Single active adapter (used for clarify/auth metadata). Honors a per-book model
  * override on the primary provider.
  */
 function createEngine(settings = {}, overrides = {}) {

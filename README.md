@@ -15,7 +15,7 @@
 [![Tests &amp; audit](https://github.com/nimeshbuilds/chapterone/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nimeshbuilds/chapterone/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/nimeshbuilds/chapterone/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/nimeshbuilds/chapterone/actions/workflows/codeql.yml)
 
-[Download](#-download) · [Features](#-features) · [How it works](#-how-it-works) · [Security](#-security) · [Build from source](#-build-from-source) · [Contributing](CONTRIBUTING.md)
+[Download](#-download) · [Writing handbook](https://nimeshbuilds.github.io/chapterone/) · [Features](#-features) · [How it works](#-how-it-works) · [Security](#-security) · [Build from source](#-build-from-source) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -49,6 +49,10 @@ Older macOS releases, Windows 7/8, and 32-bit processors are unsupported. This f
 
 ## ✨ Features
 
+- **A calmer writing workspace** — an editorial light/dark design, a recent-manuscript shortcut, library search/status filters/sorting, guided briefs, and a reader that keeps the prose in focus.
+- **Room to revise** — compare and restore up to 20 previous chapter versions, kept locally before edits, AI rewrites, and restores. Unsaved editor changes require confirmation before dismissal.
+- **Manuscript check** — find unfinished chapters, draft markers, repeated headings/passages, and unresolved illustration markers without sending an AI request. Jump straight to the chapter that needs attention. This is a structural check, not a factual or legal review.
+- **A complete writing handbook** — follow the [quick start, step-by-step guides, and troubleshooting reference](https://nimeshbuilds.github.io/chapterone/).
 - 📖 **Writes complete books** — fiction, non-fiction, or **kids' books**, from a vague idea. A planner outlines it, a research-grounded writer drafts each chapter, and an editor pass revises the draft.
 - 🧒 **Kids' mode** — age bands (1–2 … 17–18) automatically drive vocabulary, length, reading level, safety, font size, and illustration density. Add custom characters named after real people, and **upload a photo per character** so Nano Banana draws the art to resemble them.
 - 🔀 **Four engines + automatic fallback** — **Claude Code, Codex, Gemini, and Grok**, each with its own model; Gemini uses API billing. Build an ordered chain so writing continues on the next engine if one hits a quota mid-book — and a transient network blip is **retried** rather than failing the book.

@@ -6,6 +6,7 @@ const { applyUserPath } = require('./cli/envPath');
 const { Store } = require('./store');
 const { registerIpc } = require('./ipc');
 const { UI_URL, isExternalUrl } = require('./security');
+const { protectUnsavedChanges } = require('./windowLifecycle');
 
 // Two instances must never concurrently rewrite the same library/settings.
 const hasLock = app.requestSingleInstanceLock();
@@ -70,6 +71,7 @@ function createWindow() {
   });
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
+  protectUnsavedChanges(mainWindow, dialog);
 
   if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
 }
@@ -100,6 +102,10 @@ function buildMenu() {
     {
       role: 'help',
       submenu: [
+        {
+          label: 'Writing handbook',
+          click: () => shell.openExternal('https://nimeshbuilds.github.io/chapterone/').catch(() => {}),
+        },
         {
           label: 'Send to Kindle Help',
           click: () =>
@@ -189,6 +195,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+// before-quit runs before the editor can veto closing. Dispose only after all
+// windows have agreed to close, so Keep editing leaves active jobs usable.
+app.on('will-quit', () => {
   if (ipcController) ipcController.dispose();
 });

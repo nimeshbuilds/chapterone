@@ -1,21 +1,22 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <!-- ChapterOne app icon: matches the in-app brand mark (serif "1" on a
-       violet→gold gradient rounded square). -->
+  <!-- A clothbound green book, matching the editorial desktop workspace. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#6d5ef0"/>
-      <stop offset="0.6" stop-color="#8b6fe8"/>
-      <stop offset="1" stop-color="#c08a2e"/>
+      <stop offset="0" stop-color="#316b58"/>
+      <stop offset="0.6" stop-color="#24594b"/>
+      <stop offset="1" stop-color="#173e35"/>
     </linearGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.34"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
       <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.05"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
   <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="url(#bg)"/>
   <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="url(#sheen)"/>
+  <path d="M190 86 V938" stroke="#122e27" stroke-width="12" opacity=".3"/>
+  <rect x="254" y="135" width="605" height="754" rx="16" fill="none" stroke="#efe6c9" stroke-width="3" opacity=".4"/>
   <text x="512" y="742" text-anchor="middle"
         font-family="'New York','Iowan Old Style','Hoefler Text',Georgia,'Times New Roman',serif"
-        font-weight="700" font-size="640" fill="#ffffff">1</text>
+        font-weight="400" font-size="640" fill="#fff9e6">1</text>
 </svg>

@@ -7,7 +7,7 @@ const { nativeTheme } = require('electron');
 
 // These checks drive the real sandboxed UI with an isolated library and the
 // smoke runner's offline provider. They never use a real account or send mail.
-module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary, modelChecks) {
+module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary, modelChecks, rewriteControl) {
   const js = (source) => win.webContents.executeJavaScript(source);
   const pause = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
   const application = process.argv.some(arg => arg.startsWith('--app-root=')) ? 'packaged' : 'source';
@@ -24,12 +24,14 @@ module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary
   };
   const click = async (selector) => {
     await waitFor(`!!document.querySelector(${JSON.stringify(selector)})`);
+    await js(`(() => { let el = document.querySelector(${JSON.stringify(selector)}).parentElement; while (el) { if (el.tagName === 'DETAILS' && !el.open) el.querySelector('summary').click(); el = el.parentElement; } })()`);
     await js(`document.querySelector(${JSON.stringify(selector)}).click()`);
     await pause();
   };
   const clickText = async (label, scope = '#view-root') => {
     const query = `[...document.querySelectorAll(${JSON.stringify(`${scope} button`)})].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
     await waitFor(`!!(${query})`);
+    await js(`(() => { let el = (${query}).parentElement; while (el) { if (el.tagName === 'DETAILS' && !el.open) el.querySelector('summary').click(); el = el.parentElement; } })()`);
     await js(`(${query}).click()`);
     await pause();
   };
@@ -297,6 +299,81 @@ module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary
       await screenshot('reader');
     });
 
+    await check('Revision history compares and restores safely; unsaved edits need confirmation', async () => {
+      await click('#r-history');
+      await waitFor('!!document.querySelector("#revision-restore:not(:disabled)")');
+      assert.match(await js(`document.querySelector('[aria-label="Current chapter text"]').textContent`), /edited by hand/);
+      assert.doesNotMatch(await js(`document.querySelector('[aria-label="Saved version text"]').textContent`), /edited by hand/);
+      await layoutFits();
+      await screenshot('revision-history');
+      await click('#revision-restore');
+      await clickText('Cancel', 'dialog:last-of-type');
+      assert.ok(await js('document.querySelector(".revision-modal")'));
+      await click('#revision-restore');
+      await clickText('Restore version', 'dialog:last-of-type');
+      await waitFor('!document.querySelector("dialog[open]")');
+      assert.doesNotMatch(await js(`window.api.getBook(${JSON.stringify(bookId)}).then(b => b.chapters[0].content)`), /edited by hand/);
+      await click('#r-history');
+      await waitFor('!!document.querySelector("#revision-restore:not(:disabled)")');
+      assert.match(await js(`document.querySelector('[aria-label="Saved version text"]').textContent`), /edited by hand/);
+      await click('#revision-restore');
+      await clickText('Restore version', 'dialog:last-of-type');
+      await waitFor('!document.querySelector("dialog[open]")');
+      const versions = await js(`window.api.getChapterRevisions(${JSON.stringify(bookId)},0)`);
+      assert.equal(versions.revisions.length, 3);
+      await click('#r-edit');
+      await fill('.edit-chapter-ta', 'An unsaved experiment.');
+      await key('Escape');
+      await waitFor('document.querySelectorAll("dialog[open]").length === 2');
+      await clickText('Cancel', 'dialog:last-of-type');
+      assert.equal(await js('document.querySelector(".edit-chapter-ta").value'), 'An unsaved experiment.');
+      await key('Escape');
+      await clickText('Discard edits', 'dialog:last-of-type');
+      await waitFor('!document.querySelector("dialog[open]")');
+      assert.match(await js(`window.api.getBook(${JSON.stringify(bookId)}).then(b => b.chapters[0].content)`), /edited by hand/);
+    });
+
+    await check('Manuscript check runs locally, links to evidence, and clears after edits', async () => {
+      const original = await js(`window.api.getBook(${JSON.stringify(bookId)}).then(b=>b.chapters[0].content)`);
+      await js(`window.api.updateChapter(${JSON.stringify(bookId)},0,${JSON.stringify('# Opening\n\nTODO: Finish this scene.\n\n' + '<script>window.reviewInjected = true</script>')})`);
+      await click('#r-check');
+      await waitFor('!!document.querySelector(".readiness-modal")');
+      assert.match(await js('document.querySelector(".readiness-modal").textContent'), /TODO/);
+      assert.equal(await js('window.reviewInjected'), undefined);
+      await screenshot('manuscript-check');
+      await clickText('Open chapter 1 →', 'dialog');
+      assert.equal(await js('document.querySelectorAll("dialog[open]").length'), 0);
+      await js(`window.api.updateChapter(${JSON.stringify(bookId)},0,${JSON.stringify(original)})`);
+      await click('#r-check');
+      await waitFor('!!document.querySelector(".readiness-modal")');
+      assert.doesNotMatch(await js('document.querySelector(".readiness-modal").textContent'), /TODO/);
+      await clickText('Back to manuscript', 'dialog');
+    });
+
+    await check('Cancelling a pending rewrite preserves prose and allows a successful retry', async () => {
+      const before = await js(`window.api.getBook(${JSON.stringify(bookId)}).then(b=>b.chapters[0].content)`);
+      rewriteControl.holdRewrite();
+      await click('#r-rewrite');
+      await fill('.rewrite-note', 'Make the scene more vivid.');
+      await clickText('↻ Rewrite with AI', 'dialog');
+      await rewriteControl.awaitRewrite();
+      await key('Escape');
+      await waitFor('!document.querySelector("dialog[open]")');
+      rewriteControl.resolveRewrite('# Opening\n\nThis cancelled text must never be saved.');
+      await pause(120);
+      assert.equal(await js(`window.api.getBook(${JSON.stringify(bookId)}).then(b=>b.chapters[0].content)`), before);
+      rewriteControl.holdRewrite();
+      await click('#r-rewrite');
+      await clickText('↻ Rewrite with AI', 'dialog');
+      await rewriteControl.awaitRewrite();
+      rewriteControl.resolveRewrite('# Opening\n\nMira steered the boat through the reeds. A heron rose into the morning sky.');
+      await waitFor('!document.querySelector("dialog[open]")');
+      await waitFor('document.querySelector(".reader-content").textContent.includes("A heron rose")');
+      const history = await js(`window.api.getChapterRevisions(${JSON.stringify(bookId)},0)`);
+      assert.equal(history.revisions[0].reason, 'ai-rewrite');
+      assert.equal((await js(`window.api.getChapterRevision(${JSON.stringify(bookId)},0,${JSON.stringify(history.revisions[0].id)})`)).content, before);
+    });
+
     await check('Delete cancellation and repeated confirmation remain usable', async () => {
       await click('[title="Delete"]');
       await key('Escape');
@@ -344,6 +421,15 @@ module.exports = async function checkUi(win, bookId, enableProvider, seedLibrary
       await nav('library');
       await waitFor('document.querySelectorAll(".book-card").length === 3');
       await screenshot('library-populated');
+      await fill('.lib-status', 'paused');
+      assert.equal(await js('[...document.querySelectorAll("[data-book-search]")].filter(el => el.style.display !== "none").every(el => el.dataset.bookStatus === "paused")'), true);
+      await fill('.lib-status', 'all');
+      await fill('.lib-sort', 'title');
+      await waitFor('document.querySelector(".lib-sort").value === "title"');
+      const titles = await js('[...document.querySelectorAll(".book-title")].map(el=>el.textContent)');
+      assert.deepEqual(titles, [...titles].sort((a,b)=>a.localeCompare(b)));
+      await fill('.lib-sort', 'recent');
+      await pause(100);
       nativeTheme.themeSource = 'dark';
       for (const view of ['library', 'create', 'kids', 'settings']) {
         await nav(view);

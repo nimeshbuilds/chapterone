@@ -37,6 +37,16 @@ function h(tag, attrs = {}, ...kids) {
 function mount(node) {
   const r = $('#view-root'); r.replaceChildren(node);
 }
+function pageHeading(eyebrow, title, description) {
+  return h('header', { class: 'page-head' }, h('p', { class: 'eyebrow' }, eyebrow),
+    h('h1', {}, title), h('p', {}, description));
+}
+function writingSteps(active = 0) {
+  return h('ol', { class: 'writing-steps', 'aria-label': 'Your writing journey' },
+    ['Your idea', 'Chapter plan', 'Write & revise', 'Read & share'].map((label, index) =>
+      h('li', { class: index === active ? 'current' : '', 'aria-current': index === active ? 'step' : null },
+        h('span', { 'aria-hidden': 'true' }, String(index + 1).padStart(2, '0')), label)));
+}
 let dialogId = 0;
 function presentModal(overlay, dismiss = () => closeModal(overlay)) {
   const heading = overlay.querySelector('h2');
@@ -46,6 +56,11 @@ function presentModal(overlay, dismiss = () => closeModal(overlay)) {
   }
   overlay.setAttribute('aria-modal', 'true');
   overlay.addEventListener('cancel', (event) => { event.preventDefault(); dismiss(); });
+  // Handle Escape before Chromium's CloseWatcher can close an editor while
+  // its asynchronous unsaved-change confirmation is still awaiting a choice.
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismiss(); }
+  });
   // Native modal dialogs keep the rest of the app inert and restore focus to
   // their opener. Escape uses each dialog's own cleanup/cancellation path.
   document.body.append(overlay);
@@ -199,6 +214,8 @@ function deviceSelect(kind, current, onChange, firstLabel) {
 
 // ---------- navigation ----------
 async function go(view, arg) {
+  if (document.querySelector('dialog[open]')) return;
+  state.navigationId = (state.navigationId || 0) + 1;
   if (state.view === 'create' && $('#f-request')) state.draftSpec = readSpec();
   if (state.view === 'kids' && $('#k-request')) state.kidsDraft = readKidsSpec();
   document.body.classList.toggle('reader-open', view === 'reader');
@@ -248,6 +265,12 @@ async function refreshPrereq() {
       pill.className = 'pill ok';
       pill.textContent = `● ${name} · ${isGemini ? 'API key connected' : 'signed in'}${chainNote}`;
       banner.classList.add('hidden');
+    } else if (auth.signedIn == null) {
+      pill.className = 'pill';
+      pill.textContent = `● ${name} · status unavailable`;
+      banner.replaceChildren(h('span', { class: 'grow' }, `${name} is installed. Sign-in status is unavailable; check the CLI in Terminal or use Settings.`),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: recheckAuth }, 'Re-check'));
+      banner.classList.remove('hidden');
     } else if (isGemini) {
       // Gemini uses an API key, not a sign-in — frame it as connectivity.
       const keySet = hasImageKey();
@@ -332,7 +355,7 @@ function imageMethodLabel(spec) {
   const mode = spec && spec.imageMode;
   if (mode === 'nano') return 'Nano Banana (AI photos)';
   if (mode === 'ai' || (spec && spec.illustrate) || mode === 'stock') return 'AI vector art (SVG)';
-  return null; // no chapter illustrations (cover is always SVG)
+  return null; // text-only books use a typographic library cover
 }
 function modelField(provider) { return provider + 'Model'; }
 
@@ -516,7 +539,7 @@ function imageModeControl() {
         : 'Nano Banana needs your Gemini API key (image-only, separate from your CLI subscription).')
     : mode === 'ai'
       ? 'Your selected writing engine designs the cover and chapter illustrations. This uses your provider’s subscription quota or Gemini API billing. Review generated artwork before publishing.'
-      : 'No images will be added (a designed cover is still created).';
+      : 'Text only. No AI cover or illustration requests; the library uses a simple typographic cover.';
   return h('div', { class: 'engine-col grow' },
     h('span', { class: 'mini-label' }, 'Cover & illustrations'),
     seg,
@@ -648,7 +671,7 @@ function openAuthModal(provider) {
     const res = await api.checkAuth(provider).catch((e) => ({ ok: false, detail: e.message }));
     if (res.ok) await succeed();
     else {
-      toast(`Not signed in yet: ${res.detail || 'finish sign-in in Terminal first'}`, 'bad');
+      toast(res.ok == null ? `Sign-in status unavailable: ${res.detail || 'Check the CLI in Terminal.'}` : `Not signed in yet: ${res.detail || 'finish sign-in in Terminal first'}`, 'bad');
       if (btn) { btn.textContent = '✓ I’ve finished — re-check'; btn.removeAttribute('disabled'); }
     }
   }
@@ -765,7 +788,7 @@ function fmtDate(iso) {
 }
 
 function statusLabelFor(b) {
-  return b.status === 'generating' ? 'Writing…' : (b.status === 'paused' ? 'Paused' : (b.status || 'draft'));
+  return b.status === 'complete' ? 'Finished draft' : b.status === 'generating' ? 'Writing…' : (b.status === 'paused' ? 'Paused' : (b.status || 'draft'));
 }
 /** Keep every library row's status explicit, including completed books. */
 function statusBadge(b) {
@@ -808,11 +831,28 @@ async function startSequel(id) {
 }
 
 async function renderLibrary() {
-  const books = await api.listBooks().catch(() => []);
+  let books;
+  try { books = await api.listBooks(); }
+  catch (error) {
+    mount(h('div', { class: 'view' }, pageHeading('YOUR WORKSPACE', 'Your Library', 'Your books are still on this device.'),
+      h('div', { class: 'card' }, h('p', { role: 'alert' }, `Could not load your library: ${error.message}`),
+        h('button', { class: 'btn btn-primary', onClick: renderLibrary }, 'Try again'))));
+    return;
+  }
+  const recent = books[0];
+  const sort = state.libSort || 'recent';
+  if (sort === 'title') books.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  if (sort === 'words') books.sort((a, b) => (b.words || 0) - (a.words || 0));
   const view = libView();
-  const head = h('div', { class: 'page-head' },
-    h('h1', {}, 'Your Library'),
-    h('p', {}, 'Your stories, drafts, and finished books in one place.'));
+  const head = pageHeading('YOUR WRITING SPACE', 'Your Library', 'Every good book begins with a little room to think.');
+  const overview = books.length ? h('section', { class: 'library-overview', 'aria-label': 'Library overview' },
+    h('div', { class: 'continue-card' }, h('p', { class: 'eyebrow' }, 'PICK UP WHERE YOU LEFT OFF'),
+      h('h2', {}, recent.title || 'Untitled'),
+      h('p', {}, `${(recent.words || 0).toLocaleString()} words · ${recent.chapters} chapter${recent.chapters === 1 ? '' : 's'} · ${statusLabelFor(recent)}`),
+      h('button', { class: 'btn btn-primary btn-sm', onClick: () => go('reader', recent.id) }, 'Open manuscript →')),
+    h('div', { class: 'library-totals' },
+      h('div', {}, h('strong', {}, books.length), h('span', {}, books.length === 1 ? 'book in your library' : 'books in your library')),
+      h('div', {}, h('strong', {}, books.reduce((n, b) => n + (b.words || 0), 0).toLocaleString()), h('span', {}, 'words on the page')))) : null;
 
   const viewToggle = h('div', { class: 'seg view-toggle' },
     h('button', { class: view === 'tiles' ? 'active' : '', 'aria-pressed': String(view === 'tiles'), title: 'Tiles', onClick: () => setLibView('tiles') }, '▦ Tiles'),
@@ -824,30 +864,42 @@ async function renderLibrary() {
     class: 'lib-search', type: 'search', 'aria-label': 'Search books by title, author, or genre', placeholder: 'Search your library…', value: state.libQuery || '',
   });
   const resultCount = h('p', { class: 'library-count', role: 'status', 'aria-live': 'polite' });
+  const statusFilter = h('select', { class: 'lib-status', 'aria-label': 'Filter by book status' },
+    ...[['all', 'All books'], ['complete', 'Finished drafts'], ['paused', 'Paused'], ['generating', 'Writing'], ['draft', 'Planned']].map(([value, label]) =>
+      h('option', { value, selected: value === (state.libStatus || 'all') }, label)));
+  const sortSelect = h('select', { class: 'lib-sort', 'aria-label': 'Sort books', onChange: (e) => { state.libSort = e.target.value; renderLibrary(); } },
+    ...[['recent', 'Recently updated'], ['title', 'Title A–Z'], ['words', 'Word count']].map(([value, label]) => h('option', { value, selected: value === sort }, label)));
   const noResults = h('div', { class: 'empty search-empty hidden' },
     h('h2', {}, 'No matching books'),
-    h('p', {}, 'Try a different title, author, or genre.'),
-    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { searchBox.value = ''; filterBooks(); searchBox.focus(); } }, 'Clear search'));
+    h('p', {}, 'Try a different title or choose another status.'),
+    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { searchBox.value = ''; statusFilter.value = 'all'; filterBooks(); searchBox.focus(); } }, 'Clear search'));
   function filterBooks() {
     state.libQuery = searchBox.value;
+    state.libStatus = statusFilter.value;
     const term = searchBox.value.trim().toLowerCase();
     let count = 0;
     document.querySelectorAll('[data-book-search]').forEach((el) => {
-      const matches = (el.dataset.bookSearch || '').includes(term);
+      const matches = (el.dataset.bookSearch || '').includes(term) && (statusFilter.value === 'all' || el.dataset.bookStatus === statusFilter.value);
       el.style.display = matches ? '' : 'none';
       if (matches) count++;
     });
     noResults.classList.toggle('hidden', count > 0 || !books.length);
-    resultCount.textContent = term ? `${count} of ${books.length} books` : `${books.length} book${books.length === 1 ? '' : 's'}`;
+    resultCount.textContent = term || statusFilter.value !== 'all' ? `${count} of ${books.length} books` : `${books.length} book${books.length === 1 ? '' : 's'}`;
   }
   searchBox.addEventListener('input', filterBooks);
+  statusFilter.addEventListener('change', filterBooks);
+  const toolbar = () => h('div', { class: 'lib-toolbar' }, searchBox, statusFilter, sortSelect, viewToggle);
 
   let body;
   if (!books.length) {
-    body = h('div', { class: 'empty' },
-      h('div', { class: 'big' }, '📖'),
-      h('p', {}, "You haven't written a book yet."),
-      h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ Write my first book'));
+    body = h('section', { class: 'empty library-welcome' },
+      h('div', { class: 'welcome-book', 'aria-hidden': 'true' }, 'Chapter', h('strong', {}, 'One')),
+      h('p', { class: 'eyebrow' }, 'THE NEXT CHAPTER IS YOURS'),
+      h('h2', {}, 'Make room for your first story.'),
+      h('p', {}, 'Bring an idea. Shape the chapter plan. Make every draft your own.'),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn btn-primary', onClick: () => go('create') }, 'Write my first book →'),
+        h('button', { class: 'btn btn-ghost', onClick: () => go('settings') }, 'Connect a provider')),
+      writingSteps());
   } else if (view === 'list') {
     const list = h('div', { class: 'book-list' });
     list.append(h('div', { class: 'book-row head' },
@@ -861,7 +913,7 @@ async function renderLibrary() {
     const searchKey = (b) => `${b.title || ''} ${b.author || ''} ${b.genre || ''}`.toLowerCase();
     for (const b of books) {
       const key = searchKey(b);
-      const row = h('div', { class: 'book-row', 'data-book-search': key, style: q && !key.includes(q) ? 'display:none' : '', onClick: () => go('reader', b.id) },
+      const row = h('div', { class: 'book-row', 'data-book-search': key, 'data-book-status': b.status || 'draft', style: q && !key.includes(q) ? 'display:none' : '', onClick: () => go('reader', b.id) },
         coverFor(b, 'thumb'),
         h('span', { class: 'c-title' }, h('button', { class: 'r-title book-title-link', 'aria-label': `Read ${b.title || 'Untitled'}`, onClick: (e) => { e.stopPropagation(); go('reader', b.id); } }, b.title || 'Untitled'), h('span', { class: 'r-by' }, `by ${b.author || 'Anonymous'}`)),
         h('span', { class: 'c-aud' }, classBadge(b.classification)),
@@ -874,7 +926,7 @@ async function renderLibrary() {
       list.append(row);
     }
     body = h('div', {},
-      h('div', { class: 'lib-toolbar' }, h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ New Book'), searchBox, viewToggle),
+      toolbar(),
       list);
   } else {
     const grid = h('div', { class: 'book-grid' });
@@ -882,7 +934,7 @@ async function renderLibrary() {
     for (const b of books) {
       const paused = b.status === 'paused';
       const key = searchKey(b);
-      const card = h('article', { class: 'book-card', 'data-book-search': key, style: q && !key.includes(q) ? 'display:none' : '' },
+      const card = h('article', { class: 'book-card', 'data-book-search': key, 'data-book-status': b.status || 'draft', style: q && !key.includes(q) ? 'display:none' : '' },
         h('button', { class: 'book-open', 'aria-label': `Read ${b.title || 'Untitled'}`, onClick: () => go('reader', b.id) },
           coverFor(b),
           h('span', { class: 'book-heading' }, h('strong', { class: 'book-title' }, b.title || 'Untitled'), h('span', { class: 'book-author' }, `by ${b.author || 'Anonymous'}`))),
@@ -906,10 +958,11 @@ async function renderLibrary() {
       grid.append(card);
     }
     body = h('div', {},
-      h('div', { class: 'lib-toolbar' }, h('button', { class: 'btn btn-primary', onClick: () => go('create') }, '✨ New Book'), searchBox, viewToggle),
+      toolbar(),
       grid);
   }
-  mount(h('div', { class: 'view library-view' }, head, body, books.length ? noResults : null, books.length ? resultCount : null));
+  head.append(h('button', { class: 'btn btn-primary page-action', onClick: () => go('create') }, '+ New Book'));
+  mount(h('div', { class: 'view library-view' }, head, overview, body, books.length ? noResults : null, books.length ? resultCount : null));
   filterBooks();
 }
 
@@ -1038,9 +1091,10 @@ function specForm(values = {}) {
   const v = values;
   return h('div', { class: 'card' },
     h('label', { class: 'field' },
-      h('span', {}, 'What do you want to read? Describe the book you wish existed.'),
+      h('span', {}, 'The book you wish existed'),
       h('textarea', { id: 'f-request', placeholder: 'e.g. A slow-burn cozy mystery set in a snowbound Scottish bakery, with a sharp-witted amateur sleuth and a cast of lovable suspects.' }, v.request || '')),
     sparkRow(),
+    h('div', { class: 'form-section-label' }, 'Make it yours'),
     h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'Type'),
         kindSelect(v.kind)),
@@ -1055,12 +1109,14 @@ function specForm(values = {}) {
         h('input', { id: 'f-tone', placeholder: 'Warm & witty, dark & gritty…', value: v.tone || '' })),
       h('label', { class: 'field' }, h('span', {}, 'Author name (optional)'),
         h('input', { id: 'f-author', placeholder: 'Your name, or blank for a pen name', value: v.authorName != null ? v.authorName : ((state.settings && state.settings.authorName) || '') }))),
+    h('details', { class: 'brief-details', open: !!(v.pov || v.notes || v.characters?.length) },
+    h('summary', {}, 'Characters & creative direction', h('span', {}, 'Optional · add the details that matter to you')),
     h('div', { class: 'row' },
       h('label', { class: 'field' }, h('span', {}, 'Point of view (optional)'),
         h('input', { id: 'f-pov', placeholder: 'First person, third limited…', value: v.pov || '' })),
       h('label', { class: 'field' }, h('span', {}, 'Anything else? (optional)'),
         h('input', { id: 'f-notes', placeholder: 'Must-haves, inspirations, no-gos…', value: v.notes || '' }))),
-    charactersEditor(v.characters),
+    charactersEditor(v.characters)),
     h('label', { class: 'field checkline', style: 'margin-top:12px' },
       h('input', { type: 'checkbox', id: 'f-review', checked: v.reviewOutline !== false ? 'checked' : false }),
       h('span', {}, '📋 Review the chapter plan before writing begins (edit titles, cut chapters)')));
@@ -1090,15 +1146,14 @@ function renderCreate() {
   if (state.view === 'create' && $('#f-request')) state.draftSpec = readSpec();
   const provider = (state.settings && state.settings.provider) || 'claude';
   const ready = state.prereq && state.prereq[provider] && state.prereq[provider].found;
-  const head = h('div', { class: 'page-head' },
-    h('h1', {}, 'Start with an idea'),
-    h('p', {}, 'Describe the book you want to write. You can refine the details and review the chapter plan before writing begins.'));
+  const head = pageHeading('A NEW BEGINNING', 'Start with an idea', 'A few sentences are enough. You’ll shape the chapter plan before the first draft begins.');
 
   const actions = h('div', { class: 'btn-row' },
     h('button', { class: 'btn btn-primary', id: 'btn-clarify', onClick: onClarify }, ready ? 'Continue →' : 'Connect an AI engine to write'),
     h('button', { class: 'btn btn-ghost', id: 'btn-skip', disabled: !ready, onClick: () => skipToGenerate() }, 'Skip questions & write now'));
 
-  mount(h('div', { class: 'view' }, head, specForm(state.draftSpec || {}), writingOptions(), actions));
+  mount(h('div', { class: 'view create-view' }, head, writingSteps(), specForm(state.draftSpec || {}), writingOptions(),
+    h('div', { class: 'create-footer' }, actions, h('p', { class: 'hint' }, 'Review is on by default. AI writing uses the provider and billing account you connect.'))));
   if (!ready) $('#btn-clarify').setAttribute('disabled', 'true');
 }
 
@@ -1115,9 +1170,7 @@ function renderKidsCreate() {
   const provider = (state.settings && state.settings.provider) || 'claude';
   const ready = state.prereq && state.prereq[provider] && state.prereq[provider].found;
   const v = state.kidsDraft || {};
-  const head = h('div', { class: 'page-head' },
-    h('h1', {}, '🧸 New Kids Book'),
-    h('p', {}, 'Pick the child’s age — fonts, length, vocabulary, safety, and illustration density all adapt. Add their name to make them the hero.'));
+  const head = pageHeading('SMALL READERS, BIG IMAGINATIONS', 'A story just for them', 'Choose their age and a little spark of adventure. Reading level, length, and illustration guidance adapt to your reader.');
 
   const ageSel = h('select', { id: 'k-age' });
   KIDS_AGES.forEach(([val, label]) => ageSel.append(h('option', { value: val, selected: (v.ageBand || '6-8') === val ? 'selected' : false }, label)));
@@ -1134,12 +1187,16 @@ function renderKidsCreate() {
         h('input', { id: 'k-genre', placeholder: 'Bedtime, adventure, learning, fairy tale…', value: v.genre || '' })),
       h('label', { class: 'field' }, h('span', {}, 'Author name (optional)'),
         h('input', { id: 'k-author', placeholder: 'Your name, or blank for a pen name', value: v.authorName != null ? v.authorName : ((state.settings && state.settings.authorName) || '') }))),
-    charactersEditor(v.characters));
+    charactersEditor(v.characters),
+    h('label', { class: 'field checkline', style: 'margin-top:16px' },
+      h('input', { type: 'checkbox', id: 'k-review', checked: v.reviewOutline !== false }),
+      h('span', {}, 'Review the chapter plan before writing begins')));
 
   const actions = h('div', { class: 'btn-row' },
     h('button', { class: 'btn btn-primary', id: 'btn-kids-go', onClick: onKidsGenerate }, ready ? 'Write the kids book' : 'Connect an AI engine to write'));
 
-  mount(h('div', { class: 'view' }, head, form, writingOptions(), actions));
+  mount(h('div', { class: 'view create-view kids-view' }, head, form, writingOptions(), actions,
+    h('p', { class: 'hint' }, 'Read the finished story before sharing it with a child. You can edit every chapter.')));
   if (!ready) $('#btn-kids-go').setAttribute('disabled', 'true');
 }
 function readKidsSpec() {
@@ -1148,6 +1205,7 @@ function readKidsSpec() {
     request: $('#k-request').value.trim(),
     ageBand: $('#k-age').value,
     kidsLength: $('#k-length') ? $('#k-length').value : 'standard',
+    reviewOutline: !!$('#k-review')?.checked,
     genre: $('#k-genre').value.trim(),
     authorName: $('#k-author') ? $('#k-author').value.trim() : '',
     characters: readCharacters(),
@@ -1250,7 +1308,7 @@ function confirmNanoCost(spec) {
         h('h2', { style: 'margin:0 0 6px' }, '🍌 Generate illustrations with Nano Banana?'),
         body,
         h('div', { class: 'btn-row' }, proceed,
-          h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closeModal(overlay); resolve(false); } }, 'Cancel'))));
+          h('button', { class: 'btn btn-ghost btn-sm', autofocus: true, onClick: () => { closeModal(overlay); resolve(false); } }, 'Cancel'))));
     presentModal(overlay, () => { closeModal(overlay); resolve(false); });
     api.estimateImages(spec).then((est) => {
       body.textContent = `This will create ${est.approximate ? 'about ' : ''}~${est.count} illustration${est.count === 1 ? '' : 's'} with ${est.modelLabel} ≈ $${est.cost}. Images are billed by Google to your own Gemini API key.`;
@@ -1604,12 +1662,17 @@ function readerPos(id) { return Number(localStorage.getItem('bw.reader.pos.' + i
 function saveReaderPos(id, idx) { localStorage.setItem('bw.reader.pos.' + id, String(idx)); }
 
 async function renderReader(id) {
+  const navigationId = state.navigationId;
+  const readerToken = (state.readerToken || 0) + 1;
+  state.readerToken = readerToken;
+  state.readerBookId = id;
   if (state.readerKeys) { document.removeEventListener('keydown', state.readerKeys); state.readerKeys = null; }
   if (state.readerMenuCleanup) { state.readerMenuCleanup(); state.readerMenuCleanup = null; }
   if (state.readerAudioEl) { state.readerAudioEl.pause(); state.readerAudioEl = null; }
   let content;
   try { content = await api.getBookContent(id); }
   catch (err) { toast(`Could not open book: ${err.message}`, 'bad'); return go('library'); }
+  if (state.view !== 'reader' || state.navigationId !== navigationId || state.readerToken !== readerToken) return;
 
   const chapters = content.chapters || [];
   const paused = content.status === 'paused';
@@ -1765,7 +1828,13 @@ async function renderReader(id) {
     const ci = curChapterIndex();
     if (ci < 0) { toast('Open a chapter first.', 'bad'); return; }
     try {
-      const r = await api.exportAudio(id, ci, selectedVoice || undefined);
+      const voice = audioVoice();
+      if (!voice || !state.settings.audio?.elevenApiKey) { toast('Choose a narrator and save an ElevenLabs key in Settings first.', 'bad'); return; }
+      const status = await api.audiobookStatus(id, voice);
+      if (!status.chapters.some(ch => ch.index === ci && ch.cached)) {
+        if (!await confirmDialog('Narrate this chapter before exporting?', 'There is no saved narration for this text, voice, and model. Creating the MP3 sends this chapter to ElevenLabs and uses your paid quota. Cancelling the later Save dialog will not refund generation.', 'Narrate & export')) return;
+      }
+      const r = await api.exportAudio(id, ci, voice);
       if (r && !r.canceled) { toast('Saved chapter MP3.', 'ok'); await api.openPath(r.path); }
     } catch (err) { toast(`Export failed: ${err.message}`, 'bad'); }
   }
@@ -1806,7 +1875,7 @@ async function renderReader(id) {
       `This narrates every chapter (${chapters.length} total) in ${voiceName}, saving each one so you can listen chapter by chapter or all the way through.\n\n` +
       `• ${toDo} chapter${toDo === 1 ? '' : 's'} still need narrating — the rest are already done and reused for free.\n` +
       `• Up to about ${chars.toLocaleString()} characters of your ElevenLabs quota for a full run.\n` +
-      `• You can close it anytime: finished chapters are saved, and running it again continues where it stopped.`,
+      `• Finished chapters are saved. Leaving this screen does not cancel a paid request; if the app closes, running it again reuses finished chapters.`,
       'Generate audiobook');
     if (!ok) return;
     audioBusy = true; wholeBook = false;
@@ -1896,27 +1965,47 @@ async function renderReader(id) {
     h('div', { class: 'reader-actions' },
       paused ? h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue') : null,
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Listen to this chapter (ElevenLabs)', onClick: () => playChapterAudio() }, '🎧 Listen'),
+      h('button', { class: 'btn btn-ghost btn-sm', id: 'r-check', onClick: async (e) => {
+        const button = e.currentTarget; button.disabled = true;
+        try { await showReadiness(id, (index) => goPage(pageIndexForChapter(index))); }
+        finally { button.disabled = false; }
+      } }, '✓ Manuscript check'),
+      h('details', { class: 'book-tools' }, h('summary', {}, 'Book tools'), h('div', { class: 'book-tools-panel' },
       h('button', { class: 'btn btn-ghost btn-sm', title: 'Book stats: words, reading time, grade level', onClick: () => showBookStats(id) }, 'Stats'),
-      h('button', { class: 'btn btn-ghost btn-sm', title: 'Story bible: premise, style, characters', onClick: () => showStoryBible(id) }, '📖 Bible'),
-      h('button', { class: 'btn btn-ghost btn-sm', title: 'Rename book / set author', onClick: () => renameBookModal(id, content) }, '✏️'),
-      exportMenu(id),
-      h('button', { class: 'btn btn-gold btn-sm', title: 'Send EPUB to Kindle', onClick: () => sendKindle(id) }, '📨 Kindle'),
-      h('button', { class: 'icon-btn danger', title: 'Delete', onClick: () => deleteBook(id) }, '🗑')));
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Story bible: premise, style, characters', onClick: () => showStoryBible(id) }, 'Story bible'),
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Rename book / set author', onClick: () => renameBookModal(id, content) }, 'Title & author'),
+      h('button', { class: 'btn btn-ghost btn-sm', title: 'Send EPUB to Kindle', onClick: () => sendKindle(id) }, 'Send to Kindle'),
+      h('button', { class: 'btn btn-danger btn-sm', title: 'Delete', onClick: () => deleteBook(id) }, 'Delete book'))),
+      exportMenu(id)));
+  const bookTools = $('.book-tools', bar);
+  bookTools.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && bookTools.open) { e.preventDefault(); e.stopPropagation(); bookTools.open = false; $('summary', bookTools).focus(); }
+  });
+  bookTools.addEventListener('focusout', (e) => { if (!bookTools.contains(e.relatedTarget) && !document.querySelector('dialog[open]')) bookTools.open = false; });
 
   const editBtn = h('button', { class: 'btn btn-ghost btn-sm', id: 'r-edit', title: 'Edit this chapter by hand', onClick: async () => {
     const ci = curChapterIndex(); if (ci < 0) return;
+    editBtn.disabled = true;
     try {
       const b = await api.getBook(id);
+      if (!isCurrentReader(id, readerToken) || document.querySelector('dialog[open]')) return;
       editChapterModal(id, ci, (b.chapters[ci] || {}).title || `Chapter ${ci + 1}`, (b.chapters[ci] || {}).content || '', () => { saveReaderPos(id, cur); renderReader(id); });
     } catch (e) { toast(e.message, 'bad'); }
+    finally { editBtn.disabled = curChapterIndex() < 0; }
   } }, '✏️ Edit');
   const rewriteBtn = h('button', { class: 'btn btn-ghost btn-sm', id: 'r-rewrite', title: 'Have the author rewrite this chapter (with your direction)', onClick: () => {
     const ci = curChapterIndex(); if (ci < 0) return;
     rewriteChapterModal(id, ci, (chapters[ci] || {}).title || `Chapter ${ci + 1}`, () => { saveReaderPos(id, cur); renderReader(id); });
   } }, '↻ Rewrite');
+  const historyBtn = h('button', { class: 'btn btn-ghost btn-sm', id: 'r-history', onClick: async () => {
+    const ci = curChapterIndex(); if (ci < 0) return;
+    historyBtn.disabled = true;
+    try { await showRevisionHistory(id, ci, () => { saveReaderPos(id, cur); renderReader(id); }); }
+    finally { historyBtn.disabled = curChapterIndex() < 0; }
+  } }, 'Revision history');
   const nav = h('div', { class: 'reader-nav' },
     h('button', { class: 'btn btn-ghost btn-sm', id: 'r-prev', onClick: () => step(-1) }, '‹ Prev'),
-    editBtn, rewriteBtn,
+    editBtn, rewriteBtn, historyBtn,
     pageInfo,
     h('button', { class: 'btn btn-ghost btn-sm', id: 'r-next', onClick: () => step(1) }, 'Next ›'));
 
@@ -1951,9 +2040,9 @@ async function renderReader(id) {
       ? h('div', { class: 'pause-note' }, `⏸️ ${content.pausedReason.detail || 'Paused.'} `,
           h('button', { class: 'btn btn-gold btn-sm', onClick: () => startResume(id) }, '▶ Continue writing'))
       : null),
-    contentEl, nav);
+    contentEl);
 
-  root.append(bar, h('div', { class: 'reader-progress' }, progressFill), audioBar, h('div', { class: 'reader-body' }, tocDrawer, main));
+  root.append(bar, h('div', { class: 'reader-progress' }, progressFill), audioBar, h('div', { class: 'reader-body' }, tocDrawer, main), nav);
   setVars();
   mount(root);
 
@@ -2003,7 +2092,7 @@ async function renderReader(id) {
     if (!pages.length) { contentEl.append(h('p', { style: 'text-align:center;color:#999' }, 'No content yet.')); return; }
     if (prefs.mode === 'scroll') {
       pages.forEach((pg, i) => contentEl.append(pageEl(pg, i)));
-      nav.style.display = 'none';
+      nav.style.display = 'flex';
     } else {
       contentEl.append(pageEl(pages[cur], cur));
       nav.style.display = 'flex';
@@ -2018,6 +2107,12 @@ async function renderReader(id) {
     document.querySelectorAll('.toc-item').forEach((b) => b.classList.toggle('active', Number(b.getAttribute('data-i')) === cur));
     editBtn.disabled = curChapterIndex() < 0;
     rewriteBtn.disabled = curChapterIndex() < 0;
+    historyBtn.disabled = curChapterIndex() < 0;
+    const pg = pages[cur];
+    pageInfo.textContent = pg?.kind === 'chapter' ? `Chapter ${pg.chIndex + 1} of ${chapters.length}` : (pg?.label || '');
+    const prev = document.getElementById('r-prev'); const next = document.getElementById('r-next');
+    if (prev) prev.disabled = cur <= 0;
+    if (next) next.disabled = cur >= pages.length - 1;
     if (prefs.mode === 'chapter') {
       const pg = pages[cur];
       pageInfo.textContent = pg && pg.kind === 'chapter'
@@ -2286,46 +2381,168 @@ function renameBookModal(id, content) {
 /** Hand-edit a chapter's Markdown. */
 function editChapterModal(id, chIndex, chapterTitle, markdown, onSaved) {
   const ta = h('textarea', { class: 'edit-chapter-ta', 'aria-label': 'Chapter Markdown', spellcheck: 'true' }, markdown || '');
-  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
+  const wordCount = h('span', { class: 'editor-count', role: 'status' });
+  const updateCount = () => { wordCount.textContent = `${ta.value.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words · ${ta.value === markdown ? 'No changes' : 'Unsaved changes'}`; };
+  ta.addEventListener('input', updateCount); updateCount();
+  let dismissing = false;
+  const dismiss = async () => {
+    if (dismissing) return;
+    dismissing = true;
+    if (ta.value === markdown || await confirmDialog('Discard unsaved edits?', 'Your saved chapter is unchanged. The text in this editor has not been saved.', 'Discard edits')) closeModal(overlay);
+    dismissing = false;
+  };
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) dismiss(); } },
     h('div', { class: 'modal edit-modal' },
-      h('h2', { style: 'margin:0 0 4px' }, `✏️ Edit — ${chapterTitle}`),
-      h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Plain Markdown. Your edits are saved into the book and flow into every export and narration.'),
+      h('p', { class: 'eyebrow' }, 'MAKE IT YOUR OWN'),
+      h('h2', { style: 'margin:0 0 4px' }, chapterTitle),
+      h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Edit in Markdown. Saving keeps the previous version in Revision history and updates future exports and narration.'),
       ta,
+      wordCount,
       h('div', { class: 'btn-row', style: 'margin-top:12px' },
-        h('button', { class: 'btn btn-primary btn-sm', onClick: async () => {
+        h('button', { class: 'btn btn-primary btn-sm', onClick: async (e) => {
+          const btn = e.currentTarget; btn.disabled = true;
           try {
             await api.updateChapter(id, chIndex, ta.value);
             closeModal(overlay); toast('Chapter saved.', 'ok'); if (onSaved) onSaved();
-          } catch (err) { toast(err.message, 'bad'); }
+          } catch (err) { toast(err.message, 'bad'); btn.disabled = false; }
         } }, 'Save chapter'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Cancel'))));
-  presentModal(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: dismiss }, 'Cancel'))));
+  presentModal(overlay, dismiss);
+  const preventDirtyClose = (event) => {
+    if (overlay.open && ta.value !== markdown) { event.preventDefault(); event.returnValue = ''; }
+  };
+  window.addEventListener('beforeunload', preventDirtyClose);
+  overlay.addEventListener('close', () => window.removeEventListener('beforeunload', preventDirtyClose), { once: true });
+}
+
+function isCurrentReader(id, token) {
+  return state.view === 'reader' && state.readerBookId === id && state.readerToken === token;
+}
+/** Read-only checks run locally; a finding links directly to its chapter. */
+async function showReadiness(id, openChapter) {
+  const token = state.readerToken;
+  try {
+    const report = await api.bookReadiness(id);
+    if (!isCurrentReader(id, token) || document.querySelector('dialog[open]')) return;
+    const summary = report.summary;
+    const overlay = h('dialog', { class: 'modal-overlay' });
+    const checks = h('div', { class: 'readiness-checks' });
+    for (const check of report.checks) {
+      checks.append(h('article', { class: `readiness-item severity-${check.severity}` },
+        h('span', { class: 'readiness-severity' }, check.severity === 'error' ? 'Needs attention' : 'Review'),
+        h('h3', {}, check.title), h('p', {}, check.detail),
+        check.excerpt ? h('blockquote', {}, check.excerpt) : null,
+        Number.isInteger(check.chapterIndex) && check.chapterAvailable !== false ? h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closeModal(overlay); openChapter(check.chapterIndex); $('.reader-main')?.focus(); } }, `Open chapter ${check.chapterNumber || check.chapterIndex + 1} →`) : null));
+    }
+    if (!report.checks.length) checks.append(h('div', { class: 'readiness-clear' },
+      h('strong', {}, 'No structural issues found'), h('p', {}, 'A good point to read through your manuscript and make it your own.')));
+    overlay.append(h('div', { class: 'modal readiness-modal' },
+      h('p', { class: 'eyebrow' }, 'A SECOND LOOK, WITHOUT AN AI REQUEST'),
+      h('h2', {}, 'Manuscript check'),
+      h('p', { class: 'hint' }, 'Checks your current saved manuscript. Run it again after making changes.'),
+      h('div', { class: 'review-summary' },
+        h('span', {}, h('strong', {}, summary.errors), ' need attention'),
+        h('span', {}, h('strong', {}, summary.warnings), ' to review'),
+        h('span', {}, h('strong', {}, summary.words.toLocaleString()), ' words')),
+      checks, h('p', { class: 'hint' }, report.limitations),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn btn-primary btn-sm', onClick: () => closeModal(overlay) }, 'Back to manuscript'))));
+    presentModal(overlay);
+  } catch (error) { toast(`Could not check manuscript: ${error.message}`, 'bad'); }
+}
+
+/** Compare safe plain text; saved manuscript HTML never enters this dialog. */
+async function showRevisionHistory(id, index, onRestored) {
+  const token = state.readerToken;
+  try {
+    const [history, book] = await Promise.all([api.getChapterRevisions(id, index), api.getBook(id)]);
+    if (!isCurrentReader(id, token) || document.querySelector('dialog[open]')) return;
+    const chapter = book.chapters[index];
+    const overlay = h('dialog', { class: 'modal-overlay' });
+    const body = h('div', { class: 'revision-body' });
+    const reasonLabel = { 'manual-edit': 'Before an edit', 'ai-rewrite': 'Before an AI rewrite', restore: 'Before a restore' };
+    const select = h('select', { id: 'revision-select', 'aria-label': 'Saved chapter version' });
+    history.revisions.forEach((r) => select.append(h('option', { value: r.id }, `${fmtDate(r.createdAt)} · ${reasonLabel[r.reason] || 'Saved version'} · ${r.words} words`)));
+    const oldText = h('pre', { class: 'revision-text', tabindex: '0', 'aria-label': 'Saved version text' });
+    const restore = h('button', { class: 'btn btn-primary btn-sm', id: 'revision-restore', disabled: true }, 'Restore this version');
+    const message = h('p', { class: 'hint', role: 'status' });
+    let selected = null;
+    let loadNumber = 0;
+    async function loadVersion() {
+      const currentLoad = ++loadNumber; selected = null; restore.disabled = true;
+      oldText.textContent = 'Loading saved version…'; message.textContent = '';
+      try {
+        const version = await api.getChapterRevision(id, index, select.value);
+        if (currentLoad !== loadNumber || !overlay.open) return;
+        selected = version; oldText.textContent = version.content;
+        restore.disabled = version.content === chapter.content;
+        const difference = version.words - (chapter.words || 0);
+        message.textContent = restore.disabled ? 'This version matches your current chapter.' : `Saved version has ${Math.abs(difference)} ${difference >= 0 ? 'more' : 'fewer'} words than the current chapter.`;
+      } catch (error) { if (currentLoad === loadNumber) { oldText.textContent = 'Could not load this version.'; message.textContent = error.message; } }
+    }
+    select.addEventListener('change', loadVersion);
+    restore.addEventListener('click', async () => {
+      if (!selected) return;
+      const target = selected;
+      if (!await confirmDialog('Restore this chapter version?', 'Your current chapter will be saved in Revision history first. Only the chapter text changes; the title, plan, and artwork stay as they are.', 'Restore version')) return;
+      restore.disabled = true;
+      try {
+        await api.restoreChapterRevision(id, index, target.id);
+        closeModal(overlay); toast('Version restored. Your previous text is saved in Revision history.', 'ok'); onRestored();
+      } catch (error) { toast(error.message, 'bad'); restore.disabled = false; }
+    });
+    if (history.revisions.length) body.append(
+      h('label', { class: 'field' }, h('span', {}, 'Choose a saved version'), select), message,
+      h('div', { class: 'revision-compare' },
+        h('section', {}, h('h3', {}, 'Saved version'), oldText),
+        h('section', {}, h('h3', {}, 'Current chapter'), h('pre', { class: 'revision-text', tabindex: '0', 'aria-label': 'Current chapter text' }, chapter.content))), restore);
+    else body.append(h('div', { class: 'revision-empty' }, h('h3', {}, 'Your next edit starts the story.'),
+      h('p', {}, 'When you save an edit or finish an AI rewrite, the previous chapter text appears here. You can then compare and restore it.')));
+    overlay.append(h('div', { class: 'modal revision-modal' }, h('p', { class: 'eyebrow' }, 'WRITE WITH ROOM TO EXPERIMENT'),
+      h('h2', {}, 'Revision history'), h('p', { class: 'hint' }, `${chapter.title || `Chapter ${index + 1}`} · Up to ${history.limit} previous versions, saved on this device.`),
+      body, h('div', { class: 'btn-row' }, h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Close history'))));
+    presentModal(overlay);
+    if (history.revisions.length) loadVersion();
+  } catch (error) { toast(`Could not load revision history: ${error.message}`, 'bad'); }
 }
 
 /** AI rewrite of one chapter, steered by a director's note. */
 function rewriteChapterModal(id, chIndex, chapterTitle, onDone) {
   const note = h('textarea', { class: 'rewrite-note', 'aria-label': 'Rewrite instructions', placeholder: 'e.g. Slower pacing, more dialogue between the sisters, end on a cliffhanger — or leave blank for a general polish.' });
-  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) closeModal(overlay); } },
+  let activeJob = null;
+  let dismissed = false;
+  const dismiss = async () => {
+    if (dismissed) return;
+    dismissed = true;
+    if (activeJob) {
+      try { await api.cancelGeneration(activeJob); }
+      catch (error) { dismissed = false; toast(`Could not cancel rewrite: ${error.message}`, 'bad'); return; }
+    }
+    closeModal(overlay);
+  };
+  const overlay = h('dialog', { class: 'modal-overlay', onClick: (e) => { if (e.target === overlay) dismiss(); } },
     h('div', { class: 'modal edit-modal' },
       h('h2', { style: 'margin:0 0 4px' }, `↻ Rewrite — ${chapterTitle}`),
-      h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Tell the author what to change. The chapter is rewritten in place — the rest of the book is untouched.'),
+      h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Describe the change. A successful rewrite saves the previous text in Revision history. This uses provider quota; cancelling cannot refund usage already incurred.'),
       note,
       h('div', { class: 'btn-row', style: 'margin-top:12px' },
         h('button', { class: 'btn btn-gold btn-sm', onClick: async (e) => {
           const btn = e.currentTarget;
           btn.setAttribute('disabled', 'true'); btn.textContent = 'Rewriting…';
+          activeJob = `rewrite-${Date.now()}`;
           try {
-            await api.rewriteChapter(id, chIndex, note.value.trim(), `rewrite-${Date.now()}`);
+            await api.rewriteChapter(id, chIndex, note.value.trim(), activeJob);
+            if (dismissed) return;
             closeModal(overlay); toast('✨ Chapter rewritten.', 'ok'); if (onDone) onDone();
-          } catch (err) { btn.removeAttribute('disabled'); btn.textContent = '↻ Rewrite with AI'; toast(err.message, 'bad'); }
+          } catch (err) { if (!dismissed) { btn.removeAttribute('disabled'); btn.textContent = '↻ Rewrite with AI'; toast(err.message, 'bad'); } }
+          finally { activeJob = null; }
         } }, '↻ Rewrite with AI'),
-        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => closeModal(overlay) }, 'Cancel'))));
-  presentModal(overlay);
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: dismiss }, 'Cancel'))));
+  presentModal(overlay, dismiss);
   note.focus();
 }
 
 async function deleteBook(id) {
-  if (!await confirmDialog('Delete this book?', 'The manuscript, artwork, and narration will be permanently deleted. Export a copy first if you want to keep it.', 'Delete book')) return;
+  if (!await confirmDialog('Delete this book?', 'The manuscript, revision history, artwork, and narration will be permanently deleted. Export a copy first if you want to keep it.', 'Delete book')) return;
   try {
     await api.deleteBook(id);
     toast('Book deleted.');
@@ -2343,7 +2560,7 @@ function providerStatusRow(key, label) {
   const dot = !ok ? 'bad' : (a ? (a.signedIn ? 'ok' : 'warn') : 'warn');
   const chipText = isG
     ? (a ? (a.signedIn ? '✓ Connected' : (hasImageKey() ? 'Key not reachable' : 'Needs API key')) : 'Testing…')
-    : (a ? (a.signedIn ? '✓ Signed in' : 'Not signed in') : 'Checking…');
+    : (a ? (a.signedIn ? '✓ Signed in' : a.signedIn === false ? 'Not signed in' : 'Status unavailable') : 'Checking…');
   const authChip = !ok ? null : h('span', {
     style: `font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;${a ? (a.signedIn ? 'color:var(--ok);background:rgba(31,170,107,.14)' : 'color:var(--accent-2);background:rgba(192,138,46,.16)') : 'color:var(--text-dim)'}`,
   }, chipText);
@@ -2366,9 +2583,7 @@ function providerStatusRow(key, label) {
 // ---------- SETTINGS ----------
 function renderSettings() {
   const s = state.settings;
-  const head = h('div', { class: 'page-head' },
-    h('h1', {}, 'Settings'),
-    h('p', {}, 'Choose your AI engine & model, grounding options, and Kindle delivery.'));
+  const head = pageHeading('MAKE YOURSELF AT HOME', 'Settings', 'Connect one writing provider to begin. Illustrations, narration, and Kindle delivery are optional.');
 
   const engineCard = h('div', { class: 'card' },
     h('p', { class: 'section-title' }, 'AI engines, models & fallback chain'),
@@ -2388,7 +2603,7 @@ function renderSettings() {
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-ghost btn-sm', onClick: saveEngineCmds }, 'Save commands'),
       h('button', { class: 'btn btn-ghost btn-sm', onClick: () => recheck() }, 'Re-check CLIs'),
-      h('button', { class: 'btn btn-ghost btn-sm', id: 'btn-auth', onClick: testAuth }, 'Test connection')));
+      h('button', { class: 'btn btn-ghost btn-sm', id: 'btn-auth', onClick: testAuth }, 'Check sign-in')));
 
   const k = s.kindle || {};
   const sm = k.smtp || {};
@@ -2491,7 +2706,14 @@ function renderSettings() {
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-danger-solid btn-sm', onClick: () => clearAllDataModal() }, '🗑  Clear all my data')));
 
-  mount(h('div', { class: 'view' }, head, engineCard, imageCard, audioCard, kindleCard, dangerCard));
+  const sections = [['writing', 'Writing', engineCard], ['images', 'Illustrations', imageCard], ['audio', 'Narration', audioCard], ['delivery', 'Kindle & email', kindleCard], ['data', 'Your data', dangerCard]];
+  const jumpNav = h('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' });
+  sections.forEach(([key, label, card]) => {
+    card.id = `settings-${key}`;
+    card.setAttribute('tabindex', '-1');
+    jumpNav.append(h('button', { class: 'settings-jump', onClick: () => { card.scrollIntoView({ block: 'start' }); card.focus({ preventScroll: true }); } }, label));
+  });
+  mount(h('div', { class: 'view settings-view' }, head, jumpNav, engineCard, imageCard, audioCard, kindleCard, dangerCard));
 }
 
 /** Type-to-confirm modal that erases every local artifact the app created. */
@@ -2719,9 +2941,9 @@ async function testAuth() {
   btn.textContent = 'Testing…'; btn.setAttribute('disabled', 'true');
   try {
     const res = await api.checkAuth();
-    toast(res.ok ? '✅ Connected on your subscription.' : `Not authenticated: ${res.detail}`, res.ok ? 'ok' : 'bad');
+    toast(res.detail || (res.ok ? 'Sign-in found. Model availability and billing depend on your provider account.' : 'Sign-in status unavailable.'), res.ok ? 'ok' : 'bad');
   } catch (err) { toast(`Test failed: ${err.message}`, 'bad'); }
-  finally { btn.textContent = 'Test connection'; btn.removeAttribute('disabled'); }
+  finally { btn.textContent = 'Check sign-in'; btn.removeAttribute('disabled'); }
 }
 async function saveKindle() {
   // The delivery method is persisted the moment it's toggled; here we save the

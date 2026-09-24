@@ -31,24 +31,29 @@ class CodexAdapter {
 
   async checkAuth() {
     try {
-      const text = await this.complete('Reply with exactly the word: READY', {
-        system: 'You are a connectivity probe. Output only what is requested.',
-        timeoutMs: 90000,
+      // The documented login-status subcommand reads authentication metadata.
+      // Never fall back to exec: startup/status checks must not spend quota.
+      // https://learn.chatgpt.com/docs/developer-commands?surface=cli
+      const { code, stdout, stderr } = await run(this.command, ['login', 'status'], {
+        scrubEnv: this.scrub(), timeoutMs: 15000,
       });
-      const ok = text.trim().length > 0; // a successful, non-empty completion = authenticated
-      return { ok, detail: ok ? 'Authenticated (subscription)' : 'The CLI returned no output.' };
-    } catch (err) {
-      return { ok: false, detail: err.message };
-    }
+      const status = `${stdout}\n${stderr}`;
+      // Codex may print an API-key fragment. Never forward raw output to the UI.
+      if (code === 0 && /^Logged in using\b/im.test(status)) return { ok: true,
+        detail: 'Codex reports signed in. No text was generated; model access, quota and billing were not checked.' };
+      if (code === 1 && /^Not logged in\s*$/im.test(status)) return { ok: false,
+        detail: 'Codex reports no sign-in. Sign in with the CLI, then check again.' };
+    } catch (_) { /* unavailable or older CLI: unknown, with no paid fallback */ }
+    return { ok: null,
+      detail: 'Could not read Codex sign-in status. Update the CLI or check it in Terminal. No text was generated.' };
   }
 
   buildArgs(prompt, opts = {}) {
     const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only',
       '-c', 'approval_policy="never"', '-c', 'features.shell_tool=false'];
-    // Codex defaults to `xhigh` reasoning (built for hard coding/math): for prose
-    // it is slow and burns the ChatGPT quota fast, so a full book hits usage/rate
-    // limits and starts failing. `medium` keeps the writing quality while cutting
-    // token use ~3-5x and running far faster. The user can override via extraArgs.
+    // Keep a consistent reasoning budget for prose across model generations.
+    // Medium is supported by the current catalog; user overrides stay intact.
+    // Provider defaults and actual quality/usage vary by model and account.
     const hasReasoning = this.extraArgs.some((a) => /model_reasoning_effort/.test(String(a)));
     if (!hasReasoning) args.push('-c', 'model_reasoning_effort="medium"');
     if (this.model) args.push('--model', this.model);

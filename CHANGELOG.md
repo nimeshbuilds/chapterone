@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] — 2026-09-23
+
+- Redesign the desktop workspace with an editorial light/dark palette, clearer navigation, a recent-manuscript card, library status filters and sorting, a guided book brief, and Settings section shortcuts.
+- Simplify the reader toolbar and keep chapter editing available in both Page and Scroll modes. Warn before discarding unsaved edits.
+- Add local chapter revision history: compare and restore up to 20 previous versions. Saving, rewriting, or restoring preserves the text being replaced; failed changes cannot overwrite the saved manuscript.
+- Add an offline manuscript check with chapter links for missing or empty chapters, draft markers, repeated headings/passages, and unresolved illustration markers. This checks structure, not factual accuracy or publishing rights.
+- Refresh all supported providers against September 23 documentation, preserve custom/saved selections, and show compatibility and retirement guidance.
+- Preserve date-prefixed text and Markdown scene breaks in Grok output.
+- Use non-generating sign-in checks at startup, make No images skip cover requests, and confirm uncached chapter narration before MP3 export.
+- Add outline approval for children's books and protect unsaved chapter edits when closing or quitting the app.
+- Publish a searchable, accessible GitHub Pages handbook covering installation, providers, writing, revision, narration, exports, privacy, troubleshooting, and contribution.
+- Extend unit and real-Electron regression coverage for history, restore/cancellation, manuscript checks, UI navigation, and documentation.
+
 ## [0.2.1] — 2026-09-19
 
 - Require Developer ID signing and notarization on macOS. Permit owner-approved unsigned Windows installers through an exception scoped to the exact package version; disclose their signing status in download notes.

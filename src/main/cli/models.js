@@ -8,24 +8,27 @@
 // Reviewed against official provider documentation. See docs/MODELS.md for
 // sources and the update checklist. CLI defaults honor the user's configuration;
 // neither a default nor an alias guarantees account access to the newest model.
-const CATALOG_REVIEWED_AT = '2026-09-19';
+const CATALOG_REVIEWED_AT = '2026-09-23';
 const CLAUDE_MODELS = [
   { id: '', label: 'CLI default — uses your configuration' },
   { id: 'fable', label: 'Claude Fable — latest alias', note: 'Requires a recent Claude Code and account access. Depending on your plan, Fable can bill usage credits. ChapterOne uses headless mode, where Claude Code does not ask for billing confirmation.' },
-  { id: 'opus', label: 'Claude Opus — latest alias, quality' },
+  { id: 'opus', label: 'Claude Opus — latest alias, quality', note: 'Currently Opus 5.5 on Anthropic; other deployments and your CLI settings can resolve differently. Update Claude Code for new model support.' },
   { id: 'sonnet', label: 'Claude Sonnet — latest alias, balanced' },
   { id: 'haiku', label: 'Claude Haiku — latest alias, fast' },
   { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 — pinned', note: 'Requires Claude Code 2.1.257 or later and account access. Depending on your plan, headless requests can bill usage credits without a confirmation prompt.' },
-  { id: 'claude-opus-5', label: 'Claude Opus 5 — pinned', note: 'Requires Claude Code 2.1.219 or later and provider/account access.' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 — latest Opus, pinned', note: 'Requires Claude Code 2.1.280 or later and account access. Thinking is always enabled; the CLI manages the model’s supported request settings.' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5 — older pinned version', note: 'Requires Claude Code 2.1.219 or later and provider/account access.' },
   { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 — pinned', note: 'Requires Claude Code 2.1.197 or later and provider/account access.' },
 ];
 
 const CODEX_MODELS = [
   { id: '', label: 'CLI default — uses your configuration' },
   { id: 'gpt-6-astra', label: 'GPT-6 Astra — most capable', note: 'Availability depends on your plan, rollout, and Codex version. Uses more quota than the smaller choices.' },
-  { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol — complex writing & reasoning' },
-  { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra — balanced' },
-  { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna — fast & economical' },
+  { id: 'gpt-6-sol', label: 'GPT-6 Sol — complex writing & reasoning', note: 'Availability depends on your account, rollout, and Codex version. Existing saved model choices stay unchanged.' },
+  { id: 'gpt-6-luna', label: 'GPT-6 Luna — fast & economical', note: 'For focused drafting and short tasks. Availability depends on your account, rollout, and Codex version.' },
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol — previous generation, quality' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra — previous generation, balanced' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna — previous generation, fast' },
   { id: 'gpt-5.5', label: 'GPT-5.5 — legacy' },
 ];
 
@@ -36,6 +39,8 @@ const GEMINI_MODELS = [
   { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash — latest stable Flash' },
   { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — fast & economical' },
   { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — preview', note: 'Preview model: availability and behavior can change before a stable release.' },
+  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash — older pinned version' },
+  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — older pinned version' },
   { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — older pinned version' },
   { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — older pinned version' },
 ];
@@ -44,14 +49,14 @@ const GEMINI_MODELS = [
 // available through subscription login. Custom IDs can be checked via `grok models`.
 const GROK_MODELS = [
   { id: '', label: 'CLI default — uses your configuration' },
-  { id: 'grok-build', label: 'Grok Build — current CLI alias' },
+  { id: 'grok-build', label: 'Grok Build — latest CLI model', note: 'xAI lists Grok 4.7 as the current Build default. The CLI alias follows xAI and your configuration; check custom IDs with Check model.' },
 ];
 
 // Preserve quality/speed tiers. Grok has no separately verified fast CLI alias;
 // its Fast preset leaves model selection to the user's CLI configuration.
 const MODEL_PRESETS = {
   claude: { fast: 'haiku', pro: 'opus', default: '' },
-  codex: { fast: 'gpt-5.6-luna', pro: 'gpt-5.6-sol', default: '' },
+  codex: { fast: 'gpt-6-luna', pro: 'gpt-6-sol', default: '' },
   gemini: { fast: 'gemini-3.5-flash-lite', pro: 'gemini-3.1-pro-preview', default: 'gemini-flash-latest' },
   grok: { fast: '', pro: 'grok-build', default: '' },
 };
@@ -62,6 +67,7 @@ const MODEL_NOTICES = {
     'gpt-5.4': 'Retired from Codex with ChatGPT sign-in on August 31, 2026. Choose GPT-5.6 Terra or CLI default. API-key access is separate.',
     'gpt-5.4-mini': 'Retired from Codex with ChatGPT sign-in on August 31, 2026. Choose GPT-5.6 Luna or CLI default. API-key access is separate.',
     'gpt-5.5': 'Scheduled to retire from Codex with ChatGPT sign-in on October 14, 2026. Choose GPT-5.6 Sol or CLI default. API-key access is separate.',
+    'gpt-5.3-codex-spark': 'Retired from Codex with ChatGPT sign-in on September 14, 2026. Choose GPT-6 Luna or CLI default. API-key access is separate.',
   },
   grok: {
     'grok-composer-2.5-fast': 'This saved model is no longer a recommended CLI choice. Use Check model to query your CLI, or choose Grok Build / CLI default.',

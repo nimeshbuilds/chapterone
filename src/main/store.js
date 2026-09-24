@@ -5,6 +5,7 @@ const path = require('path');
 const { classifyBook } = require('./book/classify');
 const { MODEL_PRESETS } = require('./cli/models');
 const { DEFAULT_IMAGE_MODEL } = require('./book/nanoBanana');
+const revisions = require('./book/revisions');
 
 const SECRET_PATHS = [
   ['geminiApiKey'], ['images', 'geminiApiKey'], ['audio', 'elevenApiKey'],
@@ -169,7 +170,7 @@ class Store {
   bookPath(id) {
     // ids are UUIDs we minted; reject anything else so a compromised renderer
     // can't traverse paths (e.g. id = "../../settings") via the IPC surface.
-    if (!/^[\w-]+$/.test(String(id || ''))) throw new Error('Invalid book id');
+    if (typeof id !== 'string' || !/^[\w-]+$/.test(id)) throw new Error('Invalid book id');
     return path.join(this.booksDir, `${id}.json`);
   }
 
@@ -181,6 +182,39 @@ class Store {
 
   getBook(id) {
     return JSON.parse(fs.readFileSync(this.bookPath(id), 'utf8'));
+  }
+
+  updateChapter(id, index, content) {
+    const book = this.getBook(id);
+    const changed = revisions.updateChapterContent(book, index, content);
+    if (changed) this.saveBook(book);
+    return { id, index, words: revisions.chapterAt(book, index).words, changed };
+  }
+
+  /** Commit new prose and its previous version in the same atomic book write. */
+  saveRewrittenChapter(book, index, previous) {
+    const changed = revisions.recordChapterRevision(book, index, previous, 'ai-rewrite');
+    if (changed) {
+      revisions.chapterAt(book, index).words = (book.chapters[index].content.match(/\S+/g) || []).length;
+      revisions.recountBook(book);
+      this.saveBook(book);
+    }
+    return { id: book.id, index, words: revisions.chapterAt(book, index).words, changed };
+  }
+
+  getChapterRevisions(id, index) {
+    return revisions.listChapterRevisions(this.getBook(id), index);
+  }
+
+  getChapterRevision(id, index, revisionId) {
+    return revisions.getChapterRevision(this.getBook(id), index, revisionId);
+  }
+
+  restoreChapterRevision(id, index, revisionId) {
+    const book = this.getBook(id);
+    const changed = revisions.restoreChapterRevision(book, index, revisionId);
+    if (changed) this.saveBook(book);
+    return { id, index, words: revisions.chapterAt(book, index).words, changed };
   }
 
   deleteBook(id) {
@@ -199,6 +233,11 @@ class Store {
    * half-written book is complete.
    */
   reconcileInterrupted() {
+    // A short manual edit (including intentionally clearing a chapter) is not
+    // a failed model response. Preserve it and its history across restarts;
+    // Manuscript check can flag missing prose without destroying user work.
+    const generatedStub = (chapter) => chapter && !Object.hasOwn(chapter, 'revisions')
+      && (chapter.words || 0) < 15 && (chapter.content || '').length < 200;
     let files;
     try { files = fs.readdirSync(this.booksDir).filter((f) => f.endsWith('.json')); } catch (_) { return; }
     for (const f of files) {
@@ -211,14 +250,14 @@ class Store {
         } else if (b.status === 'complete') {
           const chs = (b.chapters || []).filter(Boolean);
           const planned = (b.outline || []).length;
-          const stub = chs.find((c) => (c.words || 0) < 15 && (c.content || '').length < 200);
+          const stub = chs.find(generatedStub);
           if (stub) reason = { kind: 'short-chapter', detail: `Chapter ${stub.number} came back almost empty — click Continue to rewrite it.` };
           else if (planned && chs.length < planned) reason = { kind: 'incomplete', detail: `Only ${chs.length} of ${planned} chapters were written. Click Continue to finish.` };
         }
         if (reason) {
           // Drop trailing stub chapters so resume rewrites them from that point.
           if (Array.isArray(b.chapters)) {
-            while (b.chapters.length && ((b.chapters[b.chapters.length - 1].words || 0) < 15) && ((b.chapters[b.chapters.length - 1].content || '').length < 200)) {
+            while (b.chapters.length && generatedStub(b.chapters[b.chapters.length - 1])) {
               b.chapters.pop();
             }
           }

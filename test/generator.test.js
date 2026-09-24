@@ -190,3 +190,76 @@ test('completed prose is saved before an optional illustration can fail', async 
   assert.equal(saved.status, 'paused');
   assert.ok(saved.chapters[0].content.length > 200);
 });
+
+test('No images and the unset default make no cover, illustration or image API requests', async (t) => {
+  const https = require('node:https');
+  let networkCalls = 0;
+  t.mock.method(https, 'request', () => { networkCalls++; throw new Error('Network calls are forbidden in this fixture'); });
+  for (const imageSpec of [{ imageMode: 'off', illustrate: true }, {}, { illustrate: false }]) {
+    const engine = new FakeEngine();
+    const gen = new BookGenerator(engine, { imageConfig: {
+      apiKey: 'offline-fixture', imagesDir: require('node:os').tmpdir(),
+    } });
+    const phases = [];
+    const book = await gen.generate({ request: 'A river voyage', research: false, polish: false, ...imageSpec }, {}, {
+      onProgress: (event) => phases.push(event.phase),
+    });
+    assert.equal(book.status, 'complete');
+    assert.equal(book.coverHtml, undefined);
+    assert.equal(book.coverSvg, undefined);
+    assert.equal(book.coverPng, undefined);
+    assert.ok(book.chapters.every((chapter) => !chapter.artHtml && !chapter.artSvg && !chapter.artFile));
+    assert.ok(!phases.some((phase) => /^(cover|art):/.test(phase)));
+    assert.ok(engine.calls.every((call) => !/book-cover designer|illustrator/.test(call.opts.system || '')));
+  }
+  assert.equal(networkCalls, 0);
+});
+
+test('opting into AI art still generates and saves a cover and chapter illustrations', async () => {
+  const engine = new FakeEngine();
+  const complete = engine.complete.bind(engine);
+  engine.complete = async (prompt, opts = {}) => {
+    if (/book-cover designer|illustrator/.test(opts.system || '')) {
+      engine.calls.push({ prompt, opts });
+      return '<div style="width:800px;height:1000px;background:#336699">A painted river</div>';
+    }
+    return complete(prompt, opts);
+  };
+  const gen = new BookGenerator(engine);
+  const saved = [];
+  const book = await gen.generate({ request: 'A river voyage', imageMode: 'ai', research: false, polish: false }, {}, {
+    onChapter: (value) => saved.push(structuredClone(value)),
+  });
+  assert.ok(book.coverHtml);
+  assert.ok(book.chapters.every((chapter) => chapter.artHtml));
+  assert.ok(saved.some((value) => value.coverHtml && value.chapters.length === 0));
+  assert.ok(engine.calls.some((call) => /book-cover designer/.test(call.opts.system || '')));
+});
+
+test('resuming with No images preserves existing art and never fills a missing cover', async () => {
+  for (const cover of [undefined, '<svg width="100" height="100"><rect width="100" height="100"/></svg>']) {
+    const engine = new FakeEngine();
+    const gen = new BookGenerator(engine);
+    const book = { id: 'resume-no-images', status: 'paused', title: 'River', spec: { imageMode: 'off', polish: false },
+      outline: [{ number: 1, title: 'Open', summary: 'A voyage.' }], chapters: [], images: [], coverSvg: cover };
+    const phases = [];
+    await gen.resume(book, { onProgress: (event) => phases.push(event.phase) });
+    assert.equal(book.status, 'complete');
+    assert.equal(book.coverSvg, cover);
+    assert.equal(book.coverHtml, undefined);
+    assert.ok(!phases.some((phase) => /^(cover|art):/.test(phase)));
+    assert.ok(engine.calls.every((call) => !/book-cover designer|illustrator/.test(call.opts.system || '')));
+  }
+});
+
+test('legacy illustration opt-in still allows cover artwork', async () => {
+  let requests = 0;
+  const gen = new BookGenerator({ complete: async () => {
+    requests++;
+    return '<div style="width:800px;height:1000px;background:#336699">Legacy cover</div>';
+  } });
+  const book = { title: 'River', spec: { illustrate: true } };
+  await gen._maybeCover(book);
+  assert.equal(requests, 1);
+  assert.ok(book.coverHtml);
+});

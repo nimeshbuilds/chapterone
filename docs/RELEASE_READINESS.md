@@ -1,12 +1,14 @@
 # Open-source release readiness
 
-Assessment of the 0.2.0 candidate prepared on the `release-readiness` branch in September 2026. This is an engineering assessment of the code and distribution, not a claim that every historical Mac or Windows computer is supported.
+Assessment updated for the 0.3.0 candidate on September 23, 2026. This is an engineering assessment of the code and distribution, not a claim that every historical Mac or Windows computer is supported.
 
 ## Decision
 
 The repository has the core product features for an initial open-source release: planning/review, resumable writing, editing, reading, illustration, narration and six export formats. The main gaps were security, data reliability, accurate privacy/billing information, and a release process that produced Windows installers. Those are addressed in this branch.
 
-**Public launch still needs signing credentials, the manual acceptance checks, and the owner's visibility decision.** The unsigned 0.2.0 release was withdrawn. Its 0.2.1 replacement requires signed/notarized Mac downloads and signed Windows installers before publication. Publishing a release does not change repository visibility. CI artifacts remain separate unsigned test builds.
+The owner approved public repository visibility on September 23; the repository is public and private vulnerability reporting is enabled. The previous 0.2.1 release contains signed/notarized Mac downloads and explicitly approved unsigned Windows installers. The unsigned 0.2.0 release remains withdrawn. New releases must verify their own artifacts and disclose their signing status. CI artifacts remain separate unsigned test builds. Hands-on acceptance limits below still apply.
+
+The 0.3.0 work adds a substantially redesigned workspace, reversible chapter revisions, an offline manuscript check, refreshed provider choices, and a comprehensive GitHub Pages handbook. Revision safeguards include atomic saves, bounded retention, startup recovery, strict inputs, export exclusion, cancellation, and write/audio/export guards.
 
 ## Scope and architecture
 
@@ -36,19 +38,19 @@ The app is deliberately small: CommonJS main-process modules, a vanilla JavaScri
 
 - Local source and packaged Electron smoke runs exercise the real UI/preload/IPC, synthetic generation, EPUB/DOCX/HTML/Markdown/PDF/print-PDF, rasterization and rejected untrusted IPC/file opening.
 - The initial dependency audit had 14 findings; the updated full dependency tree has zero findings as of this review. This is time-specific, not a promise about future advisories.
-- Gitleaks scanned all 81 original commits and reported no exposed secrets. Tests use synthetic keys; no credentials were added during the work.
+- Before the visibility change, a redacted Gitleaks scan covered all 96 reachable commits and reported no exposed credentials. Additional tracked-file/blob checks also found none. See [publication review](PUBLICATION_REVIEW.md) for scope and limitations.
 - Installer builds completed on all four architectures. Reviewing the Windows logs uncovered a falsely successful Electron exit after a PDF path-normalization error. The path check now uses canonical local file identity, and the smoke runner requires an explicit completion record as well as a zero exit code. See the [branch’s latest CI runs](https://github.com/nimeshbuilds/chapterone/actions/workflows/ci.yml?query=branch%3Arelease-readiness) for the corrected source/packaged checks; validate the exact revision before tagging.
 - GitHub Actions workflows are checked with actionlint. Unit retries use injected delays, cutting the suite from minutes to seconds without disabling production backoff.
 
 Native CI proves that source and packaged application code runs on those hosted environments. It does **not** prove clean-machine installer UX, Windows 10 compatibility on physical hardware, every GPU/display setup, live provider subscriptions, signing, or upgrade behavior.
 
-## Before making the project public
+## Before publishing each new release
 
-1. Supply the Apple signing/notarization secrets described in [SIGNING.md](../SIGNING.md). None were configured in repository Actions secrets at review time. Choose and disclose Windows signing status; unsigned builds can still trigger publisher warnings.
+1. Use the Apple signing/notarization setup in [SIGNING.md](../SIGNING.md). Local Keychain signing is supported; credentials need not be exported to GitHub. Choose and disclose Windows signing status; unsigned builds can still trigger publisher warnings.
 2. Complete [manual acceptance](RELEASING.md#manual-acceptance-before-public-launch), especially real CLI login, one small book, paid-feature consent, Mac automation/microphone permissions, upgrade safety and install/uninstall on both Windows architectures.
 3. Confirm third-party account/model availability and realistic quota/cost descriptions with actual authorized accounts. The review did not generate paid books, send mail, upload voice samples or change provider accounts.
-4. Add a private conduct-reporting contact, enable private security reporting and secret scanning/push protection, and require passing native CI before merge. MIT license, contributing guide, conduct policy and issue templates are already present.
-5. Merge the reviewed branch and complete the acceptance checks. For signed distribution, prepare a new version and use the signed release pipeline; do not replace published unsigned binaries. Review all assets/checksums and release notes before choosing public repository visibility.
+4. Keep the conduct/security reporting channels current, review secret scanning and push protection settings, and require passing native CI before release. MIT license, contributing guide, conduct policy and issue templates are present.
+5. Publish a new version with traceable native CI and verified assets/checksums. Do not overwrite historical release binaries or imply that automated tests establish live provider access or clean-machine acceptance.
 
 ## Missing features: priority and rationale
 

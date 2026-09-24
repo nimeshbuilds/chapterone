@@ -16,7 +16,8 @@ const MODELS = [
   { id: 'eleven_multilingual_v2', label: 'Multilingual v2 — best for audiobooks' },
   { id: 'eleven_v3', label: 'Eleven v3 — expressive narration' },
   { id: 'eleven_flash_v2_5', label: 'Flash v2.5 — fast & low-cost' },
-  { id: 'eleven_turbo_v2_5', label: 'Turbo v2.5 — previous fast model' },
+  { id: 'eleven_turbo_v2_5', label: 'Turbo v2.5 — deprecated; prefer Flash v2.5',
+    note: 'ElevenLabs recommends Flash v2.5 instead. This choice remains available to preserve existing narration settings.' },
 ];
 const DEFAULT_MODEL = 'eleven_multilingual_v2';
 

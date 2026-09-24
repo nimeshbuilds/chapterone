@@ -40,6 +40,8 @@ Third-party CLIs remain separate installed applications with their own account s
 | `main/book/errors.js` | Error classification, retry eligibility and user-facing recovery descriptions |
 | `main/book/typography.js` | Prose cleanup and speech conversion, preserving fenced/inline code and image markers |
 | `main/book/stats.js` | Word counts, estimated reading time/pages and English reading-level heuristics |
+| `main/book/revisions.js` | Bounded per-chapter prose snapshots, history validation, comparison metadata, and restore with a snapshot of the replaced prose |
+| `main/book/readiness.js` | Offline deterministic manuscript findings with evidence; no provider call or publication-quality guarantee |
 | `main/book/aiArt.js` | HTML/SVG extraction and defense-in-depth cleanup; offline rendering is the stronger boundary |
 | `main/book/images.js` | Legacy Openverse image sourcing, result ranking, attribution and downloads; retired from new-book UI |
 | `main/book/nanoBanana.js` | Opt-in image generation, character references, model/price metadata and non-generating key check |
@@ -81,8 +83,14 @@ The directory is Electron's `app.getPath('userData')`; the development package n
 
 Books and exports are not encrypted. Credentials use Electron safeStorage (macOS Keychain / Windows DPAPI), so copying settings to another OS account is not a credential migration method. Removing a book deletes its book-specific images/audio; independent exported copies remain. Clear all data removes app-managed library artifacts, settings, backups and reader preferences, but not external exports, provider-side data, CLI credentials or OS backups.
 
+Each chapter can retain up to 20 previous prose revisions in its book JSON. Manual edits, successful AI rewrites and restores preserve the prose being replaced; no-op or failed changes add no version. Restoring changes prose only, preserving current titles, summaries, outline and artwork. Previous or removed text therefore remains locally available while retained, and history is unencrypted like the manuscript. Exports omit revision history. Deleting the book or clearing app data removes app-managed history but not independent backups or exported copies.
+
 ## Testing and packaging
 
 `npm run verify` checks source syntax, unit regressions and the complete locked dependency audit. `scripts/smoke.cjs` uses isolated temporary data and a scripted provider while exercising the real app, preload, IPC, renderer and six export formats. It validates 6×9 PDF dimensions, rasterization and untrusted IPC rejection. `--app-root=<path to app.asar>` repeats those checks against packaged code.
 
-CI uses native Intel Mac, Apple Silicon, Windows x64 and Windows ARM64 runners, plus Linux unit tests. `electron-builder.config.js` derives packaging from `package.json`; releases require Mac signing/notarization and Windows Authenticode signing, with no unsigned override. `.github/workflows/release.yml` waits for every platform and signature check, generates signing notes and checksums, verifies uploaded file hashes, and publishes the complete release. See [RELEASING.md](RELEASING.md).
+CI uses native Intel Mac, Apple Silicon, Windows x64 and Windows ARM64 runners, plus Linux unit tests. `electron-builder.config.js` derives packaging from `package.json`; releases require Mac signing/notarization. Windows Authenticode signing is required unless the owner authorizes an exact-version unsigned Windows exception; this never permits unsigned Mac releases or incomplete signing credentials. `.github/workflows/release.yml` waits for every platform and signature check, generates signing notes and checksums, verifies uploaded file hashes, and publishes the complete release. See [RELEASING.md](RELEASING.md).
+
+## Handbook
+
+`scripts/docs-build.cjs` generates a static handbook from `docs/site/site.json`, the Markdown in `docs/site/content/`, and the existing model, architecture, and release reference documents. It sanitizes rendered content, rewrites repository-relative references, and validates internal links and anchors. `docs/site/assets/` contains local styles and progressive navigation/search; there is no hosted search service or runtime CDN. `.github/workflows/pages.yml` builds/checks the generated output and deploys it from `main` to GitHub Pages.

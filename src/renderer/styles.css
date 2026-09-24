@@ -1,51 +1,53 @@
-/* ChapterOne — "Liquid Glass" macOS-native theme.
-   Panels are translucent and blurred so the window vibrancy (set in main.js)
-   shows through. Adapts automatically to light & dark appearance. */
+/* ChapterOne — a quiet editorial workspace. System fonts, opaque reading
+   surfaces, and matching light/dark palettes work on both desktop platforms. */
 
 :root {
   color-scheme: light dark;   /* report OS appearance so prefers-color-scheme tracks it */
-  --accent: #6d5ef0;          /* primary: violet/indigo */
-  --accent-press: #5a49e0;
-  --accent-2: #c08a2e;        /* warm "book" gold accent */
+  --accent: #24594b;
+  --accent-press: #194436;
+  --accent-2: #9b6a31;
   --danger: #bd3453;
   --ok: #187748;
   --gold-text: #80550e;
 
   /* Light appearance */
-  --text: #1b1b22;
-  --text-dim: #62616f;
-  --text-faint: #706f7e;
-  --scrim: linear-gradient(180deg, rgba(248,248,252,.72), rgba(241,240,248,.66));
-  --panel: rgba(255, 255, 255, 0.58);
-  --panel-2: rgba(255, 255, 255, 0.72);
-  --panel-solid: rgba(255, 255, 255, 0.86);
-  --sidebar: rgba(255, 255, 255, 0.28);
-  --field: rgba(255, 255, 255, 0.7);
+  --text: #252c28;
+  --text-dim: #626960;
+  --text-faint: #70766d;
+  --scrim: #f6f5ef;
+  --panel: #fdfcf8;
+  --panel-2: #f9f9f4;
+  --panel-solid: #fffefa;
+  --sidebar: #eeeee6;
+  --field: #fffefa;
   --border: rgba(0, 0, 0, 0.10);
   --border-soft: rgba(0, 0, 0, 0.06);
   --hairline: rgba(0, 0, 0, 0.07);
-  --shadow: 0 12px 40px rgba(20, 18, 40, 0.16);
-  --shadow-sm: 0 2px 10px rgba(20, 18, 40, 0.08);
+  --shadow: 0 14px 35px rgba(28, 43, 32, .10);
+  --shadow-sm: 0 2px 5px rgba(28, 43, 32, .035);
 
-  --radius: 16px;
-  --radius-sm: 11px;
+  --radius: 14px;
+  --radius-sm: 9px;
   --blur: saturate(180%) blur(30px);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --accent: #9cc9b7;
+    --accent-press: #b8ddcd;
+    --accent-2: #d8b77e;
     --danger: #ff829a;
     --ok: #69d69f;
     --gold-text: #e5bd68;
-    --text: #ededf2;
-    --text-dim: #a6a5b6;
-    --text-faint: #a3a1b5;
-    --scrim: linear-gradient(180deg, rgba(28,26,38,.55), rgba(18,16,26,.62));
-    --panel: rgba(54, 52, 70, 0.46);
-    --panel-2: rgba(60, 58, 78, 0.58);
-    --panel-solid: rgba(40, 38, 54, 0.92);
-    --sidebar: rgba(40, 38, 56, 0.30);
-    --field: rgba(22, 20, 32, 0.55);
+    --text: #e9ede5;
+    --text-dim: #b5bdb2;
+    --text-faint: #a4ada1;
+    --scrim: #1c211e;
+    --panel: #252c27;
+    --panel-2: #2b332e;
+    --panel-solid: #303a32;
+    --sidebar: #171d19;
+    --field: #1c241f;
     --border: rgba(255, 255, 255, 0.12);
     --border-soft: rgba(255, 255, 255, 0.07);
     --hairline: rgba(255, 255, 255, 0.08);
@@ -797,4 +799,148 @@ label.field.checkline { display: flex; flex-direction: row; align-items: center;
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
   .confetti { display: none; }
   .book-card:hover { transform: none; }
+}
+
+/* Editorial shell and a useful library, with a clear visual hierarchy. */
+body { background: var(--scrim); }
+.nav-label { font-size: 10px; letter-spacing: .14em; color: var(--text-dim); padding: 20px 12px 10px; }
+.sidebar { padding-inline: 16px; }
+.brand { padding-inline: 5px; gap: 10px; }
+.brand-mark { border-radius: 5px 11px 11px 5px; background: #24594b; box-shadow: inset 4px 0 rgba(0,0,0,.14); font-size: 25px; width: 38px; height: 46px; }
+.brand-text strong { font-size: 17px; letter-spacing: -.5px; }
+.brand-text span { font-size: 10px; margin-top: 6px; }
+.nav { gap: 6px; }
+.nav-item { padding: 12px; font-size: 13px; }
+.nav-item.active { background: var(--panel); color: var(--accent); box-shadow: none; }
+.nav-ico { font-size: 21px; line-height: 1; }
+.handbook-link { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; padding: 12px 0; }
+.sidebar-note { color: var(--text-dim); font-size: 10px; line-height: 1.7; margin: 2px 0 18px; }
+.pill { border-radius: 7px; font-size: 10px; padding: 8px; background: var(--panel); }
+.view { max-width: 1100px; padding: 44px 42px 72px; }
+.page-head { position: relative; margin-bottom: 30px; }
+.page-head h1 { font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif; font-weight: 500; font-size: 42px; letter-spacing: -1.25px; line-height: 1.15; margin: 0 0 12px; }
+.page-head p { max-width: 650px; line-height: 1.65; font-size: 13px; }
+.eyebrow, .page-head .eyebrow { color: var(--accent); font-size: 10px; font-weight: 650; letter-spacing: .15em; line-height: 1.5; margin: 0 0 12px; }
+.library-view .page-head { padding-right: 130px; }
+.page-action { position: absolute; right: 0; top: 25px; }
+.btn { border-radius: 8px; font-size: 13px; padding: 10px 16px; box-shadow: none; }
+.btn-primary, .btn-primary:hover { background: #24594b; color: #fff; border-color: #24594b; box-shadow: none; }
+.btn-primary:hover { background: #194436; filter: none; }
+.btn-gold, .btn-gold:hover { background: #ede3cc; color: #55401d; border-color: #c4ae84; box-shadow: none; }
+.card { background: var(--panel); padding: 26px; }
+input, textarea, select { border-radius: 7px; }
+select { appearance: auto; background-image: none; padding-right: 12px; }
+input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.banner { background: var(--panel); border-color: var(--border); margin-top: 18px; }
+.library-overview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .42fr); gap: 20px; margin-bottom: 32px; }
+.continue-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); padding: 24px; position: relative; overflow: hidden; }
+.continue-card::after { content: ''; width: 90px; height: 120px; position: absolute; top: 40px; right: -45px; border: 1px solid var(--border); border-radius: 50%; box-shadow: 0 0 0 15px var(--panel), 0 0 0 16px var(--border-soft), 0 0 0 30px var(--panel), 0 0 0 31px var(--border-soft); pointer-events: none; }
+.continue-card h2 { position: relative; z-index: 1; font-family: 'Iowan Old Style', Georgia, serif; font-size: 25px; font-weight: 500; line-height: 1.3; margin: 0 0 8px; overflow-wrap: anywhere; }
+.continue-card > p:not(.eyebrow) { font-size: 12px; color: var(--text-dim); margin: 0 0 20px; }
+.library-totals { display: grid; gap: 16px; align-content: center; border-left: 1px solid var(--border); padding-left: 28px; }
+.library-totals strong { font-family: 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 31px; display: block; }
+.library-totals span { display: block; color: var(--text-dim); font-size: 11px; margin-top: 3px; }
+.lib-toolbar { gap: 9px; }
+.lib-search { flex: 1 1 170px; max-width: none; border-radius: 7px; }
+.lib-status, .lib-sort { width: auto; max-width: 180px; font-size: 12px; padding: 9px; flex: 0 1 auto; }
+.seg.view-toggle { border-radius: 7px; }
+.seg button.active { background: #24594b; color: white; }
+.book-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 24px; }
+.book-card { box-shadow: none; background: var(--panel); border-color: var(--border); border-radius: 12px; }
+.book-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.book-card .book-cover { height: 196px; position: relative; padding: 24px; }
+.book-card .book-cover:not(.has-art)::before { content: ''; position: absolute; inset: 16px; border: 1px solid rgba(255,255,255,.23); pointer-events: none; }
+.book-card .book-cover:not(.has-art)::after { content: 'CHAPTERONE / MANUSCRIPT'; position: absolute; top: 30px; left: 26px; font-size: 8px; letter-spacing: .14em; opacity: .72; }
+.book-card .book-cover h3 { font-size: 22px; font-weight: 400; padding-bottom: 0; margin: 28px 0 6px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.book-card .book-cover.has-art { padding: 12px; background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.book-title { font-family: 'Iowan Old Style', Georgia, serif; font-weight: 600; font-size: 19px; }
+.book-meta { padding-bottom: 16px; }
+.book-meta .btn { border-color: var(--border-soft); background: transparent; }
+.library-welcome { padding: 48px 22px 32px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+.welcome-book { display: flex; flex-direction: column; justify-content: center; width: 100px; height: 130px; background: #24594b; color: #fffbe8; font-family: Georgia, serif; font-size: 17px; border-radius: 3px 9px 9px 3px; box-shadow: inset 7px 0 rgba(0,0,0,.15), 8px 10px 0 color-mix(in srgb, var(--accent) 10%, transparent); margin: 0 auto 35px; transform: rotate(-7deg); }
+.welcome-book strong { font-size: 33px; font-weight: 400; margin-top: 5px; }
+.library-welcome h2 { font-family: Georgia, serif; font-weight: 400; font-size: 30px; color: var(--text); }
+.library-welcome .btn-row { justify-content: center; margin: 24px 0; }
+.writing-steps { list-style: none; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; padding: 0; margin: 24px 0 28px; }
+.writing-steps li { border-top: 2px solid var(--border); padding-top: 12px; font-size: 11px; color: var(--text-dim); }
+.writing-steps li span { margin-right: 8px; font-size: 10px; opacity: .8; }
+.writing-steps li.current { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.create-view { max-width: 980px; }
+.create-view #f-request, .create-view #k-request { font-family: 'Iowan Old Style', Georgia, serif; font-size: 20px; min-height: 150px; padding: 18px; }
+.form-section-label { font-family: Georgia, serif; font-size: 19px; margin: 25px 0 18px; padding-top: 22px; border-top: 1px solid var(--border-soft); }
+.spark { background: transparent; border-radius: 7px; font-size: 11px; }
+.brief-details { border-block: 1px solid var(--border-soft); padding: 16px 0; margin: 6px 0 20px; }
+.brief-details summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+.brief-details summary span { display: block; font-size: 11px; font-weight: 400; color: var(--text-dim); margin: 6px 0 0 16px; }
+.brief-details[open] summary { margin-bottom: 20px; }
+.create-footer { margin-top: 20px; }
+.settings-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.settings-jump { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; font-size: 12px; }
+.settings-jump:hover { border-color: var(--accent); color: var(--accent); }
+.settings-view > .card { scroll-margin-top: 22px; }
+.section-title { font-family: 'Iowan Old Style', Georgia, serif; font-size: 22px; text-transform: none; letter-spacing: -.3px; font-weight: 500; }
+.chain-step.primary { background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.chain-order { background: #24594b; color: white; }
+/* Keep the manuscript prominent; occasional book actions live in a disclosure. */
+.reader-bar { padding-block: 13px; column-gap: 16px; }
+.reader-tools { gap: 6px; }
+.reader-actions { margin-left: auto; }
+.reader-content { max-width: 43rem; padding-top: 3.8rem; }
+.reader-content h1 { font-weight: 500; }
+.reader-nav { flex-shrink: 0; position: sticky; bottom: 0; gap: 8px; flex-wrap: wrap; background: var(--panel); color: var(--text); border-top: 1px solid var(--border); z-index: 2; }
+.reader-nav .page-info { color: var(--text-dim); opacity: 1; }
+.reader-main .pause-note, .reader-main .live-reading-note { background: var(--panel); color: var(--text); }
+.reader-main .live-reading-note .live-text { color: var(--text); }
+.book-tools { position: relative; -webkit-app-region: no-drag; }
+.book-tools summary { cursor: pointer; border: 1px solid var(--border); background: var(--panel); font-size: 12px; border-radius: 8px; padding: 9px 12px; }
+.book-tools-panel { position: absolute; right: 0; top: calc(100% + 6px); width: 200px; background: var(--panel-solid); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 10px; padding: 8px; z-index: 12; display: grid; gap: 5px; }
+.book-tools-panel .btn { justify-content: flex-start; background: transparent; border-color: transparent; }
+.book-tools-panel .btn:hover { background: var(--field); }
+.modal h2 { font-family: 'Iowan Old Style', Georgia, serif; font-weight: 500; font-size: 28px; margin: 0 0 12px; }
+.editor-count { display: block; font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+.edit-chapter-ta { font-size: 14px; line-height: 1.8; padding: 18px; }
+.revision-modal { max-width: 980px; width: 92vw; max-height: 89vh; overflow-y: auto; }
+.revision-compare { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin: 16px 0; }
+.revision-compare h3 { font-size: 12px; font-weight: 600; margin: 0 0 9px; }
+.revision-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; background: var(--field); border: 1px solid var(--border); padding: 18px; font: 14px/1.75 'Iowan Old Style', Georgia, serif; max-height: 40vh; overflow-y: auto; min-height: 150px; border-radius: 8px; }
+.revision-empty, .readiness-clear { background: var(--field); border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin: 22px 0; }
+.revision-empty p, .readiness-clear p { color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+.readiness-modal { max-width: 740px; width: 92vw; max-height: 88vh; overflow-y: auto; }
+.review-summary { display: flex; gap: 24px; flex-wrap: wrap; padding: 20px 0; border-block: 1px solid var(--border); margin: 20px 0; font-size: 12px; color: var(--text-dim); }
+.review-summary strong { display: block; font-family: Georgia, serif; font-size: 30px; font-weight: 400; color: var(--text); margin-bottom: 6px; }
+.readiness-item { padding: 18px; margin: 10px 0; border: 1px solid var(--border); border-radius: 9px; }
+.readiness-item h3 { margin: 8px 0; font-size: 15px; }
+.readiness-item p { color: var(--text-dim); font-size: 13px; line-height: 1.65; }
+.readiness-item blockquote { margin: 12px 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--field); border-left: 2px solid var(--border); }
+.readiness-severity { font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--gold-text); }
+.severity-error .readiness-severity { color: var(--danger); }
+@media (max-width: 1050px) {
+  .view { padding: 30px 26px 60px; }
+  .page-head h1 { font-size: 36px; }
+  .library-overview { grid-template-columns: minmax(0,1fr) 150px; }
+  .library-totals { padding-left: 20px; }
+  .lib-search { flex-basis: 100%; }
+}
+@media (max-width: 760px) {
+  .sidebar { padding-inline: 8px; }
+  .sidebar-note { display: none; }
+  .view { padding: 26px 18px 50px; }
+  .page-head h1 { font-size: 31px; }
+  .library-view .page-head { padding-right: 0; }
+  .page-action { position: static; margin-top: 16px; }
+  .library-overview { grid-template-columns: 1fr; gap: 16px; }
+  .library-totals { display: flex; justify-content: space-between; border-left: 0; padding: 0 4px; }
+  .library-totals strong { font-size: 24px; }
+  .library-totals span { font-size: 10px; }
+  .card { padding: 18px; }
+  .writing-options { padding: 0; }
+  .writing-steps { gap: 8px; }
+  .writing-steps li span { display: block; margin-bottom: 4px; }
+  .writing-steps li { font-size: 10px; }
+  .reader-actions { margin-left: 0; }
+  .reader-content { padding: 2.5rem 1.4rem; }
+  .reader-nav .page-info { flex-basis: 100%; order: -1; text-align: center; }
+  .revision-compare { grid-template-columns: 1fr; }
+  .revision-text { max-height: 28vh; }
+  .revision-modal, .readiness-modal { width: 94vw; padding: 20px; }
 }

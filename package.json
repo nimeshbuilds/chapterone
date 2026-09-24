@@ -1,12 +1,12 @@
 {
   "name": "chapterone",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "ChapterOne — Your Personal Book Writer. Turn one idea into a finished book with Claude Code, Codex, Grok (your subscriptions) or Gemini (API key): planned, research-grounded, written, illustrated with AI art, narrated, and delivered to Kindle, EPUB, PDF, DOCX, or the web.",
   "author": {
     "name": "Modulagent"
   },
   "license": "MIT",
-  "homepage": "https://github.com/nimeshbuilds/chapterone#readme",
+  "homepage": "https://nimeshbuilds.github.io/chapterone/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimeshbuilds/chapterone.git"
@@ -52,7 +52,9 @@
     "test:smoke": "node scripts/run-smoke.cjs",
     "verify": "npm run check && npm test && npm audit --audit-level=high",
     "dist:win:x64": "electron-builder --win --x64 --config electron-builder.config.js",
-    "dist:win:arm64": "electron-builder --win --arm64 --config electron-builder.config.js"
+    "dist:win:arm64": "electron-builder --win --arm64 --config electron-builder.config.js",
+    "docs:build": "node scripts/docs-build.cjs",
+    "docs:check": "node scripts/docs-build.cjs --check"
   },
   "dependencies": {
     "archiver": "7.0.1",

@@ -32,15 +32,22 @@ class ClaudeAdapter {
 
   async checkAuth() {
     try {
-      const text = await this.complete('Reply with exactly the word: READY', {
-        system: 'You are a connectivity probe. Output only what is requested.',
-        timeoutMs: 60000,
+      // Status is metadata, never a completion. This runs at app startup and
+      // after navigation/login; it must not consume the user's model quota.
+      // https://code.claude.com/docs/en/cli-reference
+      const { code, stdout } = await run(this.command, ['auth', 'status'], {
+        scrubEnv: this.scrub(), timeoutMs: 15000,
       });
-      const ok = text.trim().length > 0; // a successful, non-empty completion = authenticated
-      return { ok, detail: ok ? 'Authenticated (subscription)' : 'The CLI returned no output.' };
-    } catch (err) {
-      return { ok: false, detail: err.message };
-    }
+      const status = JSON.parse(stdout);
+      // Return only our own messages: status output may contain account
+      // identifiers. Do not show it or treat unsupported CLI syntax as logout.
+      if (code === 0 && status.loggedIn === true) return { ok: true,
+        detail: 'Claude Code reports signed in. No text was generated; model access, quota and billing were not checked.' };
+      if ((code === 0 || code === 1) && status.loggedIn === false) return { ok: false,
+        detail: 'Claude Code reports no sign-in. Sign in with the CLI, then check again.' };
+    } catch (_) { /* unavailable or older CLI: unknown, with no paid fallback */ }
+    return { ok: null,
+      detail: 'Could not read Claude Code sign-in status. Update the CLI or check it in Terminal. No text was generated.' };
   }
 
   buildArgs(opts = {}) {

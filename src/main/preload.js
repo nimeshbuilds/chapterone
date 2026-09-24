@@ -83,6 +83,10 @@ contextBridge.exposeInMainWorld('api', {
   rewriteChapter: (id, index, note, jobId) => invoke('book:rewriteChapter', { id, index, note, jobId }),
   updateBook: (id, fields) => invoke('book:update', { id, ...fields }),
   bookStats: (id) => invoke('book:stats', id),
+  bookReadiness: (id) => invoke('book:readiness', id),
+  getChapterRevisions: (id, index) => invoke('book:revisions', { id, index }),
+  getChapterRevision: (id, index, revisionId) => invoke('book:revision', { id, index, revisionId }),
+  restoreChapterRevision: (id, index, revisionId) => invoke('book:restoreRevision', { id, index, revisionId }),
   onProgress: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('book:progress', listener);
